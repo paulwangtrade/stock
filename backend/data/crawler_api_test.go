@@ -170,6 +170,9 @@ func TestHk(t *testing.T) {
 }
 
 func TestUpdateUSName(t *testing.T) {
+	if testing.Short() {
+        t.Skip("skip crawler browser test")
+    }
 	db.Init("../../data/stock.db")
 	us := &[]models.StockInfoUS{}
 	db.Dao.Model(&models.StockInfoUS{}).Where("name = ?", "").Order("RANDOM()").Find(us)

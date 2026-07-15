@@ -166,19 +166,44 @@ func GetHolidayTools() []tool.BaseTool {
 			}
 
 			client := resty.New()
-			apiURL := fmt.Sprintf("https://timor.tech/api/holiday/year/%s/", year)
 
+			apiURL := fmt.Sprintf(
+				"https://timor.tech/api/holiday/year/%s/",
+				year,
+			)
+			
 			var result HolidayYearInfo
+			
 			resp, err := client.R().
 				SetResult(&result).
 				Get(apiURL)
-
+			
 			if err != nil {
 				return "", fmt.Errorf("查询年度节假日信息失败: %v", err)
 			}
-
-			if resp.StatusCode() != 200 || result.Code != 0 {
-				return fmt.Sprintf("查询失败，年份：%s", year), nil
+			
+			
+			// 增加调试保护
+			if resp.StatusCode() != 200 {
+				return fmt.Sprintf(
+					"查询失败，HTTP状态:%d",
+					resp.StatusCode(),
+				), nil
+			}
+			
+			
+			// timor接口有时候code字段异常
+			if len(result.Holiday) == 0 {
+			
+				logger.SugaredLogger.Warnf(
+					"节假日接口返回为空: %s",
+					resp.String(),
+				)
+			
+				return fmt.Sprintf(
+					"未查询到%s年节假日数据",
+					year,
+				), nil
 			}
 
 			var md strings.Builder

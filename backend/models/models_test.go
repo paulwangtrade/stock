@@ -1,10 +1,11 @@
-package models
+package models_test
 
 import (
 	"encoding/json"
 	"github.com/duke-git/lancet/v2/strutil"
 	"go-stock/backend/db"
 	"go-stock/backend/logger"
+	"go-stock/backend/models"
 	"os"
 	"testing"
 )
@@ -14,9 +15,9 @@ import (
 // @Desc
 // -----------------------------------------------------------------------------------
 type StockInfoHKResp struct {
-	Code       int              `json:"code"`
-	Status     string           `json:"status"`
-	StockInfos *[]StockInfoData `json:"data"`
+	Code       int                 `json:"code"`
+	Status     string              `json:"status"`
+	StockInfos *[]StockInfoData    `json:"data"`
 }
 
 type StockInfoData struct {
@@ -28,22 +29,30 @@ type StockInfoData struct {
 
 func TestStockInfoHK(t *testing.T) {
 	db.Init("../../data/stock.db")
-	db.Dao.AutoMigrate(&StockInfoHK{})
+
+	db.Dao.AutoMigrate(&models.StockInfoHK{})
+
 	bs, _ := os.ReadFile("../../build/hk.json")
+
 	v := &StockInfoHKResp{}
+
 	err := json.Unmarshal(bs, v)
 	if err != nil {
 		return
 	}
-	hks := &[]StockInfoHK{}
+
+	hks := &[]models.StockInfoHK{}
+
 	for i, data := range *v.StockInfos {
 		logger.SugaredLogger.Infof("第%d条数据: %+v", i, data)
-		hk := &StockInfoHK{
+
+		hk := &models.StockInfoHK{
 			Code:  strutil.PadStart(data.C, 5, "0") + ".HK",
 			EName: data.N,
 		}
+
 		*hks = append(*hks, *hk)
 	}
-	db.Dao.Create(&hks)
 
+	db.Dao.Create(&hks)
 }
