@@ -1,0 +1,47 @@
+---
+description: go-stock Wails 项目编译与打包流程（Windows）
+alwaysApply: true
+---
+
+# go-stock 编译操作
+
+本项目为 Wails v2（Go + Vue/Vite），工作目录：`D:\stock`。
+
+## 完整编译（推荐）
+
+在 PowerShell 中执行（不要用 `&&`，用分号）：
+
+```powershell
+Set-Location D:\stock
+wails build
+```
+
+成功输出：`D:\stock\build\bin\go-stock.exe`
+
+## 仅改前端时的快速编译
+
+若 `wails build` 在「Generating bindings」阶段报 `wailsbindings.exe: Access is denied`，或后端/绑定未改动：
+
+```powershell
+Set-Location D:\stock\frontend
+npm run build
+
+Set-Location D:\stock
+wails build -skipbindings -s
+```
+
+- `-skipbindings`：跳过 Go 绑定生成
+- `-s`：跳过前端构建（上一步已用 Vite 编译）
+
+## 开发模式
+
+```powershell
+Set-Location D:\stock
+wails dev
+```
+
+## 注意事项
+
+- Shell 为 PowerShell，命令串联用 `;` 而非 `&&`
+- 编译需完整权限（沙箱外执行）
+- 编译完成后提示用户：先关闭正在运行的 `go-stock.exe`，再启动新 exe

@@ -1,0 +1,76 @@
+.rank-list-wrap {
+  overflow-x: auto;
+}
+
+.rank-list-table :deep(.n-table-th) {
+  font-weight: 600;
+  font-size: 13px;
+  padding: 10px 14px;
+  white-space: nowrap;
+}
+
+.rank-list-table :deep(.n-table-td) {
+  padding: 10px 14px;
+  font-size: 13px;
+  vertical-align: middle;
+}
+
+.rank-list-table :deep(.n-table-tr:hover .n-table-td) {
+  background-color: rgba(24, 160, 88, 0.06);
+}
+
+.rank-list-table :deep(.col-num),
+.rank-list-table :deep(th.col-num) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.rank-list-table :deep(.col-name) {
+  min-width: 148px;
+}
+
+.stock-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  line-height: 1.4;
+  max-width: 100%;
+}
+
+.stock-link:hover .stock-name {
+  color: var(--n-primary-color);
+}
+
+.stock-name {
+  font-weight: 600;
+  color: var(--n-text-color);
+  transition: color 0.15s ease;
+}
+
+.stock-code {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--n-text-color-3);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.02em;
+}
+
+.delta-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  min-width: 72px;
+  font-variant-numeric: tabular-nums;
+}
+
+.delta-cell .n-icon {
+  font-size: 14px;
+}
+
+.rank-list-empty {
+  padding: 48px 0;
+  text-align: center;
+  color: var(--n-text-color-3);
+}
