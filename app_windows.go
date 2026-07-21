@@ -44,6 +44,7 @@ func (a *App) startup(ctx context.Context) {
 	a.InitCronTasks()
 	a.InitPaperMarginDayJobs()
 	a.InitPaperOpenBuyJobs()
+	a.InitAfterClosePlanJobs()
 	a.InitStockStrategies()
 
 	// 创建系统托盘

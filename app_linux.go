@@ -53,6 +53,7 @@ func (a *App) startup(ctx context.Context) {
 	a.InitCronTasks()
 	a.InitPaperMarginDayJobs()
 	a.InitPaperOpenBuyJobs()
+	a.InitAfterClosePlanJobs()
 
 	// 监听设置更新事件
 	runtime.EventsOn(ctx, "updateSettings", func(optionalData ...interface{}) {

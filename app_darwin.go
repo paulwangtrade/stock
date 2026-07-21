@@ -35,6 +35,7 @@ func (a *App) startup(ctx context.Context) {
 	a.InitCronTasks()
 	a.InitPaperMarginDayJobs()
 	a.InitPaperOpenBuyJobs()
+	a.InitAfterClosePlanJobs()
 	a.InitStockStrategies()
 
 	// 监听设置更新事件
