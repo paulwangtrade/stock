@@ -143,6 +143,12 @@ func (a *App) InitPaperOpenBuyJobs() {
 	if a.cron == nil {
 		return
 	}
+	preflight := TradingPreflightCheck()
+	if !preflight.Ready {
+		logger.SugaredLogger.Errorf("TRADING_START_BLOCKED status=%s reason=%s",
+			preflight.Status, preflight.Reason)
+		return
+	}
 	const dailyKey = "paper_daily_plan"
 	const prepareKey = "paper_open_prepare"
 	const buyKey = "paper_open_buy"

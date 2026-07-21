@@ -8,7 +8,6 @@ import (
 	assistantweb "go-stock/ai-assistant-web"
 	"go-stock/backend/data"
 	"go-stock/backend/db"
-	"go-stock/backend/execution"
 	log "go-stock/backend/logger"
 	"go-stock/backend/models"
 	"os"
@@ -75,7 +74,8 @@ func main() {
 	data.SponsorDecryptKeyHex = BuildKey
 	db.Init("")
 	data.InitAnalyzeSentiment()
-	go AutoMigrate()
+	// Sync migrate before Wails startup/cron to avoid 9:20 schema races.
+	AutoMigrate()
 
 	//db.Dao.Model(&data.Group{}).Where("id = ?", 0).FirstOrCreate(&data.Group{
 	//	Name: "默认分组",
@@ -266,52 +266,33 @@ func updateMultipleModel() {
 }
 
 func AutoMigrate() {
-	db.Dao.AutoMigrate(&data.StockInfo{})
-	db.Dao.AutoMigrate(&data.StockBasic{})
-	db.Dao.AutoMigrate(&data.FollowedStock{})
-	db.Dao.AutoMigrate(&data.IndexBasic{})
-	db.Dao.AutoMigrate(&data.Settings{})
-	db.Dao.AutoMigrate(&models.AIResponseResult{})
-	db.Dao.AutoMigrate(&models.StockInfoHK{})
-	db.Dao.AutoMigrate(&models.StockInfoUS{})
-	db.Dao.AutoMigrate(&data.FollowedFund{})
-	db.Dao.AutoMigrate(&data.FollowedStock{})
-	db.Dao.AutoMigrate(&data.FundBasic{})
-	db.Dao.AutoMigrate(&models.PromptTemplate{})
-	db.Dao.AutoMigrate(&data.Group{})
-	db.Dao.AutoMigrate(&data.GroupStock{})
-	db.Dao.AutoMigrate(&models.Tags{})
-	db.Dao.AutoMigrate(&models.Telegraph{})
-	db.Dao.AutoMigrate(&models.TelegraphTags{})
-	db.Dao.AutoMigrate(&models.LongTigerRankData{})
-	db.Dao.AutoMigrate(&data.AIConfig{})
-	db.Dao.AutoMigrate(&models.BKDict{})
-	db.Dao.AutoMigrate(&models.WordAnalyze{})
-	db.Dao.AutoMigrate(&models.SentimentResultAnalyze{})
-	db.Dao.AutoMigrate(&models.AiRecommendStocks{})
-	db.Dao.AutoMigrate(&models.AllStockInfo{})
-	db.Dao.AutoMigrate(&models.CronTask{})
-	db.Dao.AutoMigrate(&models.StockStrategy{})
-	db.Dao.AutoMigrate(&models.StockStrategyRun{})
-	db.Dao.AutoMigrate(&models.SignalScanSnapshot{})
-	db.Dao.AutoMigrate(&models.AiAssistantSession{})
-	db.Dao.AutoMigrate(&models.GlobalStockIndex{})
-	db.Dao.AutoMigrate(&data.TradingRecord{})
-	if err := data.MigratePaperTrading(db.Dao); err != nil {
-		log.SugaredLogger.Errorf("迁移模拟交易表失败：%v", err)
+	if _, err := applyApplicationMigrations(); err != nil {
+		log.SugaredLogger.Errorf("schema migration registry failed; app continues with trading blocked: %v", err)
 	}
-	db.Dao.AutoMigrate(&data.KLineCacheRecord{})
-	// 两融模拟独立迁移集成点：模型集中在 backend/data/paper_margin_models.go。
-	if err := execution.MigratePaperMargin(db.Dao); err != nil {
-		log.SugaredLogger.Errorf("paper margin migrate error: %v", err)
+	validation := validateApplicationSchema()
+	if !validation.Ready() {
+		log.SugaredLogger.Errorf("startup schema validation %s: version=%d/%d missingTables=%v missingColumns=%v missingIndexes=%v errors=%v",
+			validation.Status, validation.CurrentVersion, validation.RequiredVersion,
+			validation.MissingTables, validation.MissingColumns, validation.MissingIndexes, validation.Errors)
+	} else {
+		log.SugaredLogger.Infof("startup schema validation READY version=%d", validation.CurrentVersion)
 	}
 
 	go data.NewStockDataApi().BackfillMissingFollowPrices()
 
 	//updateMultipleModel()
 
-	// 初始化 global_stock_index_cache 定时任务
-	initGlobalStockIndexCacheTask()
+	// Defer CronTask seed slightly to avoid lock contention with extended migrations.
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		initGlobalStockIndexCacheTask()
+	}()
+}
+
+// runSchemaMigrations runs the full application migration registry (tests / explicit callers).
+func runSchemaMigrations() error {
+	_, err := applyApplicationMigrations()
+	return err
 }
 
 // initGlobalStockIndexCacheTask 检查并创建 global_stock_index_cache 定时任务
