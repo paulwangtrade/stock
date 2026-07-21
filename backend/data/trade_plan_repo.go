@@ -149,6 +149,33 @@ func (r *TradePlanRepo) GetReadyByTradeDate(tradeDate string) (*models.TradePlan
 	return &plan, nil
 }
 
+// GetFrozenByTradeDate returns the preferred frozen ready plan for tradeDate.
+// Criteria: status=ready AND freeze_at IS NOT NULL.
+// Multi-version rule: highest plan_version, then highest id (read-only; no mutations).
+func (r *TradePlanRepo) GetFrozenByTradeDate(tradeDate string) (*models.TradePlan, error) {
+	if db.Dao == nil {
+		return nil, fmt.Errorf("数据库未初始化")
+	}
+	tradeDate = strings.TrimSpace(tradeDate)
+	if tradeDate == "" {
+		return nil, fmt.Errorf("trade date is required")
+	}
+	var plan models.TradePlan
+	err := db.Dao.Where(
+		"trade_date = ? AND status = ? AND freeze_at IS NOT NULL",
+		tradeDate, models.TradePlanStatusReady,
+	).Order("plan_version DESC, id DESC").First(&plan).Error
+	if err != nil {
+		return nil, err
+	}
+	items, err := r.loadItems(plan.ID)
+	if err != nil {
+		return nil, err
+	}
+	plan.Items = items
+	return &plan, nil
+}
+
 func (r *TradePlanRepo) loadItems(planID uint) ([]models.TradePlanItem, error) {
 	var items []models.TradePlanItem
 	err := db.Dao.Where("plan_id = ?", planID).Order("priority ASC, id ASC").Find(&items).Error
