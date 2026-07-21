@@ -109,6 +109,27 @@ func (r *TradePlanRepo) GetLatestByTradeDate(tradeDate string) (*models.TradePla
 	return &plan, nil
 }
 
+// NextPlanVersion returns MAX(plan_version)+1 for tradeDate (append-only versioning).
+// When no rows exist, returns 1. Legacy rows with plan_version=0 yield 1 on first draft.
+func (r *TradePlanRepo) NextPlanVersion(tradeDate string) (int, error) {
+	if db.Dao == nil {
+		return 0, fmt.Errorf("数据库未初始化")
+	}
+	tradeDate = strings.TrimSpace(tradeDate)
+	if tradeDate == "" {
+		return 0, fmt.Errorf("trade date is required")
+	}
+	var maxVersion int
+	err := db.Dao.Model(&models.TradePlan{}).
+		Where("trade_date = ?", tradeDate).
+		Select("COALESCE(MAX(plan_version), 0)").
+		Scan(&maxVersion).Error
+	if err != nil {
+		return 0, err
+	}
+	return maxVersion + 1, nil
+}
+
 // GetReadyByTradeDate 9:30 执行入口：仅 status=ready。
 func (r *TradePlanRepo) GetReadyByTradeDate(tradeDate string) (*models.TradePlan, error) {
 	if db.Dao == nil {
@@ -305,16 +326,16 @@ func (r *TradePlanRepo) UpdateItemExecution(item *models.TradePlanItem) error {
 	}
 	item.UpdatedAt = time.Now()
 	return db.Dao.Model(&models.TradePlanItem{}).Where("id = ?", item.ID).Updates(map[string]any{
-		"status":         item.Status,
-		"error":          item.Error,
-		"order_id":       item.OrderID,
-		"fill_id":        item.FillID,
-		"filled_price":   item.FilledPrice,
-		"filled_volume":  item.FilledVolume,
-		"filled_fee":     item.FilledFee,
-		"target_volume":  item.TargetVolume,
-		"stock_name":     item.StockName,
-		"updated_at":     item.UpdatedAt,
+		"status":        item.Status,
+		"error":         item.Error,
+		"order_id":      item.OrderID,
+		"fill_id":       item.FillID,
+		"filled_price":  item.FilledPrice,
+		"filled_volume": item.FilledVolume,
+		"filled_fee":    item.FilledFee,
+		"target_volume": item.TargetVolume,
+		"stock_name":    item.StockName,
+		"updated_at":    item.UpdatedAt,
 	}).Error
 }
 
