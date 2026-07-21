@@ -59,7 +59,10 @@ func ClearChatMemory(sessionID string) error {
 	return Dao.Where("session_id = ?", sessionID).Delete(&ChatMemory{}).Error
 }
 
+// AutoMigrate 迁移 chat_memory / stock_change_history（兼容显式调用；主路径由 main 版本门控统一迁移）。
 func AutoMigrate() {
-	Dao.AutoMigrate(&ChatMemory{})
-	Dao.AutoMigrate(&models.StockChangeHistory{})
+	if Dao == nil {
+		return
+	}
+	_ = Dao.AutoMigrate(&ChatMemory{}, &models.StockChangeHistory{})
 }

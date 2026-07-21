@@ -53,5 +53,5 @@ func Init(sqlitePath string) {
 	dbCon.SetMaxOpenConns(1)
 	dbCon.SetConnMaxLifetime(time.Hour)
 	Dao = openDb
-	AutoMigrate()
+	// 表结构迁移统一由 main.AutoMigrate + schema 版本号门控，启动时不再在此全量迁移
 }

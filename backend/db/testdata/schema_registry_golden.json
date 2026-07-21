@@ -1,0 +1,41 @@
+{
+  "migrations": [
+    {
+      "version": 1,
+      "name": "baseline_schema",
+      "checksum": "661da2df3eda265af158a5753627b023a27813d40ceee957250b240bd492aad3"
+    },
+    {
+      "version": 2,
+      "name": "add_candidate_decision_id",
+      "checksum": "7f2656c5217b44b6ceb80a331dc201286d62b433f04f860d964c3a081d235137"
+    }
+  ],
+  "requirements": [
+    {
+      "table": "candidate_pools",
+      "columns": ["id", "trade_date", "status", "item_count"]
+    },
+    {
+      "table": "candidate_pool_items",
+      "columns": ["id", "pool_id", "stock_code", "rank", "score", "decision_id"],
+      "indexes": ["idx_candidate_pool_items_decision_id"]
+    },
+    {
+      "table": "trade_plans",
+      "columns": ["id", "trade_date", "status", "enable_execute"]
+    },
+    {
+      "table": "trade_plan_items",
+      "columns": ["id", "plan_id", "status", "order_id", "fill_id"]
+    },
+    {
+      "table": "paper_orders",
+      "columns": ["id", "client_order_id", "status"]
+    },
+    {
+      "table": "paper_fills",
+      "columns": ["id", "order_id"]
+    }
+  ]
+}
