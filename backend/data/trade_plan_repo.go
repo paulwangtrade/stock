@@ -166,6 +166,34 @@ func (r *TradePlanRepo) MarkChecked(planID uint) error {
 	}).Error
 }
 
+// ApproveDraft writes approval audit fields while keeping status=draft (CAS).
+// Does not set FreezeAt, ready, or EnableExecute.
+func (r *TradePlanRepo) ApproveDraft(planID uint, approvedBy, approvalReason string, at time.Time) (bool, error) {
+	if db.Dao == nil {
+		return false, fmt.Errorf("数据库未初始化")
+	}
+	if planID == 0 {
+		return false, fmt.Errorf("plan id is required")
+	}
+	if at.IsZero() {
+		at = time.Now()
+	}
+	approvedBy = strings.TrimSpace(approvedBy)
+	approvalReason = strings.TrimSpace(approvalReason)
+	res := db.Dao.Model(&models.TradePlan{}).
+		Where("id = ? AND status = ?", planID, models.TradePlanStatusDraft).
+		Updates(map[string]any{
+			"approved_at":     at,
+			"approved_by":     approvedBy,
+			"approval_reason": approvalReason,
+			"updated_at":      at,
+		})
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected == 1, nil
+}
+
 // TryBeginExecute CAS: ready -> executing，防止 cron 重复买入。
 func (r *TradePlanRepo) TryBeginExecute(planID uint) (bool, error) {
 	if db.Dao == nil {

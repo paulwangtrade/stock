@@ -38,33 +38,34 @@ const (
 // TradePlan 某交易日买入计划（同日可有历史版本；执行入口当前只认 status=ready）。
 // TradeDate 即执行日（设计文档中的 TradingDate）；PlanVersion/FreezeAt 等为 Phase6-A 生命周期字段。
 type TradePlan struct {
-	ID            uint      `json:"id" gorm:"primaryKey"`
-	TradeDate     string    `json:"tradeDate" gorm:"size:10;index;not null"`
-	PoolID        uint      `json:"poolId" gorm:"index"`
-	GeneratedAt   time.Time `json:"generatedAt"`
-	Status        string    `json:"status" gorm:"size:16;index"`
-	Side          string    `json:"side" gorm:"size:8"`
-	AmountPerStock float64  `json:"amountPerStock"`
-	MaxNames      int       `json:"maxNames"`
-	EnableExecute bool      `json:"enableExecute"`
-	Message       string    `json:"message" gorm:"size:500"`
+	ID             uint      `json:"id" gorm:"primaryKey"`
+	TradeDate      string    `json:"tradeDate" gorm:"size:10;index;not null"`
+	PoolID         uint      `json:"poolId" gorm:"index"`
+	GeneratedAt    time.Time `json:"generatedAt"`
+	Status         string    `json:"status" gorm:"size:16;index"`
+	Side           string    `json:"side" gorm:"size:8"`
+	AmountPerStock float64   `json:"amountPerStock"`
+	MaxNames       int       `json:"maxNames"`
+	EnableExecute  bool      `json:"enableExecute"`
+	Message        string    `json:"message" gorm:"size:500"`
 
 	// PlanVersion 同 TradeDate 下版本号；0=历史/未赋值（兼容旧行）。
 	PlanVersion int `json:"planVersion" gorm:"column:plan_version"`
 	// FreezeAt 非空且 Status=ready 表示已冻结；nil 的 ready 为早盘即时计划（兼容）。
 	FreezeAt *time.Time `json:"freezeAt" gorm:"column:freeze_at"`
-	// ApprovedAt / ApprovedBy 审批审计（后续 Approve/Freeze 写入；A1 仅占位）。
-	ApprovedAt *time.Time `json:"approvedAt" gorm:"column:approved_at"`
-	ApprovedBy string     `json:"approvedBy" gorm:"column:approved_by;size:64"`
+	// ApprovedAt / ApprovedBy / ApprovalReason 审批审计（Approve 台阶写入；Freeze 前 Status 仍为 draft）。
+	ApprovedAt     *time.Time `json:"approvedAt" gorm:"column:approved_at"`
+	ApprovedBy     string     `json:"approvedBy" gorm:"column:approved_by;size:64"`
+	ApprovalReason string     `json:"approvalReason" gorm:"column:approval_reason;size:500"`
 	// SourceSession 如 after_close / morning_rebuild。
 	SourceSession string `json:"sourceSession" gorm:"column:source_session;size:32"`
 
-	RiskStatus        string `json:"riskStatus" gorm:"size:16"`
-	MarketLevel       int    `json:"marketLevel"`
-	RiskFilteredCount int    `json:"riskFilteredCount"`
-	RiskAcceptedCount int    `json:"riskAcceptedCount"`
-	RiskSummary       string `json:"riskSummary" gorm:"size:500"`
-	RiskSnapshotJSON  string `json:"riskSnapshotJson" gorm:"type:text"`
+	RiskStatus        string     `json:"riskStatus" gorm:"size:16"`
+	MarketLevel       int        `json:"marketLevel"`
+	RiskFilteredCount int        `json:"riskFilteredCount"`
+	RiskAcceptedCount int        `json:"riskAcceptedCount"`
+	RiskSummary       string     `json:"riskSummary" gorm:"size:500"`
+	RiskSnapshotJSON  string     `json:"riskSnapshotJson" gorm:"type:text"`
 	CheckedAt         *time.Time `json:"checkedAt"`
 	ExecutedAt        *time.Time `json:"executedAt"`
 	CreatedAt         time.Time  `json:"createdAt"`
