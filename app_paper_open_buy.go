@@ -32,7 +32,7 @@ func (a *App) BuildTradePlan(tradeDate string) (*models.TradePlan, error) {
 	return strategy.BuildTradePlanForDate(tradeDate)
 }
 
-// RunDailyCandidateAndPlan TEMP/调试或 9:20：池 + 计划。
+// RunDailyCandidateAndPlan TEMP/调试：池 + 计划（9:20 cron 已改走 RunMorningPlanPreparation）。
 func (a *App) RunDailyCandidateAndPlan(tradeDate string) map[string]any {
 	pool, plan, err := strategy.RunDailyCandidateAndPlan(tradeDate)
 	out := map[string]any{"ok": err == nil}
@@ -101,6 +101,25 @@ func skipIfNonWeekday(job string) bool {
 	return true
 }
 
+// paperDailyPlanCronSpec is the 9:20 morning plan preparation schedule (seconds-enabled cron).
+const paperDailyPlanCronSpec = "0 20 9 * * 1-5"
+
+// morningPlanPreparationFn is the 9:20 job body; tests may replace it.
+var morningPlanPreparationFn = func(tradeDate string) (*models.CandidatePool, *models.TradePlan, string, error) {
+	return strategy.RunMorningPlanPreparation(tradeDate)
+}
+
+// runPaperDailyPlanCronJob is the 9:20 callback: prefer Frozen adopt, else legacy Build.
+func runPaperDailyPlanCronJob() (mode string, err error) {
+	_, _, mode, err = morningPlanPreparationFn("")
+	if err != nil {
+		logger.SugaredLogger.Errorf("RunMorningPlanPreparation mode=%s: %v", mode, err)
+		return mode, err
+	}
+	logger.SugaredLogger.Infof("RunMorningPlanPreparation cron done mode=%s", mode)
+	return mode, nil
+}
+
 func runTradePlanReconcileJob() {
 	results, err := data.ReconcileStaleTradePlans(data.TradePlanExecutingTimeout)
 	if err != nil {
@@ -158,15 +177,12 @@ func (a *App) InitPaperOpenBuyJobs() {
 	dailyOK, prepareOK, buyOK := false, false, false
 
 	if _, exists := a.getCronEntry(dailyKey); !exists {
-		id, err := a.cron.AddFunc("0 20 9 * * 1-5", func() {
+		id, err := a.cron.AddFunc(paperDailyPlanCronSpec, func() {
 			defer PanicHandler()
 			if skipIfNonWeekday("9:20") {
 				return
 			}
-			_, _, err := strategy.RunDailyCandidateAndPlan("")
-			if err != nil {
-				logger.SugaredLogger.Errorf("RunDailyCandidateAndPlan: %v", err)
-			}
+			runPaperDailyPlanCronJob()
 		})
 		if err != nil {
 			logger.SugaredLogger.Errorf("InitPaperOpenBuyJobs daily: %s", err.Error())
