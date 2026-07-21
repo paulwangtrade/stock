@@ -52,6 +52,7 @@ func (a *App) startup(ctx context.Context) {
 	// 应用启动时自动创建已启用的定时任务
 	a.InitCronTasks()
 	a.InitPaperMarginDayJobs()
+	a.InitPaperOpenBuyJobs()
 
 	// 监听设置更新事件
 	runtime.EventsOn(ctx, "updateSettings", func(optionalData ...interface{}) {

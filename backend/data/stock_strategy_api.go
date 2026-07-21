@@ -44,6 +44,26 @@ func (a *StockStrategyApi) GetByID(id uint) (*models.StockStrategy, error) {
 	return &s, err
 }
 
+// GetFirstEnabled 返回第一个启用的选股策略（Phase1 宇宙源）。
+func (a *StockStrategyApi) GetFirstEnabled() (*models.StockStrategy, error) {
+	var s models.StockStrategy
+	err := db.Dao.Where("enable = ?", true).Order("id ASC").First(&s).Error
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+// GetLatestRun 返回策略最近一次运行记录。
+func (a *StockStrategyApi) GetLatestRun(strategyID uint) (*models.StockStrategyRun, error) {
+	var run models.StockStrategyRun
+	err := db.Dao.Where("strategy_id = ?", strategyID).Order("id DESC").First(&run).Error
+	if err != nil {
+		return nil, err
+	}
+	return &run, nil
+}
+
 func (a *StockStrategyApi) List(q *models.StockStrategyQuery) *models.StockStrategyPageResp {
 	var list []models.StockStrategy
 	var total int64

@@ -1,6 +1,8 @@
 package data
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
@@ -49,22 +51,32 @@ func (PaperPosition) TableName() string { return "paper_positions" }
 
 // PaperOrder 模拟委托/成交
 type PaperOrder struct {
-	ID          uint       `gorm:"primaryKey" json:"id"`
-	AccountID   uint       `gorm:"index" json:"accountId"`
-	StockCode   string     `gorm:"size:16;index" json:"stockCode"`
-	StockName   string     `gorm:"size:64" json:"stockName"`
-	Side        string     `gorm:"size:8;index" json:"side"`
-	Status      string     `gorm:"size:16;index" json:"status"`
-	Price       float64    `json:"price"`
-	Volume      int64      `json:"volume"`
-	FilledPrice float64    `json:"filledPrice"`
-	FilledVol   int64      `json:"filledVol"`
-	Fee         float64    `json:"fee"`
-	Reason      string     `gorm:"type:text" json:"reason"`
-	StrategyTag string     `gorm:"size:32" json:"strategyTag"`
-	FilledAt    *time.Time `json:"filledAt"`
-	CreatedAt   time.Time  `json:"createdAt"`
-	UpdatedAt   time.Time  `json:"updatedAt"`
+	ID               uint    `gorm:"primaryKey" json:"id"`
+	AccountID        uint    `gorm:"index" json:"accountId"`
+	StockCode        string  `gorm:"size:16;index" json:"stockCode"`
+	StockName        string  `gorm:"size:64" json:"stockName"`
+	Side             string  `gorm:"size:8;index" json:"side"`
+	Status           string  `gorm:"size:16;index" json:"status"`
+	Price            float64 `json:"price"`
+	Volume           int64   `json:"volume"`
+	FilledPrice      float64 `json:"filledPrice"` // 成交均价（avg）；全成时即成交价
+	FilledVol        int64   `json:"filledVol"`   // 累计成交量（cum qty）
+	Fee              float64 `json:"fee"`
+	Reason           string  `gorm:"type:text" json:"reason"`
+	StrategyTag      string  `gorm:"size:32" json:"strategyTag"`
+	RejectCode       string  `gorm:"size:64" json:"rejectCode"`
+	RejectReason     string  `gorm:"size:500" json:"rejectReason"`
+	FillAttemptCount int     `gorm:"default:0" json:"fillAttemptCount"`
+	ExecMode         string  `gorm:"size:32" json:"execMode"` // ioc_autofill | resting
+	// Phase2-C 身份冻结：见 paper_order_lifecycle.go 头部约定。
+	ClientOrderID   string     `gorm:"size:64;uniqueIndex:uidx_paper_order_client_order_id" json:"clientOrderId"`
+	ExecBackend     string     `gorm:"size:32;index" json:"execBackend"`     // paper | real_xxx
+	BrokerOrderID   string     `gorm:"size:64;index" json:"brokerOrderId"`   // 券商委托号；Paper 必须空
+	ExternalOrderID string     `gorm:"size:64;index" json:"externalOrderId"` // 外部单号；Paper 必须空
+	BrokerStatus    string     `gorm:"size:32" json:"brokerStatus"`          // Paper=paper；Real=细态预留
+	FilledAt        *time.Time `json:"filledAt"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	UpdatedAt       time.Time  `json:"updatedAt"`
 }
 
 func (PaperOrder) TableName() string { return "paper_orders" }
@@ -106,7 +118,17 @@ func MigratePaperTrading(database *gorm.DB) error {
 	if database == nil {
 		return fmt.Errorf("数据库未初始化")
 	}
-	if err := database.AutoMigrate(&PaperAccount{}, &PaperPosition{}, &PaperOrder{}, &PaperFill{}, &PaperEquityPoint{}); err != nil {
+	if err := database.AutoMigrate(
+		&PaperAccount{},
+		&PaperPosition{},
+		&PaperOrder{},
+		&PaperFill{},
+		&PaperEquityPoint{},
+		&PaperOrderEvent{},
+		&RealStubOrder{},
+		&RealStubReportLedger{},
+		&RealStubFill{},
+	); err != nil {
 		return err
 	}
 	return database.Transaction(func(tx *gorm.DB) error {
@@ -118,6 +140,12 @@ func MigratePaperTrading(database *gorm.DB) error {
 			return err
 		}
 		if err := tx.Exec("CREATE UNIQUE INDEX IF NOT EXISTS uidx_paper_fill_order ON paper_fills(order_id)").Error; err != nil {
+			return err
+		}
+		if err := backfillPaperOrderIdentity(tx); err != nil {
+			return err
+		}
+		if err := tx.Exec("CREATE UNIQUE INDEX IF NOT EXISTS uidx_paper_order_client_order_id ON paper_orders(client_order_id)").Error; err != nil {
 			return err
 		}
 		if err := tx.Exec(`
@@ -141,6 +169,53 @@ func EnsurePaperTradingTables() {
 			logger.SugaredLogger.Warnf("paper trading migrate: %v", err)
 		}
 	})
+}
+
+// newPaperClientOrderID 生成本地唯一 ClientOrderID（PaperClientOrderIDPrefix + 32hex）。
+func newPaperClientOrderID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("%s%d", PaperClientOrderIDPrefix, time.Now().UnixNano())
+	}
+	return PaperClientOrderIDPrefix + hex.EncodeToString(b[:])
+}
+
+// backfillPaperOrderIdentity 为旧行补齐 client_order_id / exec_backend / broker_status，再挂唯一索引。
+func backfillPaperOrderIdentity(tx *gorm.DB) error {
+	if tx == nil {
+		return nil
+	}
+	var orders []PaperOrder
+	if err := tx.Where("client_order_id = ? OR client_order_id IS NULL", "").Find(&orders).Error; err != nil {
+		return err
+	}
+	for i := range orders {
+		updates := map[string]any{}
+		if orders[i].ClientOrderID == "" {
+			updates["client_order_id"] = newPaperClientOrderID()
+		}
+		if orders[i].ExecBackend == "" {
+			updates["exec_backend"] = PaperExecBackendPaper
+		}
+		if orders[i].BrokerStatus == "" {
+			updates["broker_status"] = PaperBrokerStatusPaper
+		}
+		if len(updates) == 0 {
+			continue
+		}
+		if err := tx.Model(&PaperOrder{}).Where("id = ?", orders[i].ID).Updates(updates).Error; err != nil {
+			return err
+		}
+	}
+	if err := tx.Model(&PaperOrder{}).
+		Where("exec_backend = ? OR exec_backend IS NULL", "").
+		Update("exec_backend", PaperExecBackendPaper).Error; err != nil {
+		return err
+	}
+	// Paper 不伪造券商 ID；仅补齐通道状态占位。
+	return tx.Model(&PaperOrder{}).
+		Where("broker_status = ? OR broker_status IS NULL", "").
+		Update("broker_status", PaperBrokerStatusPaper).Error
 }
 
 type PaperTradingApi struct{}
@@ -237,6 +312,8 @@ func calcPaperSellFee(amount float64) float64 {
 }
 
 func (p *PaperTradingApi) SubmitPaperOrder(req PaperSubmitOrderReq) (*PaperOrder, error) {
+	// Paper accounting primitive. UI/API/Façade must not call directly;
+	// only PaperBroker (ExecutionPort) and test doubles may invoke this.
 	EnsurePaperTradingTables()
 	acc, err := p.GetOrCreateDefaultAccount(0)
 	if err != nil {
@@ -257,27 +334,47 @@ func (p *PaperTradingApi) SubmitPaperOrder(req PaperSubmitOrderReq) (*PaperOrder
 	}
 
 	order := PaperOrder{
-		AccountID:   req.AccountID,
-		StockCode:   req.StockCode,
-		StockName:   req.StockName,
-		Side:        req.Side,
-		Status:      "pending",
-		Price:       req.Price,
-		Volume:      req.Volume,
-		Reason:      req.Reason,
-		StrategyTag: req.StrategyTag,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		AccountID:     req.AccountID,
+		StockCode:     req.StockCode,
+		StockName:     req.StockName,
+		Side:          req.Side,
+		Status:        PaperOrderStatusPending,
+		Price:         req.Price,
+		Volume:        req.Volume,
+		Reason:        req.Reason,
+		StrategyTag:   req.StrategyTag,
+		ClientOrderID: newPaperClientOrderID(),
+		ExecBackend:   PaperExecBackendPaper,
+		// Paper 不生成券商委托号；仅占位 broker_status。
+		BrokerOrderID:   "",
+		ExternalOrderID: "",
+		BrokerStatus:    PaperBrokerStatusPaper,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+	if req.AutoFill {
+		order.ExecMode = PaperOrderExecModeIOCAutofill
 	}
 	if err := db.Dao.Create(&order).Error; err != nil {
 		return nil, err
 	}
+	if evErr := recordPaperOrderSubmitted(&order); evErr != nil {
+		logger.SugaredLogger.Warnf("record order_submitted event failed order_id=%d: %v", order.ID, evErr)
+	}
 	paperTradingEvents.OrderSubmitted(toTradeOrder(order))
 	if req.AutoFill {
 		if ferr := p.FillPaperOrder(order.ID, req.Price); ferr != nil {
+			// Fill 事务已回滚；独立事务 pending→rejected + order_rejected 审计
+			if markErr := markPaperOrderRejectedAfterAutofillFail(order.ID, ferr); markErr != nil {
+				logger.SugaredLogger.Warnf("mark paper order rejected failed order_id=%d: %v (fill_err=%v)", order.ID, markErr, ferr)
+			}
+			_ = db.Dao.First(&order, order.ID)
 			return &order, ferr
 		}
 		_ = db.Dao.First(&order, order.ID)
+		if evErr := recordPaperOrderFilled(&order); evErr != nil {
+			logger.SugaredLogger.Warnf("record order_filled event failed order_id=%d: %v", order.ID, evErr)
+		}
 	}
 	return &order, nil
 }
@@ -314,7 +411,7 @@ func (p *PaperTradingApi) FillPaperOrder(orderID uint, fillPrice float64) (err e
 					return nil
 				}
 			}
-			return fmt.Errorf("订单状态不是 pending: %s", order.Status)
+			return paperFillReject(PaperOrderRejectInvalidOrder, "订单状态不是 pending: %s", order.Status)
 		}
 		if err := tx.First(&order, orderID).Error; err != nil {
 			return err
@@ -323,7 +420,7 @@ func (p *PaperTradingApi) FillPaperOrder(orderID uint, fillPrice float64) (err e
 			fillPrice = order.Price
 		}
 		if fillPrice <= 0 {
-			return fmt.Errorf("成交价格无效")
+			return paperFillReject(PaperOrderRejectInvalidOrder, "成交价格无效")
 		}
 		if err := tx.First(&account, order.AccountID).Error; err != nil {
 			return err
@@ -337,7 +434,7 @@ func (p *PaperTradingApi) FillPaperOrder(orderID uint, fillPrice float64) (err e
 			fee := calcPaperBuyFee(amount)
 			total := amount + fee
 			if account.Cash < total {
-				return fmt.Errorf("现金不足：需要 %.2f，可用 %.2f", total, account.Cash)
+				return paperFillReject(PaperOrderRejectCashInsufficient, "现金不足：需要 %.2f，可用 %.2f", total, account.Cash)
 			}
 			account.Cash -= total
 			if errors.Is(positionQuery.Error, gorm.ErrRecordNotFound) {
@@ -370,13 +467,13 @@ func (p *PaperTradingApi) FillPaperOrder(orderID uint, fillPrice float64) (err e
 			order.Fee = fee
 		} else {
 			if errors.Is(positionQuery.Error, gorm.ErrRecordNotFound) {
-				return fmt.Errorf("无持仓")
+				return paperFillReject(PaperOrderRejectPositionInsufficient, "无持仓")
 			}
 			if positionQuery.Error != nil {
 				return positionQuery.Error
 			}
 			if position.Sellable < order.Volume {
-				return fmt.Errorf("可卖数量不足（T+1）：可卖 %d，委托 %d", position.Sellable, order.Volume)
+				return paperFillReject(PaperOrderRejectPositionInsufficient, "可卖数量不足（T+1）：可卖 %d，委托 %d", position.Sellable, order.Volume)
 			}
 			fee := calcPaperSellFee(amount)
 			account.Cash += amount - fee
@@ -425,7 +522,7 @@ func (p *PaperTradingApi) FillPaperOrder(orderID uint, fillPrice float64) (err e
 			return finalize.Error
 		}
 		if finalize.RowsAffected != 1 {
-			return fmt.Errorf("订单状态 CAS 失败")
+			return paperFillReject(PaperOrderRejectInvalidOrder, "订单状态 CAS 失败")
 		}
 		order.Status = "filled"
 		order.FilledPrice = fillPrice
@@ -445,7 +542,9 @@ func (p *PaperTradingApi) FillPaperOrder(orderID uint, fillPrice float64) (err e
 	if err != nil || !committed {
 		return err
 	}
+	// 兼容：保留 fill；生命周期：补发 order_filled（Fill 事务已提交）
 	paperTradingEvents.Filled(toTradeFill(fill))
+	paperTradingEvents.OrderFilled(toTradeOrder(order))
 	paperTradingEvents.PositionChanged(toTradePosition(changedPosition))
 	paperTradingEvents.AccountChanged(toTradeAccount(account))
 	return nil
@@ -617,21 +716,30 @@ func paperTradingID(id uint) string {
 
 func toTradeOrder(order PaperOrder) broker.TradeOrder {
 	tradeOrder := broker.TradeOrder{
-		ID:           paperTradingID(order.ID),
-		AccountID:    paperTradingID(order.AccountID),
-		StockCode:    order.StockCode,
-		StockName:    order.StockName,
-		Side:         order.Side,
-		Status:       order.Status,
-		Price:        order.Price,
-		Volume:       order.Volume,
-		FilledPrice:  order.FilledPrice,
-		FilledVolume: order.FilledVol,
-		Fee:          order.Fee,
-		Reason:       order.Reason,
-		StrategyTag:  order.StrategyTag,
-		CreatedAt:    order.CreatedAt,
-		UpdatedAt:    order.UpdatedAt,
+		ID:               paperTradingID(order.ID),
+		AccountID:        paperTradingID(order.AccountID),
+		StockCode:        order.StockCode,
+		Symbol:           order.StockCode,
+		StockName:        order.StockName,
+		Side:             order.Side,
+		Status:           order.Status,
+		Price:            order.Price,
+		Volume:           order.Volume,
+		FilledPrice:      order.FilledPrice,
+		FilledVolume:     order.FilledVol,
+		Fee:              order.Fee,
+		Reason:           order.Reason,
+		StrategyTag:      order.StrategyTag,
+		RejectCode:       order.RejectCode,
+		RejectReason:     order.RejectReason,
+		FillAttemptCount: order.FillAttemptCount,
+		ClientOrderID:    order.ClientOrderID,
+		ExecBackend:      order.ExecBackend,
+		BrokerOrderID:    order.BrokerOrderID,
+		ExternalOrderID:  order.ExternalOrderID,
+		BrokerStatus:     order.BrokerStatus,
+		CreatedAt:        order.CreatedAt,
+		UpdatedAt:        order.UpdatedAt,
 	}
 	if order.FilledAt != nil {
 		tradeOrder.FilledAt = *order.FilledAt

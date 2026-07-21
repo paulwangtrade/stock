@@ -94,6 +94,26 @@ func (b *PaperEventBridge) OrderSubmitted(order TradeOrder) {
 	})
 }
 
+// OrderFilled 生命周期：Fill 事务成功提交后发布（与 EventFill 双发兼容）。
+func (b *PaperEventBridge) OrderFilled(order TradeOrder) {
+	b.Publish(TradingEvent{
+		Type:      EventOrderFilled,
+		AccountID: order.AccountID,
+		OrderID:   order.ID,
+		Order:     &order,
+	})
+}
+
+// OrderRejected 生命周期：rejected 状态提交后发布。
+func (b *PaperEventBridge) OrderRejected(order TradeOrder) {
+	b.Publish(TradingEvent{
+		Type:      EventOrderRejected,
+		AccountID: order.AccountID,
+		OrderID:   order.ID,
+		Order:     &order,
+	})
+}
+
 func (b *PaperEventBridge) Filled(fill TradeFill) {
 	b.Publish(TradingEvent{
 		Type:      EventFill,
