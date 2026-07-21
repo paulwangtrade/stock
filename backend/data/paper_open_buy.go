@@ -287,6 +287,14 @@ func RunPaperOpenPrepare() PaperOpenBuyResult {
 		return res
 	}
 	res.PlanID = plan.ID
+	// Phase6-A6.2: only Frozen ready may be MarkChecked / treated as prepare-ok.
+	if guard := models.RequireFrozenReadyTradePlan(plan); !guard.Allowed {
+		res.Message = fmt.Sprintf("prepare blocked: reason=%s planId=%d %s",
+			guard.Reason, plan.ID, guard.Message)
+		logger.SugaredLogger.Warnf("paper open buy PREPARE blocked reason=%s planId=%d",
+			guard.Reason, plan.ID)
+		return res
+	}
 	codes := make([]string, 0, len(plan.Items))
 	for _, it := range plan.Items {
 		codes = append(codes, it.StockCode)
@@ -328,6 +336,14 @@ func RunPaperOpenBuyOnce(requireEnabled bool) PaperOpenBuyResult {
 		return res
 	}
 	res.PlanID = plan.ID
+	// Phase6-A6.2: only Frozen ready may CAS into executing.
+	if guard := models.RequireFrozenReadyTradePlan(plan); !guard.Allowed {
+		res.Message = fmt.Sprintf("skip buy: reason=%s planId=%d %s",
+			guard.Reason, plan.ID, guard.Message)
+		logger.SugaredLogger.Warnf("paper open buy SKIP reason=%s planId=%d",
+			guard.Reason, plan.ID)
+		return res
+	}
 
 	okCAS, cerr := repo.TryBeginExecute(plan.ID)
 	if cerr != nil {

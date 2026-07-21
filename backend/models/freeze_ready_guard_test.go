@@ -58,17 +58,21 @@ func TestRequireFrozenReadyTradePlan_FailedBlock(t *testing.T) {
 	require.Equal(t, ReasonPlanNotFrozen, got.Reason)
 }
 
-func TestRequireFrozenReadyTradePlan_SourceBoundaryNotWired(t *testing.T) {
-	// A6.1: independent guard only — must not be called from Execution adapters yet.
+func TestRequireFrozenReadyTradePlan_SourceBoundaryWiring(t *testing.T) {
 	require.Equal(t, "PLAN_NOT_FROZEN", ReasonPlanNotFrozen)
+	// A6.2 wires Guard only in data adapter; cron/App wrappers and Preflight stay free of direct calls.
+	adapter, err := os.ReadFile(filepath.Join("..", "data", "paper_open_buy.go"))
+	require.NoError(t, err)
+	require.Contains(t, string(adapter), "RequireFrozenReadyTradePlan",
+		"A6.2 must wire Guard in RunPaperOpenPrepare/Buy")
+
 	for _, rel := range []string{
-		filepath.Join("..", "data", "paper_open_buy.go"),
 		filepath.Join("..", "..", "app_paper_open_buy.go"),
 		filepath.Join("..", "..", "app_trading_preflight.go"),
 	} {
 		b, err := os.ReadFile(rel)
 		require.NoError(t, err, rel)
 		require.False(t, strings.Contains(string(b), "RequireFrozenReadyTradePlan"),
-			"%s must not wire A6.1 guard yet", rel)
+			"%s must not call Guard directly", rel)
 	}
 }
