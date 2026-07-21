@@ -194,6 +194,69 @@ func (r *TradePlanRepo) ApproveDraft(planID uint, approvedBy, approvalReason str
 	return res.RowsAffected == 1, nil
 }
 
+// PromoteDraftToFrozen CAS-promotes an approved draft to ready and writes freeze audit fields.
+// Supersedes other ready plans on the same trade date. Does not add a frozen status string.
+func (r *TradePlanRepo) PromoteDraftToFrozen(planID uint, freezeBy, freezeReason string, at time.Time, enableExecute bool) (bool, error) {
+	if db.Dao == nil {
+		return false, fmt.Errorf("数据库未初始化")
+	}
+	if planID == 0 {
+		return false, fmt.Errorf("plan id is required")
+	}
+	if at.IsZero() {
+		at = time.Now()
+	}
+	freezeBy = strings.TrimSpace(freezeBy)
+	freezeReason = strings.TrimSpace(freezeReason)
+
+	err := db.Dao.Transaction(func(tx *gorm.DB) error {
+		var plan models.TradePlan
+		if err := tx.Select("id", "trade_date", "status", "approved_at").First(&plan, planID).Error; err != nil {
+			return err
+		}
+		if plan.Status != models.TradePlanStatusDraft {
+			return fmt.Errorf("plan %d status=%s, want draft", planID, plan.Status)
+		}
+		if plan.ApprovedAt == nil || plan.ApprovedAt.IsZero() {
+			return fmt.Errorf("plan %d is not approved", planID)
+		}
+
+		if plan.TradeDate != "" {
+			if err := tx.Model(&models.TradePlan{}).
+				Where("trade_date = ? AND status = ? AND id <> ?", plan.TradeDate, models.TradePlanStatusReady, planID).
+				Updates(map[string]any{
+					"status":     models.TradePlanStatusSuperseded,
+					"message":    "superseded by frozen plan",
+					"updated_at": at,
+				}).Error; err != nil {
+				return err
+			}
+		}
+
+		res := tx.Model(&models.TradePlan{}).
+			Where("id = ? AND status = ? AND approved_at IS NOT NULL", planID, models.TradePlanStatusDraft).
+			Updates(map[string]any{
+				"status":         models.TradePlanStatusReady,
+				"freeze_at":      at,
+				"freeze_by":      freezeBy,
+				"freeze_reason":  freezeReason,
+				"enable_execute": enableExecute,
+				"updated_at":     at,
+			})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected != 1 {
+			return fmt.Errorf("freeze CAS miss: plan %d", planID)
+		}
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // TryBeginExecute CAS: ready -> executing，防止 cron 重复买入。
 func (r *TradePlanRepo) TryBeginExecute(planID uint) (bool, error) {
 	if db.Dao == nil {

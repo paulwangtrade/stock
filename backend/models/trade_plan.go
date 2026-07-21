@@ -53,6 +53,9 @@ type TradePlan struct {
 	PlanVersion int `json:"planVersion" gorm:"column:plan_version"`
 	// FreezeAt 非空且 Status=ready 表示已冻结；nil 的 ready 为早盘即时计划（兼容）。
 	FreezeAt *time.Time `json:"freezeAt" gorm:"column:freeze_at"`
+	// FreezeBy / FreezeReason 冻结审计（Freeze 台阶写入；不参与 IsFrozen 判定）。
+	FreezeBy     string `json:"freezeBy" gorm:"column:freeze_by;size:64"`
+	FreezeReason string `json:"freezeReason" gorm:"column:freeze_reason;size:500"`
 	// ApprovedAt / ApprovedBy / ApprovalReason 审批审计（Approve 台阶写入；Freeze 前 Status 仍为 draft）。
 	ApprovedAt     *time.Time `json:"approvedAt" gorm:"column:approved_at"`
 	ApprovedBy     string     `json:"approvedBy" gorm:"column:approved_by;size:64"`
