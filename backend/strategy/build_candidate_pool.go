@@ -11,9 +11,22 @@ import (
 	"go-stock/backend/strategy/enhancer"
 )
 
+// BuildCandidatePoolOption extends the persisted build snapshot without changing
+// the CandidatePool model or the scoring pipeline.
+type BuildCandidatePoolOption func(map[string]any)
+
+// WithCandidatePoolConfig merges observability metadata into ConfigJSON.
+func WithCandidatePoolConfig(config map[string]any) BuildCandidatePoolOption {
+	return func(target map[string]any) {
+		for key, value := range config {
+			target[key] = value
+		}
+	}
+}
+
 // BuildCandidatePool 按交易日生成候选池并落库（同日可多次，每次新建版本）。
 // 流程：Universe → items → strategyScore → SignalSnapshotEnhancer → Score → 排序 → Rank → 截断 → 保存
-func BuildCandidatePool(tradeDate string) (*models.CandidatePool, error) {
+func BuildCandidatePool(tradeDate string, options ...BuildCandidatePoolOption) (*models.CandidatePool, error) {
 	tradeDate = normalizeTradeDate(tradeDate)
 	uni := collectUniverse()
 
@@ -66,15 +79,21 @@ func BuildCandidatePool(tradeDate string) (*models.CandidatePool, error) {
 		}
 	}
 
-	cfgSnap, _ := json.Marshal(map[string]any{
-		"maxCandidates":   defaultMaxCandidates,
-		"excludeST":       true,
-		"source":          uni.Source,
-		"signalEnhanced":  enhancedFlag,
+	config := map[string]any{
+		"maxCandidates":    defaultMaxCandidates,
+		"excludeST":        true,
+		"source":           uni.Source,
+		"signalEnhanced":   enhancedFlag,
 		"signalSnapshotId": snapshotID,
-		"strategyWeight":  enhancer.StrategyWeight,
-		"signalWeight":    enhancer.SignalWeight,
-	})
+		"strategyWeight":   enhancer.StrategyWeight,
+		"signalWeight":     enhancer.SignalWeight,
+	}
+	for _, option := range options {
+		if option != nil {
+			option(config)
+		}
+	}
+	cfgSnap, _ := json.Marshal(config)
 
 	pool := &models.CandidatePool{
 		TradeDate:   tradeDate,
