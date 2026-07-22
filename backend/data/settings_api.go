@@ -44,6 +44,8 @@ type Settings struct {
 	WindowHeight int `json:"windowHeight"`
 	/** JSON：K 线买卖点信号参数，见前端 signalSettings.js */
 	SignalParams string `json:"signalParams"`
+	/** 研究页候选池：信号分过滤阈值（默认 60） */
+	CandidatePoolScoreThreshold float64 `json:"candidate_pool_score_threshold" gorm:"column:candidate_pool_score_threshold;default:60"`
 }
 
 func (receiver Settings) TableName() string {
@@ -120,15 +122,17 @@ func UpdateConfig(s *SettingConfig) string {
 			"http_proxy_enabled":         s.HttpProxyEnabled,
 			"enable_agent":               s.EnableAgent,
 			"qgqp_b_id":                  strings.TrimSpace(s.QgqpBId),
-			"window_width":               s.WindowWidth,
-			"window_height":              s.WindowHeight,
-			"signal_params":              s.SignalParams,
+			"window_width":                     s.WindowWidth,
+			"window_height":                    s.WindowHeight,
+			"signal_params":                    s.SignalParams,
+			"candidate_pool_score_threshold":   normalizeCandidatePoolThreshold(s.CandidatePoolScoreThreshold),
 		})
 
 		//更新AiConfig
 		err := updateAiConfigs(s.AiConfigs)
 		if err != nil {
 			logger.SugaredLogger.Errorf("更新AI模型服务配置失败: %v", err)
+			RefreshSettingCache()
 			return "更新AI模型服务配置失败: " + err.Error()
 		}
 	} else {
@@ -140,6 +144,7 @@ func UpdateConfig(s *SettingConfig) string {
 			return "创建配置失败: " + result.Error.Error()
 		}
 	}
+	RefreshSettingCache()
 	return "保存成功！"
 }
 
@@ -211,49 +216,6 @@ func updateAiConfigs(aiConfigs []*AIConfig) error {
 	//批量新增的配置
 	err = db.Dao.CreateInBatches(addAiConfigs, len(addAiConfigs)).Error
 	return err
-}
-
-func GetSettingConfig() *SettingConfig {
-	ensureSettingsSchema()
-	settingConfig := &SettingConfig{}
-	settings := &Settings{}
-	aiConfigs := make([]*AIConfig, 0)
-	// 处理数据库查询可能返回的空结果
-	result := db.Dao.Model(&Settings{}).First(settings)
-	if settings.OpenAiEnable {
-		// 处理AI配置查询可能出现的错误
-		result = db.Dao.Model(&AIConfig{}).Find(&aiConfigs)
-		if result.Error != nil {
-			logger.SugaredLogger.Error("查询AI配置失败:", result.Error)
-		} else if len(aiConfigs) > 0 {
-			lo.ForEach(aiConfigs, func(item *AIConfig, index int) {
-				if item.TimeOut <= 0 {
-					item.TimeOut = 60 * 5
-				}
-			})
-		}
-		if settings.CrawlTimeOut <= 0 {
-			settings.CrawlTimeOut = 60
-		}
-		if settings.KDays < 30 {
-			settings.KDays = 60
-		}
-	}
-	if settings.BrowserPath == "" {
-		settings.BrowserPath, _ = CheckBrowser()
-	}
-	if settings.BrowserPoolSize <= 0 {
-		settings.BrowserPoolSize = 1
-	}
-	settings.EnableFund = false
-	settings.EnableAgent = false
-	// 东财 qgqp_b_id 仅用户自行填写，不做任何默认填充
-	settings.QgqpBId = strings.TrimSpace(settings.QgqpBId)
-
-	settingConfig.Settings = settings
-	settingConfig.AiConfigs = aiConfigs
-
-	return settingConfig
 }
 
 const defaultMaxFollowCount = 100

@@ -21,9 +21,12 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/logger"
 	"github.com/wailsapp/wails/v2/pkg/menu"
 	"github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+
+	"go-stock/backend/api"
 )
 
 //go:embed frontend/dist
@@ -184,16 +187,22 @@ func main() {
 		HideWindowOnClose:        false,
 		EnableDefaultContextMenu: true,
 		BackgroundColour:         backgroundColour,
-		Assets:                   assets,
-		Menu:                     AppMenu,
-		Logger:                   logger.NewFileLogger("./logs/wails.log"),
-		LogLevel:                 logger.DEBUG,
-		LogLevelProduction:       logger.INFO,
-		OnStartup:                app.startup,
-		OnDomReady:               app.domReady,
-		OnBeforeClose:            app.beforeClose,
-		OnShutdown:               app.shutdown,
-		WindowStartState:         options.Normal,
+		AssetServer: &assetserver.Options{
+			Assets: assets,
+			Middleware: api.ChainAssetMiddleware(
+				api.CandidatePoolAssetMiddleware,
+				api.RealOrdersAssetMiddleware,
+			),
+		},
+		Menu:               AppMenu,
+		Logger:             logger.NewFileLogger("./logs/wails.log"),
+		LogLevel:           logger.DEBUG,
+		LogLevelProduction: logger.INFO,
+		OnStartup:          app.startup,
+		OnDomReady:         app.domReady,
+		OnBeforeClose:      app.beforeClose,
+		OnShutdown:         app.shutdown,
+		WindowStartState:   options.Normal,
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId:               "go-stock",
 			OnSecondInstanceLaunch: OnSecondInstanceLaunch,
