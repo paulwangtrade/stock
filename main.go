@@ -192,6 +192,7 @@ func main() {
 			Middleware: api.ChainAssetMiddleware(
 				api.CandidatePoolAssetMiddleware,
 				api.RealOrdersAssetMiddleware,
+				api.TradePlansAssetMiddleware,
 			),
 		},
 		Menu:               AppMenu,
