@@ -193,6 +193,7 @@ func main() {
 				api.CandidatePoolAssetMiddleware,
 				api.RealOrdersAssetMiddleware,
 				api.TradePlansAssetMiddleware,
+				api.OpsTradingDayAssetMiddleware,
 			),
 		},
 		Menu:               AppMenu,
@@ -287,6 +288,14 @@ func AutoMigrate() {
 	} else {
 		log.SugaredLogger.Infof("startup schema validation READY version=%d", validation.CurrentVersion)
 	}
+	// Wire readonly TradingDayStatus schema provider (re-validates on each query; no trading side effects).
+	data.SetTradingDaySchemaStatusProvider(func() data.TradingDaySchemaView {
+		v := validateApplicationSchema()
+		return data.TradingDaySchemaView{
+			RegistryVersion:  v.CurrentVersion,
+			ValidationStatus: v.Status,
+		}
+	})
 
 	go data.NewStockDataApi().BackfillMissingFollowPrices()
 
