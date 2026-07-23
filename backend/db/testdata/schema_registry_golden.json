@@ -9,6 +9,11 @@
       "version": 2,
       "name": "add_candidate_decision_id",
       "checksum": "7f2656c5217b44b6ceb80a331dc201286d62b433f04f860d964c3a081d235137"
+    },
+    {
+      "version": 3,
+      "name": "add_trade_plan_lifecycle_columns",
+      "checksum": "a69c4c22b2c21d6743df8d38be9eda03b25b8b6a5903060f6e44fafed06bdff1"
     }
   ],
   "requirements": [
@@ -23,7 +28,20 @@
     },
     {
       "table": "trade_plans",
-      "columns": ["id", "trade_date", "status", "enable_execute"]
+      "columns": [
+        "id",
+        "trade_date",
+        "status",
+        "enable_execute",
+        "plan_version",
+        "freeze_at",
+        "freeze_by",
+        "freeze_reason",
+        "approved_at",
+        "approved_by",
+        "approval_reason",
+        "source_session"
+      ]
     },
     {
       "table": "trade_plan_items",

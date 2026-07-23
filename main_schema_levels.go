@@ -154,7 +154,45 @@ func applicationMigrationRegistry() (*db.MigrationRegistry, error) {
 				return nil
 			},
 		},
+		db.Migration{
+			Version:  3,
+			Name:     "add_trade_plan_lifecycle_columns",
+			Checksum: schemaMigrationChecksum("v3:trade_plans:add:plan_version,freeze_at,freeze_by,freeze_reason,approved_at,approved_by,approval_reason,source_session"),
+			Up: func(database *gorm.DB) error {
+				return migrateTradePlanLifecycleColumns(database)
+			},
+		},
 	)
+}
+
+// tradePlanLifecycleFields Phase6-A 生命周期列（GORM 字段名，供幂等 AddColumn）。
+var tradePlanLifecycleFields = []string{
+	"PlanVersion",
+	"FreezeAt",
+	"FreezeBy",
+	"FreezeReason",
+	"ApprovedAt",
+	"ApprovedBy",
+	"ApprovalReason",
+	"SourceSession",
+}
+
+func migrateTradePlanLifecycleColumns(database *gorm.DB) error {
+	if database == nil {
+		return fmt.Errorf("数据库未初始化")
+	}
+	if !database.Migrator().HasTable(&models.TradePlan{}) {
+		return fmt.Errorf("trade_plans table is missing")
+	}
+	for _, field := range tradePlanLifecycleFields {
+		if database.Migrator().HasColumn(&models.TradePlan{}, field) {
+			continue
+		}
+		if err := database.Migrator().AddColumn(&models.TradePlan{}, field); err != nil {
+			return fmt.Errorf("add trade_plans.%s: %w", field, err)
+		}
+	}
+	return nil
 }
 
 func applicationSchemaRequirements() []db.SchemaRequirement {
@@ -165,7 +203,14 @@ func applicationSchemaRequirements() []db.SchemaRequirement {
 			Columns: []string{"id", "pool_id", "stock_code", "rank", "score", "decision_id"},
 			Indexes: []string{"idx_candidate_pool_items_decision_id"},
 		},
-		{Table: "trade_plans", Columns: []string{"id", "trade_date", "status", "enable_execute"}},
+		{
+			Table: "trade_plans",
+			Columns: []string{
+				"id", "trade_date", "status", "enable_execute",
+				"plan_version", "freeze_at", "freeze_by", "freeze_reason",
+				"approved_at", "approved_by", "approval_reason", "source_session",
+			},
+		},
 		{Table: "trade_plan_items", Columns: []string{"id", "plan_id", "status", "order_id", "fill_id"}},
 		{Table: "paper_orders", Columns: []string{"id", "client_order_id", "status"}},
 		{Table: "paper_fills", Columns: []string{"id", "order_id"}},
