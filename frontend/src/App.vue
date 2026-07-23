@@ -169,6 +169,21 @@ const menuOptions = ref([
         h(
             RouterLink,
             {
+              to: { name: 'tradePlanUpcoming' },
+              onClick: () => {
+                activeKey.value = 'tradePlanUpcoming'
+              },
+            },
+            { default: () => '明日交易计划' },
+        ),
+    key: 'tradePlanUpcoming',
+    icon: renderIcon(TimeOutline),
+  },
+  {
+    label: () =>
+        h(
+            RouterLink,
+            {
               to: {
                 name: 'stockScreen',
                 params: {},
@@ -758,7 +773,7 @@ const menuOptions = ref([
 watch(
   () => router.currentRoute.value.name,
   (name) => {
-    const directKeys = new Set(['stock', 'holdings', 'holdingT', 'quantTrading', 'stockScreen', 'market', 'fund', 'agent', 'research', 'settings'])
+    const directKeys = new Set(['stock', 'holdings', 'holdingT', 'quantTrading', 'tradePlanUpcoming', 'stockScreen', 'market', 'fund', 'agent', 'research', 'settings'])
     if (directKeys.has(String(name))) activeKey.value = String(name)
     if (name === 'cronTasks') activeKey.value = 'research'
   },
