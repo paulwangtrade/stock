@@ -2,9 +2,12 @@ package data
 
 import (
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
+
+	"go-stock/backend/marketdata"
 
 	"github.com/duke-git/lancet/v2/convertor"
 	"github.com/tidwall/gjson"
@@ -48,38 +51,61 @@ func normalizeKLineType(s string) string {
 	}
 }
 
+// resolveEastMoneyKLineAdjust 与迁移前 GetAdjustedKLine / GetKLineData 分支语义对齐。
+func resolveEastMoneyKLineAdjust(kType, adjustFlag string) string {
+	adj := strings.TrimSpace(strings.ToLower(adjustFlag))
+	if adj != "" && (kType == "101" || kType == "day") {
+		if adj != "qfq" && adj != "hfq" {
+			return "qfq"
+		}
+		return adj
+	}
+	return adj
+}
+
+// EastMoneyKLineSection 渲染东财 K 线 markdown。
+// Phase7-A2-1：取数经 marketdata.KlineService（EastMoneyKlineAdapter），校验仍用 EastMoneyKLineApi。
+// api 可为 nil（将按需创建仅用于 ValidateStockCode）；svc 为 nil 时回退到 GetKlineService()。
 func EastMoneyKLineSection(api *EastMoneyKLineApi, stockCode, kLineType, adjustFlag string, limit int) string {
+	return EastMoneyKLineSectionWithService(api, GetKlineService(), stockCode, kLineType, adjustFlag, limit)
+}
+
+// EastMoneyKLineSectionWithService 显式注入 KlineService（供 Agent wrapper / 测试使用）。
+func EastMoneyKLineSectionWithService(api *EastMoneyKLineApi, svc marketdata.KlineService, stockCode, kLineType, adjustFlag string, limit int) string {
+	if api == nil {
+		api = NewEastMoneyKLineApi(GetSettingConfig())
+	}
 	if !api.ValidateStockCode(stockCode) {
 		return stockCode + "：股票代码无效，请使用正确格式（如 000001.SZ、600000.SH、00700.HK）。"
 	}
-	kType := normalizeKLineType(kLineType)
-	var list *[]KLineData
-	if adjustFlag != "" && (kType == "101" || kType == "day") {
-		adj := strings.TrimSpace(strings.ToLower(adjustFlag))
-		if adj != "qfq" && adj != "hfq" {
-			adj = "qfq"
-		}
-		list = api.GetAdjustedKLine(stockCode, adj, int(limit))
-	} else {
-		list = api.GetKLineData(stockCode, kType, strings.TrimSpace(adjustFlag), int(limit))
+	if svc == nil {
+		return stockCode + "：KlineService 未初始化，无法获取 K 线。"
 	}
-	if list == nil || len(*list) == 0 {
+	kType := normalizeKLineType(kLineType)
+	adj := resolveEastMoneyKLineAdjust(kType, adjustFlag)
+	bars, err := svc.GetBars(stockCode, kType, adj, limit, time.Time{})
+	if err != nil {
+		if errors.Is(err, marketdata.ErrNoData) {
+			return stockCode + "：未获取到 K 线数据，请检查股票代码与类型。"
+		}
+		return stockCode + "：获取 K 线失败：" + err.Error()
+	}
+	if len(bars) == 0 {
 		return stockCode + "：未获取到 K 线数据，请检查股票代码与类型。"
 	}
-	rows := make([]map[string]any, 0, len(*list))
-	for _, k := range *list {
-		vol, _ := convertor.ToFloat(k.Volume)
+	rows := make([]map[string]any, 0, len(bars))
+	for _, bar := range bars {
 		rows = append(rows, map[string]any{
-			"日期":      k.Day,
-			"开盘价":     k.Open,
-			"收盘价":     k.Close,
-			"最高价":     k.High,
-			"最低价":     k.Low,
-			"成交量(万手)": vol / 10000 / 100,
-			"涨跌幅(%)":  k.ChangePercent,
-			"涨跌额":     k.ChangeValue,
-			"振幅(%)":   k.Amplitude,
-			"换手率(%)":  k.TurnoverRate,
+			"日期":      bar.TimeText,
+			"开盘价":     convertor.ToString(bar.Open),
+			"收盘价":     convertor.ToString(bar.Close),
+			"最高价":     convertor.ToString(bar.High),
+			"最低价":     convertor.ToString(bar.Low),
+			"成交量(万手)": bar.Volume / 10000 / 100,
+			"涨跌幅(%)":  convertor.ToString(bar.ChangePercent),
+			"涨跌额":     convertor.ToString(bar.ChangeValue),
+			"振幅(%)":   convertor.ToString(bar.Amplitude),
+			"换手率(%)":  convertor.ToString(bar.TurnoverRate),
 		})
 	}
 	jsonData, _ := json.Marshal(rows)
@@ -91,7 +117,7 @@ func EastMoneyKLineSection(api *EastMoneyKLineApi, stockCode, kLineType, adjustF
 	if typeLabel == "" {
 		typeLabel = kType
 	}
-	return "\r\n### " + stockCode + " " + typeLabel + " K线（共 " + convertor.ToString(len(*list)) + " 条）\r\n" + markdownTable + "\r\n"
+	return "\r\n### " + stockCode + " " + typeLabel + " K线（共 " + convertor.ToString(len(bars)) + " 条）\r\n" + markdownTable + "\r\n"
 }
 
 func handleGetEastMoneyKLine(o *OpenAi, funcArguments string, ctx *ToolContext) error {
@@ -117,9 +143,10 @@ func handleGetEastMoneyKLine(o *OpenAi, funcArguments string, ctx *ToolContext) 
 		"time":              time.Now().Format(time.DateTime),
 	}
 
+	svc := GetKlineService()
 	res := parallelStockToolSections(codes, func(stockCode string) string {
 		api := NewEastMoneyKLineApi(GetSettingConfig())
-		return EastMoneyKLineSection(api, stockCode, kLineType, adjustFlag, limit)
+		return EastMoneyKLineSectionWithService(api, svc, stockCode, kLineType, adjustFlag, limit)
 	})
 	appendToolMessages(ctx.Messages, ctx.CurrentAIContent.String(), ctx.ReasoningContentText.String(),
 		ctx.CurrentCallID, ctx.FuncName, funcArguments, res)

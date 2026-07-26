@@ -11,6 +11,7 @@ import (
 	"go-stock/backend/data"
 	"go-stock/backend/db"
 	"go-stock/backend/logger"
+	"go-stock/backend/marketdata/adapter"
 	"go-stock/backend/models"
 	"go-stock/backend/util"
 
@@ -1268,12 +1269,13 @@ func GetAllDataTools() []tool.BaseTool {
 				return "参数 stockCode 或 stockCodes 不能为空", nil
 			}
 			var results []string
+			svc := adapter.NewEastMoneyKlineAdapter()
 			for _, code := range codes {
 				if code == "" {
 					continue
 				}
 				api := data.NewEastMoneyKLineApi(data.GetSettingConfig())
-				res := data.EastMoneyKLineSection(api, code, kLineType, adjustFlag, limit)
+				res := data.EastMoneyKLineSectionWithService(api, svc, code, kLineType, adjustFlag, limit)
 				results = append(results, res)
 			}
 			return strings.Join(results, "\n"), nil
