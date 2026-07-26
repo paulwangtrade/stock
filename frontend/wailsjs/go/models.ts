@@ -2144,6 +2144,50 @@ export namespace models {
 		    return a;
 		}
 	}
+	export class SignalScanTaskView {
+	    taskId: string;
+	    status: string;
+	    session: string;
+	    strategyId: string;
+	    strategyName: string;
+	    startTime: string;
+	    endTime?: string;
+	    durationMs: number;
+	    snapshotId?: number;
+	    hitTotal: number;
+	    scannedTotal: number;
+	    message: string;
+	    error?: string;
+	    phase?: string;
+	    done: number;
+	    total: number;
+	    tradeDate?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new SignalScanTaskView(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.taskId = source["taskId"];
+	        this.status = source["status"];
+	        this.session = source["session"];
+	        this.strategyId = source["strategyId"];
+	        this.strategyName = source["strategyName"];
+	        this.startTime = source["startTime"];
+	        this.endTime = source["endTime"];
+	        this.durationMs = source["durationMs"];
+	        this.snapshotId = source["snapshotId"];
+	        this.hitTotal = source["hitTotal"];
+	        this.scannedTotal = source["scannedTotal"];
+	        this.message = source["message"];
+	        this.error = source["error"];
+	        this.phase = source["phase"];
+	        this.done = source["done"];
+	        this.total = source["total"];
+	        this.tradeDate = source["tradeDate"];
+	    }
+	}
 	export class SignalScanSnapshot {
 	    id: number;
 	    // Go type: time

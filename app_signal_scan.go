@@ -20,7 +20,8 @@ func (a *App) emitSignalScanProgress(p data.SignalScanProgress) {
 	})
 }
 
-// RunSignalScanSnapshot manually runs a full-market signal snapshot (midday | close).
+// RunSignalScanSnapshot synchronously runs a full-market signal snapshot (legacy / tests).
+// Prefer StartSignalScanSnapshot for UI so the frontend is not blocked for tens of minutes.
 func (a *App) RunSignalScanSnapshot(session string, signalParamsJson string, strategyID string, strategyName string) (*models.SignalScanSnapshot, error) {
 	api := data.NewSignalScanApi()
 	snap, err := api.RunFullMarketSnapshot(session, signalParamsJson, strategyID, strategyName, func(p data.SignalScanProgress) {
@@ -38,6 +39,41 @@ func (a *App) RunSignalScanSnapshot(session string, signalParamsJson string, str
 		})
 	}
 	return snap, nil
+}
+
+// StartSignalScanSnapshot starts a full-market snapshot job and returns immediately.
+func (a *App) StartSignalScanSnapshot(session string, signalParamsJson string, strategyID string, strategyName string) (*data.SignalScanTaskView, error) {
+	api := data.NewSignalScanApi()
+	task, err := api.StartFullMarketSnapshotAsync(session, signalParamsJson, strategyID, strategyName,
+		func(p data.SignalScanProgress) {
+			a.emitSignalScanProgress(p)
+		},
+		func(snap *models.SignalScanSnapshot, runErr error) {
+			if a.ctx == nil {
+				return
+			}
+			payload := map[string]any{"ok": runErr == nil}
+			if runErr != nil {
+				payload["error"] = runErr.Error()
+			}
+			if snap != nil {
+				payload["id"] = snap.ID
+				payload["tradeDate"] = snap.TradeDate
+				payload["session"] = snap.Session
+				payload["hitTotal"] = snap.HitTotal
+			}
+			runtime.EventsEmit(a.ctx, "signalScanDone", payload)
+		},
+	)
+	return task, err
+}
+
+func (a *App) GetSignalScanTask(taskID string) *data.SignalScanTaskView {
+	return data.GetSignalScanTask(taskID)
+}
+
+func (a *App) GetLatestSignalScanTask() *data.SignalScanTaskView {
+	return data.GetLatestSignalScanTask()
 }
 
 func (a *App) IsSignalScanRunning() bool {

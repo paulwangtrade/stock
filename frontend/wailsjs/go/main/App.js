@@ -294,6 +294,10 @@ export function GetLatestSignalScanSnapshotByStrategy(arg1, arg2, arg3) {
   return window['go']['main']['App']['GetLatestSignalScanSnapshotByStrategy'](arg1, arg2, arg3);
 }
 
+export function GetLatestSignalScanTask() {
+  return window['go']['main']['App']['GetLatestSignalScanTask']();
+}
+
 export function GetMoneyRankSina(arg1) {
   return window['go']['main']['App']['GetMoneyRankSina'](arg1);
 }
@@ -316,6 +320,10 @@ export function GetPromptTemplates(arg1, arg2) {
 
 export function GetSignalScanSnapshotDetail(arg1) {
   return window['go']['main']['App']['GetSignalScanSnapshotDetail'](arg1);
+}
+
+export function GetSignalScanTask(arg1) {
+  return window['go']['main']['App']['GetSignalScanTask'](arg1);
 }
 
 export function GetSponsorInfo() {
@@ -584,6 +592,10 @@ export function ShareAnalysis(arg1, arg2) {
 
 export function ShareText(arg1, arg2) {
   return window['go']['main']['App']['ShareText'](arg1, arg2);
+}
+
+export function StartSignalScanSnapshot(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['StartSignalScanSnapshot'](arg1, arg2, arg3, arg4);
 }
 
 export function StockNotice(arg1) {

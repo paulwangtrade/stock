@@ -152,6 +152,8 @@ export function GetLatestSignalScanSnapshot(arg1:string,arg2:string):Promise<mod
 
 export function GetLatestSignalScanSnapshotByStrategy(arg1:string,arg2:string,arg3:string):Promise<models.SignalScanSnapshot>;
 
+export function GetLatestSignalScanTask():Promise<data.SignalScanTaskView>;
+
 export function GetMoneyRankSina(arg1:string):Promise<Array<Record<string, any>>>;
 
 export function GetPaperAccountSnapshot(arg1:number):Promise<data.PaperAccountSnapshot>;
@@ -163,6 +165,8 @@ export function GetPromptTemplateList(arg1:models.PromptTemplateQuery):Promise<m
 export function GetPromptTemplates(arg1:string,arg2:string):Promise<any>;
 
 export function GetSignalScanSnapshotDetail(arg1:number):Promise<models.SignalScanResultPayload>;
+
+export function GetSignalScanTask(arg1:string):Promise<data.SignalScanTaskView>;
 
 export function GetSponsorInfo():Promise<Record<string, any>>;
 
@@ -297,6 +301,8 @@ export function SetPaperMarkPrice(arg1:number,arg2:string,arg3:number):Promise<v
 export function ShareAnalysis(arg1:string,arg2:string):Promise<string>;
 
 export function ShareText(arg1:string,arg2:string):Promise<string>;
+
+export function StartSignalScanSnapshot(arg1:string,arg2:string,arg3:string,arg4:string):Promise<data.SignalScanTaskView>;
 
 export function StockNotice(arg1:string):Promise<Array<any>>;
 

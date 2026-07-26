@@ -13,7 +13,9 @@ import {
   GetStockEastMoneyKLine,
   GetLatestSignalScanSnapshotByStrategy,
   ParseSignalScanSnapshotPayload,
-  RunSignalScanSnapshot,
+  StartSignalScanSnapshot,
+  GetLatestSignalScanTask,
+  GetSignalScanTask,
   ListSignalScanSnapshots,
   IsSignalScanRunning,
 } from "../../wailsjs/go/main/App";
@@ -82,12 +84,22 @@ onMounted(() => {
   EventsOn('allStockListRefresh', handleExternalRefresh)
   EventsOn('signalScanProgress', onBackendSignalScanProgress)
   EventsOn('signalScanDone', onBackendSignalScanDone)
+  refreshScanTaskView().then((task) => {
+    const st = String(task?.status || '').toLowerCase()
+    if (st === 'running' || st === 'pending') {
+      backendScanLoading.value = true
+      signalScanLoading.value = true
+      signalScanStatus.value = '后台扫描进行中...'
+      startScanTaskPoll()
+    }
+  })
 })
 
 onBeforeUnmount(() => {
   EventsOff('allStockListRefresh')
   EventsOff('signalScanProgress')
   EventsOff('signalScanDone')
+  stopScanTaskPoll()
 })
 
 const dataRef = ref([])
@@ -97,7 +109,9 @@ const signalByCode = ref(new Map())
 const signalScanLoading = ref(false)
 const signalScanStatus = ref('')
 const signalScanProgress = ref({ phase: '', done: 0, total: 0 })
-/** 鍏ㄥ競鍦轰俊鍙锋壂鎻忓苟鍙戯紙閫愬彧鎷夋棩 K锛岃繃楂樺彲鑳借Е鍙戜笢璐㈤檺娴侊級 */
+/** Phase6.7-G: async snapshot task view */
+const scanTaskView = ref(null)
+let scanTaskPollTimer = null
 const SIGNAL_SCAN_CONCURRENCY = 24
 const SIGNAL_PAGE_SCAN_CONCURRENCY = 12
 const signalFilteredRows = ref([])
@@ -106,6 +120,7 @@ const snapshotTradeDate = ref('')
 const selectedSnapshotHistoryValue = ref(null)
 const snapshotMeta = ref(null)
 const signalDataSource = ref('')
+const lastSnapshotPayload = ref(null)
 const backendScanLoading = ref(false)
 const snapshotHistoryOptions = ref([])
 const selectableSnapshotHistoryOptions = computed(() => snapshotHistoryOptions.value.filter((item) => item?.value))
@@ -167,6 +182,34 @@ const snapshotMetaLabel = computed(() => {
   if (!snapshotMeta.value) return ''
   const s = snapshotMeta.value.session === 'midday' ? '午盘' : '盘后'
   return `${snapshotMeta.value.tradeDate} ${s} · 扫 ${snapshotMeta.value.scannedTotal} 只 · 命中 ${snapshotMeta.value.hitTotal} 只`
+})
+
+const scanTaskStatusLabel = computed(() => {
+  const st = String(scanTaskView.value?.status || '').toLowerCase()
+  if (st === 'pending') return '未运行(排队)'
+  if (st === 'running') return '运行中'
+  if (st === 'completed') return '已完成'
+  if (st === 'failed') return '失败'
+  return '未运行'
+})
+
+const scanTaskStatusType = computed(() => {
+  const st = String(scanTaskView.value?.status || '').toLowerCase()
+  if (st === 'running' || st === 'pending') return 'warning'
+  if (st === 'completed') return 'success'
+  if (st === 'failed') return 'error'
+  return 'default'
+})
+
+const scanTaskSummaryText = computed(() => {
+  const task = scanTaskView.value
+  if (!task) return ''
+  const parts = []
+  if (task.startTime) parts.push(`开始 ${task.startTime}`)
+  if (task.durationMs > 0) parts.push(`耗时 ${(Number(task.durationMs) / 1000).toFixed(0)}s`)
+  if (task.hitTotal != null && task.status === 'completed') parts.push(`命中 ${task.hitTotal}`)
+  if (task.message) parts.push(task.message)
+  return parts.join(' · ')
 })
 
 const starBacktestNoDataHint = computed(() => {
@@ -471,6 +514,7 @@ function hitToRow(hit) {
 }
 
 function applySnapshotPayload(payload, snap) {
+  lastSnapshotPayload.value = payload || null
   const mapObj = {}
   for (const hit of payload?.items || []) {
     if (!hit?.SECUCODE || !SCREEN_SNAPSHOT_SIGNAL_TAG_SET.has(normalizeScreenSignalTag(hit.tag))) continue
@@ -486,9 +530,11 @@ function applySnapshotPayload(payload, snap) {
   if (industry) {
     rows = rows.filter((r) => r.INDUSTRY === industry)
   }
-  signalFilteredRows.value = rows.filter((row) =>
-    passesSignalTagFilter(row, mapObj[row.SECUCODE], tags, signalFilterPassOptions.value),
-  )
+  signalFilteredRows.value = tags.length
+    ? rows.filter((row) =>
+        passesSignalTagFilter(row, mapObj[row.SECUCODE], tags, signalFilterPassOptions.value),
+      )
+    : rows
   paginationReactive.page = 1
   paginationReactive.itemCount = signalFilteredRows.value.length
   paginationReactive.pageCount = Math.max(1, Math.ceil(signalFilteredRows.value.length / paginationReactive.pageSize))
@@ -496,7 +542,6 @@ function applySnapshotPayload(payload, snap) {
   signalDataSource.value = 'snapshot'
   dataRefreshKey.value++
 }
-
 async function refreshSnapshotBanner() {
   try {
     if (!selectedSnapshotHistoryValue.value) {
@@ -545,6 +590,7 @@ function onSnapshotHistoryChange(val) {
     snapshotTradeDate.value = ''
     snapshotSession.value = 'close'
     snapshotMeta.value = null
+    lastSnapshotPayload.value = null
     signalDataSource.value = ''
     if (hasSignalFilter.value) refreshStocks()
     return
@@ -606,15 +652,73 @@ function onBackendSignalScanProgress(p) {
   signalScanProgress.value = { phase: p.phase || 'scan', done: p.done || 0, total: p.total || 0 }
   const phaseLabel = p.phase === 'fetch' ? '拉取名单' : p.phase === 'compute' ? '计算信号' : '扫描'
   signalScanStatus.value = `${phaseLabel} ${p.done || 0}/${p.total || 0}...`
+  if (scanTaskView.value) {
+    scanTaskView.value = {
+      ...scanTaskView.value,
+      status: 'running',
+      phase: p.phase || scanTaskView.value.phase,
+      done: p.done || 0,
+      total: p.total || 0,
+    }
+  }
 }
 
-async function onBackendSignalScanDone() {
+function stopScanTaskPoll() {
+  if (scanTaskPollTimer) {
+    clearInterval(scanTaskPollTimer)
+    scanTaskPollTimer = null
+  }
+}
+
+async function refreshScanTaskView() {
+  try {
+    const id = scanTaskView.value?.taskId
+    const task = id ? await GetSignalScanTask(id) : await GetLatestSignalScanTask()
+    if (task) scanTaskView.value = task
+    return task
+  } catch {
+    return null
+  }
+}
+
+function startScanTaskPoll() {
+  stopScanTaskPoll()
+  scanTaskPollTimer = setInterval(async () => {
+    const task = await refreshScanTaskView()
+    const st = String(task?.status || '').toLowerCase()
+    if (st === 'completed' || st === 'failed' || !st) {
+      stopScanTaskPoll()
+      if (st !== 'running' && st !== 'pending') {
+        backendScanLoading.value = false
+        if (st !== 'completed') {
+          signalScanLoading.value = false
+          signalScanStatus.value = ''
+        }
+      }
+    }
+  }, 2000)
+}
+
+async function onBackendSignalScanDone(ev) {
   backendScanLoading.value = false
   signalScanLoading.value = false
   signalScanStatus.value = ''
+  stopScanTaskPoll()
+  await refreshScanTaskView()
   await loadSnapshotHistoryOptions()
-  if (hasSignalFilter.value && selectedSnapshotHistoryValue.value) {
+  if (ev?.ok === false || scanTaskView.value?.status === 'failed') {
+    message.error(ev?.error || scanTaskView.value?.error || '快照扫描失败')
+    return
+  }
+  const tradeDate = ev?.tradeDate || scanTaskView.value?.tradeDate
+  const session = ev?.session || scanTaskView.value?.session || snapshotSession.value
+  if (tradeDate) {
+    selectedSnapshotHistoryValue.value = `${tradeDate}|${session}`
+    snapshotTradeDate.value = tradeDate
+    snapshotSession.value = session
     await tryLoadSignalSnapshot()
+    message.success(`快照完成：命中 ${ev?.hitTotal ?? scanTaskView.value?.hitTotal ?? 0} 只有信号`)
+  } else if (signalDataSource.value === 'snapshot' || hasSignalFilter.value) {
     message.success('全市场信号快照已更新')
   }
 }
@@ -622,40 +726,98 @@ async function onBackendSignalScanDone() {
 async function runBackendSnapshotScan() {
   if (await IsSignalScanRunning()) {
     message.warning('后台扫描进行中，请稍候')
+    await refreshScanTaskView()
+    startScanTaskPoll()
     return
   }
   backendScanLoading.value = true
   signalScanLoading.value = true
-  signalScanStatus.value = '后台全市场扫描启动...'
+  signalScanStatus.value = '已提交后台全市场扫描...'
   try {
     const paramsJson = selectedScreenStrategyParams.value ? serializeSignalParams(selectedScreenStrategyParams.value) : ''
-    const snap = await RunSignalScanSnapshot(snapshotSession.value, paramsJson, selectedScreenStrategyId.value, selectedScreenStrategy.value?.name || '')
-    if (snap) {
-      if (selectedSnapshotHistoryValue.value) {
-        selectedSnapshotHistoryValue.value = `${snap.tradeDate}|${snap.session || snapshotSession.value}`
-        snapshotTradeDate.value = snap.tradeDate || ''
-        snapshotSession.value = snap.session || snapshotSession.value
-        const payload = await ParseSignalScanSnapshotPayload(snap)
-        applySnapshotPayload(payload, snap)
-      }
-      message.success(`快照完成：命中 ${snap.hitTotal} 只有信号`)
-      await loadSnapshotHistoryOptions()
-    }
+    const task = await StartSignalScanSnapshot(
+      snapshotSession.value,
+      paramsJson,
+      selectedScreenStrategyId.value,
+      selectedScreenStrategy.value?.name || '',
+    )
+    scanTaskView.value = task
+    message.success('快照任务已创建，正在后台执行（可继续浏览；完成后自动刷新）')
+    startScanTaskPoll()
   } catch (err) {
-    message.error('快照扫描失败: ' + (err?.message || err))
-  } finally {
     backendScanLoading.value = false
     signalScanLoading.value = false
     signalScanStatus.value = ''
+    await refreshScanTaskView()
+    message.error('无法启动快照任务: ' + (err?.message || err))
   }
+}
+
+/** Phase6.7-G: reuse snapshot only; never auto full-market rescan. */
+async function ensureSnapshotForSignalFilter() {
+  if (signalDataSource.value === 'snapshot' && lastSnapshotPayload.value) {
+    applySnapshotPayload(lastSnapshotPayload.value, snapshotMeta.value)
+    return true
+  }
+  if (selectedSnapshotHistoryValue.value) {
+    const loaded = await tryLoadSignalSnapshot()
+    if (loaded) return true
+  }
+  try {
+    const snap = await GetLatestSignalScanSnapshotByStrategy(
+      '',
+      snapshotSession.value || 'close',
+      selectedScreenStrategyId.value || 'default',
+    )
+    if (snap?.id) {
+      selectedSnapshotHistoryValue.value = `${snap.tradeDate}|${snap.session || snapshotSession.value}`
+      snapshotTradeDate.value = snap.tradeDate || ''
+      snapshotSession.value = snap.session || snapshotSession.value
+      const payload = await ParseSignalScanSnapshotPayload(snap)
+      if (payload?.items?.length || payload?.scannedTotal) {
+        applySnapshotPayload(payload, snap)
+        await loadSnapshotHistoryOptions()
+        return true
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  message.warning('需要先生成快照后再按信号筛选（已禁止自动全市场重扫）')
+  return false
 }
 
 async function loadLiveSignalScan() {
   snapshotMeta.value = null
   snapshotTradeDate.value = ''
   selectedSnapshotHistoryValue.value = null
+  lastSnapshotPayload.value = null
   signalDataSource.value = 'live'
-  await loadWithSignalFilter()
+  signalFilteredRows.value = []
+  signalByCode.value = new Map()
+  if (hasSignalFilter.value) {
+    message.info('已退出快照视图。按信号筛选请选择历史快照或先「生成快照」。')
+  }
+  loadingRef.value = true
+  try {
+    const pageSize = paginationReactive.pageSize
+    const res = await GetAllStocks(1, pageSize, paginationReactive.keyword, filterIndustry.value || '', '', '', technicalIndicatorReactive)
+    if (res?.result) {
+      const rows = filterRowsByMarketSegment(Array.isArray(res.result.data) ? res.result.data : [])
+      dataRef.value = rows
+      dataRefreshKey.value++
+      paginationReactive.page = 1
+      paginationReactive.pageCount = Math.max(1, Math.ceil((res.result.count || rows.length) / pageSize))
+      paginationReactive.itemCount = res.result.count ?? rows.length
+      if (rows.length && !hasSignalFilter.value) {
+        scanPageSignals(rows)
+      }
+    }
+  } catch (err) {
+    message.error('获取股票数据失败: ' + (err?.message || err))
+  } finally {
+    loadingRef.value = false
+  }
 }
 
 const vipLevel = ref('')
@@ -1124,13 +1286,8 @@ async function loadStocks(page, pageSize) {
   loadingRef.value = true
   try {
     if (hasSignalFilter.value) {
-      if (selectedSnapshotHistoryValue.value) {
-        const loaded = await tryLoadSignalSnapshot()
-        if (loaded) return
-      }
-      await loadWithSignalFilter()
-      signalDataSource.value = 'live'
-      snapshotMeta.value = null
+      // Phase6.7-G: snapshot reuse only
+      await ensureSnapshotForSignalFilter()
       return
     }
     signalFilteredRows.value = []
@@ -1366,6 +1523,7 @@ function handleReset(){
   filterMarketSegment.value = ''
   filterSignalTags.value = []
   signalFilteredRows.value = []
+  lastSnapshotPayload.value = null
   paginationReactive.keyword = ''
 }
 
@@ -1534,9 +1692,13 @@ const toNumber = (value, defaultValue = 0) => {
         clearable
         @update:value="onSnapshotHistoryChange"
       />
-      <n-button tertiary type="warning" :loading="backendScanLoading || signalScanLoading" @click="runBackendSnapshotScan">
+      <n-button tertiary type="warning" :loading="backendScanLoading || (signalScanLoading && !!scanTaskView)" @click="runBackendSnapshotScan">
         生成快照
       </n-button>
+      <n-tag size="small" :type="scanTaskStatusType" :bordered="false">
+        生成状态：{{ scanTaskStatusLabel }}
+      </n-tag>
+      <n-text v-if="scanTaskSummaryText" depth="3" class="snapshot-hint">{{ scanTaskSummaryText }}</n-text>
       <n-button
         v-if="snapshotMeta && signalDataSource === 'snapshot'"
         tertiary
@@ -1546,11 +1708,11 @@ const toNumber = (value, defaultValue = 0) => {
       >
         星标回测
       </n-button>
-      <n-button v-if="hasSignalFilter && snapshotMeta" quaternary @click="loadLiveSignalScan">实时扫描</n-button>
+      <n-button v-if="signalDataSource === 'snapshot' && snapshotMeta" quaternary @click="loadLiveSignalScan">退出快照</n-button>
       <n-tag v-if="snapshotMeta && signalDataSource === 'snapshot'" type="success" size="small" :bordered="false">
         {{ snapshotMetaLabel }}
       </n-tag>
-      <n-text v-else depth="3" class="snapshot-hint">点击生成盘后快照，系统不会自动扫描</n-text>
+      <n-text v-else depth="3" class="snapshot-hint">点击生成盘后快照（后台执行）；按信号筛选须先有快照</n-text>
     </div>
 
     <div class="stock-toolbar">
