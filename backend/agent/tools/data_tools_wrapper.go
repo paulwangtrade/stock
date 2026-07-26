@@ -1762,34 +1762,8 @@ func GetAllDataTools() []tool.BaseTool {
 			if len(codes) == 0 {
 				return "请输入股票代码", nil
 			}
-			var results []string
-			for _, code := range codes {
-				if code == "" {
-					continue
-				}
-				stockData, err := data.NewStockDataApi().GetStockCodeRealTimeData(code)
-				if err != nil || stockData == nil || len(*stockData) == 0 {
-					results = append(results, code+"：未找到股票信息")
-					continue
-				}
-				for _, s := range *stockData {
-					price, _ := convertor.ToFloat(s.Price)
-					prePrice, _ := convertor.ToFloat(s.PrePrice)
-					change := price - prePrice
-					var pChange float64
-					if prePrice > 0 {
-						pChange = (price - prePrice) / prePrice * 100
-					}
-					content := fmt.Sprintf("### %s %s\n\n| 项目 | 值 |\n| --- | --- |\n| 股票代码 | %s |\n| 股票名称 | %s |\n| 当前价格 | %.2f |\n| 涨跌额 | %.2f |\n| 涨跌幅 | %.2f%% |\n| 成交量 | %s手 |\n| 成交额 | %s元 |\n| 今开 | %s |\n| 昨收 | %s |\n| 最高 | %s |\n| 最低 | %s |\n| 时间 | %s %s |",
-						s.Name, s.Code,
-						s.Code, s.Name, price, change, pChange,
-						s.Volume, s.Amount,
-						s.Open, s.PreClose, s.High, s.Low,
-						s.Date, s.Time)
-					results = append(results, content)
-				}
-			}
-			return strings.Join(results, "\n\n"), nil
+			// Phase7-A2-2-1：经 QuoteService（LegacyQuoteAdapter），不直连 GetStockCodeRealTimeData。
+			return RenderGetStockInfo(data.GetQuoteService(), codes), nil
 		},
 	))
 
