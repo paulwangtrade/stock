@@ -11,9 +11,11 @@ import (
 	"go-stock/backend/agent"
 	"go-stock/backend/agent/tools"
 	"go-stock/backend/broker"
+	"go-stock/backend/cache"
 	"go-stock/backend/data"
 	"go-stock/backend/db"
 	"go-stock/backend/logger"
+	"go-stock/backend/marketdata"
 	"go-stock/backend/models"
 	"os"
 	"path/filepath"
@@ -1357,6 +1359,20 @@ func (a *App) updatePriceAtAlertReset(alertKey string, price float64) {
 }
 
 func GetStockInfos(follows ...data.FollowedStock) *[]data.StockInfo {
+	out, err := getStockInfosWithQuoteService(data.GetQuoteService(), true, follows...)
+	if err != nil {
+		logger.SugaredLogger.Errorf("GetStockInfos QuoteService: %v", err)
+	}
+	if out == nil {
+		empty := make([]data.StockInfo, 0)
+		return &empty
+	}
+	return out
+}
+
+// getStockInfosWithQuoteService Phase7-A2-3-1：Monitor 展示取数经 QuoteService（可注入 fake）。
+// applyFollow=false 时跳过 addStockFollowData（单测避免 NewStockDataApi→DB）。
+func getStockInfosWithQuoteService(svc marketdata.QuoteService, applyFollow bool, follows ...data.FollowedStock) (*[]data.StockInfo, error) {
 	stockInfos := make([]data.StockInfo, 0)
 	stockCodes := make([]string, 0)
 	for _, follow := range follows {
@@ -1371,11 +1387,17 @@ func GetStockInfos(follows ...data.FollowedStock) *[]data.StockInfo {
 		}
 		stockCodes = append(stockCodes, follow.StockCode)
 	}
-	stockData, _ := data.NewStockDataApi().GetStockCodeRealTimeData(stockCodes...)
-	if stockData == nil || len(*stockData) == 0 {
-		return &stockInfos
+	if len(stockCodes) == 0 {
+		return &stockInfos, nil
 	}
-	for _, info := range *stockData {
+	fetched, err := fetchRealtimeStockInfos(svc, stockCodes)
+	if err != nil {
+		return &stockInfos, quoteServiceFetchError(err)
+	}
+	if len(fetched) == 0 {
+		return &stockInfos, nil
+	}
+	for _, info := range fetched {
 		v, ok := slice.FindBy(follows, func(idx int, follow data.FollowedStock) bool {
 			if strutil.HasPrefixAny(follow.StockCode, []string{"US", "us"}) {
 				return strings.ToLower(strings.Replace(follow.StockCode, "us", "gb_", 1)) == info.Code
@@ -1384,30 +1406,66 @@ func GetStockInfos(follows ...data.FollowedStock) *[]data.StockInfo {
 			return follow.StockCode == info.Code
 		})
 		if ok {
-			addStockFollowData(v, &info)
-			stockInfos = append(stockInfos, info)
+			cp := info
+			if applyFollow {
+				addStockFollowData(v, &cp)
+			}
+			stockInfos = append(stockInfos, cp)
 		}
 	}
-	return &stockInfos
+	return &stockInfos, nil
 }
 
 func GetStockInfosRealtimeBatch(follows ...data.FollowedStock) *[]data.StockInfo {
+	return getStockInfosRealtimeBatchWithQuoteService(data.GetQuoteService(), true, follows...)
+}
+
+// getStockInfosRealtimeBatchWithQuoteService Phase7-A2-3-1：Dashboard batch miss 经 QuoteService；
+// FollowRealtimePriceCache 保留；applyFollow=false 便于无 DB 单测。
+func getStockInfosRealtimeBatchWithQuoteService(svc marketdata.QuoteService, applyFollow bool, follows ...data.FollowedStock) *[]data.StockInfo {
 	stockInfos := make([]data.StockInfo, 0)
-	stockCodes := make([]string, 0)
+	stockCodes := make([]string, 0, len(follows))
 	for _, follow := range follows {
 		stockCodes = append(stockCodes, follow.StockCode)
 	}
-	stockData, _ := data.NewStockDataApi().GetStockCodeRealTimeData(stockCodes...)
-	for _, info := range *stockData {
+	if len(stockCodes) == 0 {
+		return &stockInfos
+	}
+
+	hits, misses := cache.FollowRealtimePriceCache.Partition(stockCodes)
+	merged := make(map[string]data.StockInfo, len(hits)+len(misses))
+	for code, p := range hits {
+		if p != nil {
+			merged[code] = *p
+		}
+	}
+	if len(misses) > 0 {
+		fetched, err := fetchRealtimeStockInfos(svc, misses)
+		if err == nil && len(fetched) > 0 {
+			cache.FollowRealtimePriceCache.SetBatchFromSlice(fetched)
+			for _, info := range fetched {
+				key := cache.NormalizeStockCode(info.Code)
+				if key == "" {
+					continue
+				}
+				merged[key] = info
+			}
+		}
+	}
+
+	for _, info := range merged {
 		v, ok := slice.FindBy(follows, func(idx int, follow data.FollowedStock) bool {
 			if strutil.HasPrefixAny(follow.StockCode, []string{"US", "us"}) {
 				return strings.ToLower(strings.Replace(follow.StockCode, "us", "gb_", 1)) == info.Code
 			}
-			return follow.StockCode == info.Code
+			return cache.NormalizeStockCode(follow.StockCode) == cache.NormalizeStockCode(info.Code)
 		})
 		if ok {
-			addStockFollowData(v, &info)
-			stockInfos = append(stockInfos, info)
+			cp := info
+			if applyFollow {
+				addStockFollowData(v, &cp)
+			}
+			stockInfos = append(stockInfos, cp)
 		}
 	}
 	return &stockInfos
