@@ -101,6 +101,7 @@ func (h *PaperObservationHandler) handleDashboardPositions(w http.ResponseWriter
 		})
 		return
 	}
+	enrichObservationPositionNames(view, nil)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"code": 0, "ok": true, "positions": view,
 	})
