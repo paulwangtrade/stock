@@ -7,6 +7,7 @@ const routes = [
     { path: '/holding-t', component: () => import('../components/HoldingTPanel.vue'), name: 'holdingT' },
     { path: '/quant-trading', component: () => import('../components/QuantTradingDashboard.vue'), name: 'quantTrading' },
     { path: '/trade-plan-upcoming', component: () => import('../components/TradePlanUpcoming.vue'), name: 'tradePlanUpcoming' },
+    { path: '/paper-observation', component: () => import('../components/PaperTradingObservation.vue'), name: 'paperObservation' },
     { path: '/stock-screen', component: () => import('../components/stockScreen.vue'), name: 'stockScreen' },
     { path: '/fund', component: () => import('../components/fund.vue'), name: 'fund' },
     { path: '/settings', component: () => import('../components/settings.vue'), name: 'settings' },

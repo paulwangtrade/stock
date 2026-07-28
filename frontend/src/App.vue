@@ -184,6 +184,21 @@ const menuOptions = ref([
         h(
             RouterLink,
             {
+              to: { name: 'paperObservation' },
+              onClick: () => {
+                activeKey.value = 'paperObservation'
+              },
+            },
+            { default: () => '模拟盘观察' },
+        ),
+    key: 'paperObservation',
+    icon: renderIcon(AnalyticsOutline),
+  },
+  {
+    label: () =>
+        h(
+            RouterLink,
+            {
               to: {
                 name: 'stockScreen',
                 params: {},
@@ -773,7 +788,7 @@ const menuOptions = ref([
 watch(
   () => router.currentRoute.value.name,
   (name) => {
-    const directKeys = new Set(['stock', 'holdings', 'holdingT', 'quantTrading', 'tradePlanUpcoming', 'stockScreen', 'market', 'fund', 'agent', 'research', 'settings'])
+    const directKeys = new Set(['stock', 'holdings', 'holdingT', 'quantTrading', 'tradePlanUpcoming', 'paperObservation', 'stockScreen', 'market', 'fund', 'agent', 'research', 'settings'])
     if (directKeys.has(String(name))) activeKey.value = String(name)
     if (name === 'cronTasks') activeKey.value = 'research'
   },

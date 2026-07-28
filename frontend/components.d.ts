@@ -35,6 +35,7 @@ declare module 'vue' {
     MarketStatusBar: typeof import('./src/components/MarketStatusBar.vue')['default']
     MoneyTrend: typeof import('./src/components/moneyTrend.vue')['default']
     NewsList: typeof import('./src/components/newsList.vue')['default']
+    PaperTradingObservation: typeof import('./src/components/PaperTradingObservation.vue')['default']
     PaperTradingPanel: typeof import('./src/components/PaperTradingPanel.vue')['default']
     PromptTemplateList: typeof import('./src/components/promptTemplateList.vue')['default']
     QuantAutomationPanel: typeof import('./src/components/QuantAutomationPanel.vue')['default']
