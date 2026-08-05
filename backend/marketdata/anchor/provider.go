@@ -7,7 +7,7 @@ type Provider interface {
 }
 
 // Chain tries Sources in order and returns the first positive Valid result.
-// B.0 production uses a single FollowedStockAnchorProvider entry.
+// B.1 production: KlineCloseAnchorProvider then FollowedStockAnchorProvider.
 type Chain struct {
 	Sources []Provider
 }
@@ -26,7 +26,10 @@ func (c Chain) Resolve(ctx Context) (Result, bool) {
 	return Result{}, false
 }
 
-// DefaultProvider returns the B.0 production chain (Followed only).
+// DefaultProvider returns the B.1 production chain: Kline Close then Followed.
 func DefaultProvider() Provider {
-	return Chain{Sources: []Provider{FollowedStockAnchorProvider{}}}
+	return Chain{Sources: []Provider{
+		KlineCloseAnchorProvider{},
+		FollowedStockAnchorProvider{},
+	}}
 }
