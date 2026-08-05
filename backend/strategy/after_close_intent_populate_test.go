@@ -190,3 +190,38 @@ func TestPopulate_ProviderSoftFail(t *testing.T) {
 	require.Equal(t, float64(0), items[0].RefPrice)
 	require.Equal(t, afterClosePricingStage, plan.PricingStage)
 }
+
+// TestBuildDraft_WiresPopulateToAnchorProvider proves the production draft path
+// calls populate → afterCloseAnchorProvider.Resolve (Phase10-B.0 wiring).
+func TestBuildDraft_WiresPopulateToAnchorProvider(t *testing.T) {
+	setupDraftPlanTestDB(t)
+	pool := seedReadyPool(t, "2026-07-28", "sz000001")
+	pool.ConfigJSON = `{"session":"after_close","source_date":"2026-07-27"}`
+
+	var resolveCalls int
+	var gotCodes []string
+	var gotSourceDate string
+	withAnchorProvider(t, stubAnchorProvider{fn: func(ctx anchor.Context) (anchor.Result, bool) {
+		resolveCalls++
+		gotCodes = append(gotCodes, ctx.StockCode)
+		gotSourceDate = ctx.SourceDate
+		return anchor.Result{
+			RefPrice:  9.9,
+			RefSource: afterCloseRefSourcePrevClose,
+			RefAsOf:   "2026-07-27",
+		}, true
+	}})
+
+	plan, err := BuildDraftTradePlanFromCandidatePool(pool)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, resolveCalls, 1, "BuildDraft must invoke AnchorProvider via populate")
+	require.Contains(t, gotCodes, "sz000001")
+	require.Equal(t, "2026-07-27", gotSourceDate)
+	require.Equal(t, afterClosePricingStage, plan.PricingStage)
+
+	got, err := data.NewTradePlanRepo().GetByID(plan.ID)
+	require.NoError(t, err)
+	require.Equal(t, afterCloseIntentStatusSelected, got.Items[0].IntentStatus)
+	require.InDelta(t, 9.9, got.Items[0].RefPrice, 1e-9)
+	require.Equal(t, float64(0), got.Items[0].LimitPrice)
+}

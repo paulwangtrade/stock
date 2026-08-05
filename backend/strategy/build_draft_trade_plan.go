@@ -86,6 +86,7 @@ func BuildDraftTradePlanFromCandidatePool(pool *models.CandidatePool) (*models.T
 	}
 
 	planItems := draftPlanItemsFromFilter(tradeDate, filtered)
+	populateAfterCloseExecutionIntent(plan, planItems, pool)
 	if err := repo.CreatePlanWithItems(plan, planItems); err != nil {
 		return nil, err
 	}
