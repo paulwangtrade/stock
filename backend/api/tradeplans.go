@@ -32,6 +32,7 @@ type UpcomingTradePlanResponse struct {
 	OK             bool                  `json:"ok"`
 	TradeDate      string                `json:"trade_date"`
 	NextTradingDay string                `json:"next_trading_day,omitempty"`
+	PlanID         uint                  `json:"plan_id,omitempty"`
 	Plan           *UpcomingTradePlanDTO `json:"plan"`
 	Message        string                `json:"message,omitempty"`
 }
@@ -174,6 +175,12 @@ func (h *TradePlansHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.handleReadiness(w, r)
+	case "/api/tradeplans/plan":
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		h.handlePlanByID(w, r)
 	default:
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 	}
@@ -320,6 +327,7 @@ func RegisterTradePlansHandler(mux *http.ServeMux, h *TradePlansHandler) {
 	mux.Handle("/api/tradeplans/freeze", h)
 	mux.Handle("/api/tradeplans/generate-next", h)
 	mux.Handle("/api/tradeplans/materialize-morning", h)
+	mux.Handle("/api/tradeplans/plan", h)
 }
 
 // TradePlansAssetMiddleware 供 Wails AssetServer 挂载 /api/tradeplans/*。

@@ -28,6 +28,7 @@ type TradePlanVisibilityView struct {
 	PlanVersion   int        `json:"planVersion"`
 	Status        string     `json:"status"`
 	SourceSession string     `json:"sourceSession"`
+	GeneratedAt   *time.Time `json:"generatedAt,omitempty"`
 	PoolID        uint       `json:"poolId"`
 	RiskPassed    bool       `json:"riskPassed"`
 	RiskReasons   []string   `json:"riskReasons"`
@@ -91,6 +92,18 @@ func (r *TradePlanRepo) GetUpcomingTradePlan(today string) (*TradePlanVisibility
 	return toTradePlanVisibilityView(plan), nil
 }
 
+// GetTradePlanVisibilityByID loads one plan by primary key for read-only UI (exact id; no Frozen priority).
+func (r *TradePlanRepo) GetTradePlanVisibilityByID(id uint) (*TradePlanVisibilityView, error) {
+	if id == 0 {
+		return nil, fmt.Errorf("plan id is required")
+	}
+	plan, err := r.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+	return toTradePlanVisibilityView(plan), nil
+}
+
 func (r *TradePlanRepo) findUpcomingFrozen(today string) (*models.TradePlan, error) {
 	var plan models.TradePlan
 	err := db.Dao.Where(
@@ -125,6 +138,7 @@ func toTradePlanVisibilityView(plan *models.TradePlan) *TradePlanVisibilityView 
 		PlanVersion:   plan.PlanVersion,
 		Status:        plan.Status,
 		SourceSession: plan.SourceSession,
+		GeneratedAt:   generatedAtPtr(plan.GeneratedAt),
 		PoolID:        plan.PoolID,
 		RiskPassed:    visibilityRiskPassed(plan.RiskStatus),
 		RiskReasons:   visibilityRiskReasons(plan),
@@ -151,6 +165,14 @@ func toTradePlanVisibilityView(plan *models.TradePlan) *TradePlanVisibilityView 
 		})
 	}
 	return view
+}
+
+// generatedAtPtr 返回非零生成时间的指针（只读观测，不改任何生成逻辑）。
+func generatedAtPtr(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
 }
 
 func visibilityRiskPassed(riskStatus string) bool {
