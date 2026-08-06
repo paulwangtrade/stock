@@ -79,6 +79,7 @@ func TestRunExecution_SessionA_Allows(t *testing.T) {
 	require.Equal(t, papertrading.PolicyAllow, res.Decision)
 	require.Equal(t, papertrading.RunStatusCompleted, res.Status)
 	require.Equal(t, 1, res.FilledCount)
+	require.Equal(t, papertrading.PriceModeRealtime, res.PriceMode)
 }
 
 func TestRunExecution_SessionB_Allows(t *testing.T) {
@@ -98,7 +99,10 @@ func TestRunExecution_SessionB_Allows(t *testing.T) {
 	require.Equal(t, papertrading.PolicyAllow, res.Decision)
 	require.Equal(t, papertrading.RunStatusCompleted, res.Status)
 	require.Equal(t, 1, res.FilledCount)
-	// B.1 does not yet switch to close_price — still market_open fill path.
+	require.Equal(t, papertrading.PriceModeClose, res.PriceMode)
+	st, err := papertrading.GetPlanPaperStatus(plan.ID)
+	require.NoError(t, err)
+	require.Equal(t, papertrading.FillReasonMarketClose, st.Fills[0].FillReason)
 }
 
 func TestRunExecution_Lunch_Rejects(t *testing.T) {

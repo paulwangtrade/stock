@@ -22,13 +22,15 @@ const (
 	RejectLimitUpUnavailable   = "limit_up_unavailable"
 	RejectLimitDownUnavailable = "limit_down_unavailable"
 	RejectMissingOpenPrice     = "missing_open_price"
+	RejectMissingClosePrice    = "missing_close_price"
 	RejectInvalidQuantity      = "invalid_quantity"
 	RejectInsufficientCash     = "insufficient_cash"
 )
 
 // Fill reasons.
 const (
-	FillReasonMarketOpen = "market_open"
+	FillReasonMarketOpen  = "market_open"
+	FillReasonMarketClose = "market_close"
 )
 
 // PaperSimAccount is the isolated MVP paper account (distinct from production paper_accounts).

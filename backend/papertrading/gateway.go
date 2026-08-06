@@ -33,6 +33,8 @@ type ExecutionResult struct {
 	Session  ExecutionSession `json:"session,omitempty"`
 	Decision string           `json:"decision,omitempty"`
 	Reason   string           `json:"reason,omitempty"`
+	// PriceMode is set after Session allow (realtime | close | none).
+	PriceMode string `json:"priceMode,omitempty"`
 }
 
 const ExecutionEntryGateway = "execution_gateway"
@@ -61,7 +63,8 @@ func SetExecutionNowForTest(fn func() time.Time) {
 }
 
 // RunExecution is the sole production entry for Frozen TradePlan → paper_sim_*.
-// Order: Session Policy → paperTradingJob. Session Policy cannot be bypassed.
+// Order: Session Policy → SelectFillProvider → paperTradingJob.
+// Session Policy cannot be bypassed.
 func RunExecution(req ExecutionRequest) (*ExecutionResult, error) {
 	trigger := strings.TrimSpace(req.Trigger)
 	if trigger == "" {
@@ -87,6 +90,7 @@ func RunExecution(req ExecutionRequest) (*ExecutionResult, error) {
 	}
 
 	if !pol.Allow {
+		out.PriceMode = PriceModeNone
 		out.JobResult = JobResult{
 			Enabled:   IsEnabled(),
 			TradeDate: strings.TrimSpace(req.TradeDate),
@@ -109,20 +113,24 @@ func RunExecution(req ExecutionRequest) (*ExecutionResult, error) {
 		return out, nil
 	}
 
+	price := SelectFillProvider(pol.Session, req.Price)
+	out.PriceMode = priceModeForSession(pol.Session)
+
 	jobRes, err := paperTradingJob(JobRequest{
 		TradeDate:        req.TradeDate,
 		PlanID:           req.PlanID,
 		Trigger:          trigger,
 		Actor:            req.Actor,
-		Price:            req.Price,
+		Price:            price,
+		FillSession:      pol.Session,
 		SkipWeekdayCheck: req.SkipWeekdayCheck,
 	})
 	if jobRes != nil {
 		out.JobResult = *jobRes
 	}
 	logger.SugaredLogger.Infof(
-		"ExecutionGateway exit entry=%s session=%s decision=%s status=%s plan_id=%d filled=%d",
-		ExecutionEntryGateway, pol.Session, pol.Decision, out.Status, out.PlanID, out.FilledCount,
+		"ExecutionGateway exit entry=%s session=%s decision=%s price_mode=%s status=%s plan_id=%d filled=%d",
+		ExecutionEntryGateway, pol.Session, pol.Decision, out.PriceMode, out.Status, out.PlanID, out.FilledCount,
 	)
 	return out, err
 }

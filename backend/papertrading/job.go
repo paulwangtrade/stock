@@ -21,6 +21,8 @@ type JobRequest struct {
 	Trigger   string // cron | manual
 	Actor     string // required for manual
 	Price     PriceProvider
+	// FillSession is set by Gateway after Session Policy (A/B). Empty → open/market_open.
+	FillSession ExecutionSession
 	// SkipWeekdayCheck allows tests to run on weekends.
 	SkipWeekdayCheck bool
 }
@@ -138,7 +140,7 @@ func paperTradingJob(req JobRequest) (*JobResult, error) {
 	if price == nil {
 		price = DefaultOpenPriceProvider()
 	}
-	broker := NewPaperBroker(price)
+	broker := NewPaperBrokerForSession(price, req.FillSession)
 	brokerRes, err := broker.RunForPlan(planID)
 	now := time.Now()
 	run.FinishedAt = &now

@@ -2,12 +2,16 @@ package papertrading
 
 import "strings"
 
-// Quote is the minimal open-auction/open-price view the MVP fill engine consumes.
+// Quote is the minimal price view the MVP fill engine consumes.
 // LimitUp/LimitDown of 0 means "unknown" and the corresponding ceiling check is skipped.
+//
+// Open holds the fill price for both open and close fills (compat). PriceKind distinguishes
+// Session A (open/realtime) vs Session B (close) for reject codes and fill_reason.
 type Quote struct {
 	Open      float64
 	LimitUp   float64
 	LimitDown float64
+	PriceKind string // PriceKindOpen | PriceKindClose | empty→treat as open
 }
 
 // PriceProvider yields the trade-day open price for a symbol.

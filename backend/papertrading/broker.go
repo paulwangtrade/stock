@@ -32,7 +32,8 @@ type RunResult struct {
 // It consumes a Frozen Trade Plan read-only and never writes trade_plans /
 // trade_plan_items / production paper_* tables or touches Real Broker.
 type PaperBroker struct {
-	Price PriceProvider
+	Price       PriceProvider
+	FillSession ExecutionSession // A or B; empty → open/market_open semantics
 }
 
 // NewPaperBroker returns a broker with the given price source (nil → fail-closed).
@@ -41,6 +42,13 @@ func NewPaperBroker(price PriceProvider) *PaperBroker {
 		price = MissingPriceProvider{}
 	}
 	return &PaperBroker{Price: price}
+}
+
+// NewPaperBrokerForSession returns a broker with session-aware fill_reason / reject codes.
+func NewPaperBrokerForSession(price PriceProvider, session ExecutionSession) *PaperBroker {
+	b := NewPaperBroker(price)
+	b.FillSession = session
+	return b
 }
 
 // RunForPlan simulates execution of a Frozen Trade Plan.
@@ -148,8 +156,14 @@ func (b *PaperBroker) processItem(acc *PaperSimAccount, plan *models.TradePlan, 
 	logger.SugaredLogger.Infof("PaperOrder created plan_id=%d order_id=%d symbol=%s side=buy status=submitted", plan.ID, order.ID, item.StockCode)
 
 	quote, ok := b.Price.OpenQuote(item.StockCode, plan.TradeDate)
+	missingReason := RejectMissingOpenPrice
+	fillReason := FillReasonMarketOpen
+	if b.FillSession == SessionB || quote.PriceKind == PriceKindClose {
+		missingReason = RejectMissingClosePrice
+		fillReason = FillReasonMarketClose
+	}
 	if !ok || quote.Open <= 0 {
-		return b.reject(order, RejectMissingOpenPrice), false, false
+		return b.reject(order, missingReason), false, false
 	}
 	if quote.LimitUp > 0 && quote.Open >= quote.LimitUp {
 		return b.reject(order, RejectLimitUpUnavailable), false, false
@@ -168,7 +182,7 @@ func (b *PaperBroker) processItem(acc *PaperSimAccount, plan *models.TradePlan, 
 		return b.reject(order, RejectInsufficientCash), false, false
 	}
 
-	if err := b.fillBuy(acc, plan, item, order, fillPrice, qty, fee); err != nil {
+	if err := b.fillBuy(acc, plan, item, order, fillPrice, qty, fee, fillReason); err != nil {
 		logger.SugaredLogger.Errorf("PaperTrading fill failed plan_id=%d order_id=%d err=%v", plan.ID, order.ID, err)
 		return b.reject(order, RejectInvalidQuantity), false, false
 	}
@@ -186,8 +200,11 @@ func (b *PaperBroker) reject(order *PaperSimOrder, reason string) *PaperSimOrder
 
 // fillBuy applies a full buy fill in a single transaction: fill row, order update,
 // position (T+1 locked), account cash.
-func (b *PaperBroker) fillBuy(acc *PaperSimAccount, plan *models.TradePlan, item models.TradePlanItem, order *PaperSimOrder, price float64, qty int64, fee float64) error {
+func (b *PaperBroker) fillBuy(acc *PaperSimAccount, plan *models.TradePlan, item models.TradePlanItem, order *PaperSimOrder, price float64, qty int64, fee float64, fillReason string) error {
 	now := time.Now()
+	if fillReason == "" {
+		fillReason = FillReasonMarketOpen
+	}
 	return db.Dao.Transaction(func(tx *gorm.DB) error {
 		fill := &PaperSimFill{
 			AccountID:  acc.ID,
@@ -200,7 +217,7 @@ func (b *PaperBroker) fillBuy(acc *PaperSimAccount, plan *models.TradePlan, item
 			Price:      price,
 			Volume:     qty,
 			Fee:        fee,
-			FillReason: FillReasonMarketOpen,
+			FillReason: fillReason,
 			FilledAt:   now,
 		}
 		if err := tx.Create(fill).Error; err != nil {
