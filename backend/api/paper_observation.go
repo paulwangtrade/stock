@@ -25,7 +25,9 @@ func isPaperObservationPath(path string) bool {
 	case "/api/papertrading/status",
 		"/api/papertrading/dashboard/today",
 		"/api/papertrading/dashboard/positions",
-		"/api/papertrading/dashboard/runs":
+		"/api/papertrading/dashboard/runs",
+		"/api/papertrading/reports/daily",
+		"/api/papertrading/observation/metrics":
 		return true
 	default:
 		return false
@@ -42,6 +44,10 @@ func (h *PaperObservationHandler) ServeHTTP(w http.ResponseWriter, r *http.Reque
 		h.handleDashboardPositions(w, r)
 	case "/api/papertrading/dashboard/runs":
 		h.handleDashboardRuns(w, r)
+	case "/api/papertrading/reports/daily":
+		h.handleReportsDaily(w, r)
+	case "/api/papertrading/observation/metrics":
+		h.handleObservationMetrics(w, r)
 	default:
 		http.NotFound(w, r)
 	}
@@ -130,6 +136,63 @@ func (h *PaperObservationHandler) handleDashboardRuns(w http.ResponseWriter, r *
 	})
 }
 
+func (h *PaperObservationHandler) handleReportsDaily(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{
+			"code": 405, "ok": false, "message": "GET required",
+		})
+		return
+	}
+	q := r.URL.Query()
+	from := strings.TrimSpace(q.Get("from"))
+	to := strings.TrimSpace(q.Get("to"))
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	offset, _ := strconv.Atoi(q.Get("offset"))
+	rows, total, err := papertrading.ListDailyReports(from, to, limit, offset)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"code": 500, "ok": false, "message": err.Error(),
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"code": 0, "ok": true,
+		"enabled": papertrading.IsEnabled(),
+		"reports": rows,
+		"total":   total,
+		"from":    from,
+		"to":      to,
+	})
+}
+
+func (h *PaperObservationHandler) handleObservationMetrics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{
+			"code": 405, "ok": false, "message": "GET required",
+		})
+		return
+	}
+	tradeDate := strings.TrimSpace(r.URL.Query().Get("trade_date"))
+	m, err := papertrading.GetObservationMetrics(tradeDate)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"code": 500, "ok": false, "message": err.Error(),
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"code": 0, "ok": true,
+		"metrics": m,
+		// Flat aliases matching C.3-O.2 response sketch (also nested under metrics).
+		"totalRuns":            m.TotalRuns,
+		"sessionDistribution":  m.SessionDistribution,
+		"fillPolicy":           m.FillPolicy,
+		"quality":              m.Quality,
+		"legacy":               m.Legacy,
+		"pricePolicyCompliance": m.PricePolicyCompliance,
+	})
+}
+
 // RegisterPaperObservationRoutes mounts read-only observation routes on mux.
 func RegisterPaperObservationRoutes(mux *http.ServeMux) {
 	h := NewPaperObservationHandler()
@@ -137,6 +200,8 @@ func RegisterPaperObservationRoutes(mux *http.ServeMux) {
 	mux.Handle("/api/papertrading/dashboard/today", h)
 	mux.Handle("/api/papertrading/dashboard/positions", h)
 	mux.Handle("/api/papertrading/dashboard/runs", h)
+	mux.Handle("/api/papertrading/reports/daily", h)
+	mux.Handle("/api/papertrading/observation/metrics", h)
 }
 
 // PaperObservationAssetMiddleware mounts only read-only /api/papertrading observation paths.
