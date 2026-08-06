@@ -193,7 +193,7 @@ func main() {
 				api.CandidatePoolAssetMiddleware,
 				api.RealOrdersAssetMiddleware,
 				api.TradePlansAssetMiddleware,
-				api.PaperObservationAssetMiddleware,
+				api.PaperTradingAssetMiddleware, // Phase10-C.2-A: observation + POST /run
 				api.OpsTradingDayAssetMiddleware,
 			),
 		},

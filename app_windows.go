@@ -45,6 +45,7 @@ func (a *App) startup(ctx context.Context) {
 	a.InitPaperMarginDayJobs()
 	a.InitPaperOpenBuyJobs()
 	a.InitAfterClosePlanJobs()
+	a.InitPaperTradingJobs() // Phase10-C.2-A: align track-B paper_sim_* cron with linux/darwin
 	a.InitStockStrategies()
 
 	// 创建系统托盘
