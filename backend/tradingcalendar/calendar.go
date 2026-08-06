@@ -137,6 +137,32 @@ func (c Calendar) NextTradingDayString(date string) (string, error) {
 	return next.Format(DateLayout), nil
 }
 
+// PrevTradingDay returns the previous trading day strictly before day.
+// Searches at most 366 calendar days; returns an error if none found (misconfigured holidays).
+func (c Calendar) PrevTradingDay(day time.Time) (time.Time, error) {
+	cur := c.TruncateDay(day).AddDate(0, 0, -1)
+	for i := 0; i < 366; i++ {
+		if c.IsTradingDay(cur) {
+			return cur, nil
+		}
+		cur = cur.AddDate(0, 0, -1)
+	}
+	return time.Time{}, fmt.Errorf("tradingcalendar: no trading day within 366 days before %s", FormatDate(day))
+}
+
+// PrevTradingDayString parses YYYY-MM-DD and returns the previous trading day as YYYY-MM-DD.
+func (c Calendar) PrevTradingDayString(date string) (string, error) {
+	day, err := ParseDate(date)
+	if err != nil {
+		return "", err
+	}
+	prev, err := c.PrevTradingDay(day)
+	if err != nil {
+		return "", err
+	}
+	return prev.Format(DateLayout), nil
+}
+
 // Package-level helpers use Default (weekend-only until Holidays is set).
 
 // IsTradingDay reports whether day is a trading day under Default.
@@ -147,3 +173,9 @@ func NextTradingDay(day time.Time) (time.Time, error) { return Default.NextTradi
 
 // NextTradingDayString is the string form of NextTradingDay under Default.
 func NextTradingDayString(date string) (string, error) { return Default.NextTradingDayString(date) }
+
+// PrevTradingDay returns the previous trading day before day under Default.
+func PrevTradingDay(day time.Time) (time.Time, error) { return Default.PrevTradingDay(day) }
+
+// PrevTradingDayString is the string form of PrevTradingDay under Default.
+func PrevTradingDayString(date string) (string, error) { return Default.PrevTradingDayString(date) }

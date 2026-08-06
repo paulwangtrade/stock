@@ -55,6 +55,7 @@ export type UpcomingTradePlanResponse = {
   ok: boolean
   trade_date: string
   next_trading_day?: string
+  plan_id?: number
   plan: UpcomingTradePlan | null
   message?: string
 }
@@ -253,6 +254,67 @@ export {
   PRICING_STAGE_MORNING_MATERIALIZED,
 } from './tradePlansMaterializeMorning.js'
 
+function normalizeUpcomingPlanFromBody(planRaw: Record<string, unknown> | null | undefined): UpcomingTradePlan | null {
+  if (!planRaw || typeof planRaw !== 'object') return null
+  const risk = planRaw.risk as Record<string, unknown> | undefined
+  const freeze = planRaw.freeze as Record<string, unknown> | undefined
+  return {
+    id: Number(planRaw.id) || 0,
+    trade_date: String(planRaw.trade_date || ''),
+    plan_version: Number(planRaw.plan_version) || 0,
+    status: String(planRaw.status || ''),
+    source_session: String(planRaw.source_session || ''),
+    generated_at: planRaw.generated_at ? String(planRaw.generated_at) : '',
+    pool_id: Number(planRaw.pool_id) || 0,
+    risk: {
+      passed: !!risk?.passed,
+      reasons: Array.isArray(risk?.reasons) ? risk.reasons.map(String) : [],
+    },
+    freeze: {
+      is_frozen: !!freeze?.is_frozen,
+      freeze_at: freeze?.freeze_at ? String(freeze.freeze_at) : '',
+      freeze_by: freeze?.freeze_by ? String(freeze.freeze_by) : '',
+      freeze_reason: freeze?.freeze_reason ? String(freeze.freeze_reason) : '',
+      approved_at: freeze?.approved_at ? String(freeze.approved_at) : '',
+      approved_by: freeze?.approved_by ? String(freeze.approved_by) : '',
+    },
+    items: Array.isArray(planRaw.items)
+      ? planRaw.items.map((it: Record<string, unknown>) => ({
+          stock_code: String(it.stock_code || ''),
+          stock_name: String(it.stock_name || ''),
+          side: String(it.side || ''),
+          priority: Number(it.priority) || 0,
+          target_amount: Number(it.target_amount) || 0,
+          status: String(it.status || ''),
+          score: Number(it.score) || 0,
+          risk_code: it.risk_code ? String(it.risk_code) : '',
+          risk_message: it.risk_message ? String(it.risk_message) : '',
+          strategy_name: it.strategy_name ? String(it.strategy_name) : '',
+        }))
+      : [],
+  }
+}
+
+function normalizeUpcomingTradePlanResponse(
+  body: Record<string, unknown>,
+  fallbackTradeDate?: string,
+): UpcomingTradePlanResponse {
+  const planRaw = body?.plan
+  const plan =
+    planRaw && typeof planRaw === 'object'
+      ? normalizeUpcomingPlanFromBody(planRaw as Record<string, unknown>)
+      : null
+  return {
+    code: Number(body?.code ?? -1),
+    ok: !!body?.ok,
+    trade_date: String(body?.trade_date || fallbackTradeDate || ''),
+    next_trading_day: body?.next_trading_day ? String(body.next_trading_day) : '',
+    plan_id: body?.plan_id != null ? Number(body.plan_id) || undefined : undefined,
+    plan,
+    message: body?.message ? String(body.message) : '',
+  }
+}
+
 /** POST /api/tradeplans/materialize-morning：Draft Intent → 早盘物化 → Readiness 重检（不 Approve/Freeze）. */
 export async function materializeMorningTradePlan(opts: {
   planId: number
@@ -273,6 +335,7 @@ export async function materializeMorningTradePlan(opts: {
 export async function generateNextTradePlan(opts: {
   actor: string
   sourceDate?: string
+  tradeDate?: string
 }): Promise<GenerateNextTradePlanResponse> {
   const res = await fetch('/api/tradeplans/generate-next', {
     method: 'POST',
@@ -281,6 +344,9 @@ export async function generateNextTradePlan(opts: {
       actor: String(opts.actor || '').trim(),
       ...(opts.sourceDate && String(opts.sourceDate).trim()
         ? { source_date: String(opts.sourceDate).trim() }
+        : {}),
+      ...(opts.tradeDate && String(opts.tradeDate).trim()
+        ? { trade_date: String(opts.tradeDate).trim() }
         : {}),
     }),
   })
@@ -319,55 +385,21 @@ export async function getUpcomingTradePlan(tradeDate?: string): Promise<Upcoming
     throw new Error(`交易计划请求失败: HTTP ${res.status}`)
   }
   const body = await res.json()
-  const code = Number(body?.code ?? -1)
-  const planRaw = body?.plan
-  const plan =
-    planRaw && typeof planRaw === 'object'
-      ? {
-          id: Number(planRaw.id) || 0,
-          trade_date: String(planRaw.trade_date || ''),
-          plan_version: Number(planRaw.plan_version) || 0,
-          status: String(planRaw.status || ''),
-          source_session: String(planRaw.source_session || ''),
-          generated_at: planRaw.generated_at ? String(planRaw.generated_at) : '',
-          pool_id: Number(planRaw.pool_id) || 0,
-          risk: {
-            passed: !!planRaw.risk?.passed,
-            reasons: Array.isArray(planRaw.risk?.reasons) ? planRaw.risk.reasons.map(String) : [],
-          },
-          freeze: {
-            is_frozen: !!planRaw.freeze?.is_frozen,
-            freeze_at: planRaw.freeze?.freeze_at ? String(planRaw.freeze.freeze_at) : '',
-            freeze_by: planRaw.freeze?.freeze_by ? String(planRaw.freeze.freeze_by) : '',
-            freeze_reason: planRaw.freeze?.freeze_reason ? String(planRaw.freeze.freeze_reason) : '',
-            approved_at: planRaw.freeze?.approved_at ? String(planRaw.freeze.approved_at) : '',
-            approved_by: planRaw.freeze?.approved_by ? String(planRaw.freeze.approved_by) : '',
-          },
-          items: Array.isArray(planRaw.items)
-            ? planRaw.items.map((it: Record<string, unknown>) => ({
-                stock_code: String(it.stock_code || ''),
-                stock_name: String(it.stock_name || ''),
-                side: String(it.side || ''),
-                priority: Number(it.priority) || 0,
-                target_amount: Number(it.target_amount) || 0,
-                status: String(it.status || ''),
-                score: Number(it.score) || 0,
-                risk_code: it.risk_code ? String(it.risk_code) : '',
-                risk_message: it.risk_message ? String(it.risk_message) : '',
-                strategy_name: it.strategy_name ? String(it.strategy_name) : '',
-              }))
-            : [],
-        }
-      : null
+  return normalizeUpcomingTradePlanResponse(body, tradeDate)
+}
 
-  return {
-    code,
-    ok: !!body?.ok,
-    trade_date: String(body?.trade_date || tradeDate || ''),
-    next_trading_day: body?.next_trading_day ? String(body.next_trading_day) : '',
-    plan,
-    message: body?.message ? String(body.message) : '',
+/** GET /api/tradeplans/plan?plan_id=：按 id 精确加载计划（不走 upcoming Frozen 优先）。 */
+export async function getTradePlanById(planId: number): Promise<UpcomingTradePlanResponse> {
+  const id = Math.trunc(Number(planId) || 0)
+  if (id <= 0) {
+    throw new Error('plan_id is required')
   }
+  const res = await fetch(`/api/tradeplans/plan?plan_id=${encodeURIComponent(String(id))}`)
+  if (!res.ok) {
+    throw new Error(`交易计划请求失败: HTTP ${res.status}`)
+  }
+  const body = await res.json()
+  return normalizeUpcomingTradePlanResponse(body)
 }
 
 function mapReadinessFinding(raw: Record<string, unknown>): ReadinessFinding {

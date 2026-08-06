@@ -97,6 +97,60 @@ func TestNextTradingDayString(t *testing.T) {
 	}
 }
 
+func TestPrevTradingDay_SkipsWeekend(t *testing.T) {
+	t.Parallel()
+	cal := Calendar{Location: time.UTC}
+
+	// Monday → previous Friday
+	mon := time.Date(2026, 7, 20, 10, 0, 0, 0, time.UTC)
+	prev, err := cal.PrevTradingDay(mon)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := prev.Format(DateLayout); got != "2026-07-17" {
+		t.Fatalf("Mon→Fri got %s", got)
+	}
+
+	// Saturday → Friday
+	sat := time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)
+	prev, err = cal.PrevTradingDay(sat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := prev.Format(DateLayout); got != "2026-07-17" {
+		t.Fatalf("Sat→Fri got %s", got)
+	}
+
+	// Sunday → Friday
+	sun := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	prev, err = cal.PrevTradingDay(sun)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := prev.Format(DateLayout); got != "2026-07-17" {
+		t.Fatalf("Sun→Fri got %s", got)
+	}
+}
+
+func TestPrevTradingDay_RoundTripWithNext(t *testing.T) {
+	t.Parallel()
+	tradeDate := "2026-08-06" // Thursday
+	prev, err := PrevTradingDayString(tradeDate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prev != "2026-08-05" {
+		t.Fatalf("Prev(%s)=%s want 2026-08-05", tradeDate, prev)
+	}
+	next, err := NextTradingDayString(prev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next != tradeDate {
+		t.Fatalf("Next(Prev(%s))=%s want %s", tradeDate, next, tradeDate)
+	}
+}
+
 func TestParseDate_Errors(t *testing.T) {
 	t.Parallel()
 	if _, err := ParseDate(""); err == nil {

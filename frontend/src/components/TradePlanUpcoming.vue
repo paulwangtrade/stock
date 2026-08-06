@@ -3,8 +3,8 @@ import { computed, h, onMounted, ref } from 'vue'
 import {
   NButton,
   NDataTable,
+  NDatePicker,
   NEmpty,
-  NInput,
   NSpace,
   NSpin,
   NTag,
@@ -22,12 +22,11 @@ import {
   formatMaterializeMorningDisplay,
   freezeTradePlan,
   generateNextTradePlan,
+  getTradePlanById,
   getTradePlanReadiness,
   getUpcomingTradePlan,
   inferPricingStageForMaterializeUI,
-  isPreferredGeneratedPlan,
   materializeMorningTradePlan,
-  resolveUpcomingQueryTradeDateAfterGenerate,
 } from '../api/tradePlans'
 import { describeReadinessFinding } from '../utils/readinessExplain'
 
@@ -44,14 +43,11 @@ const generating = ref(false)
 const approving = ref(false)
 const freezing = ref(false)
 const materializing = ref(false)
-const tradeDateInput = ref('')
+const tradeDateInput = ref(null)
 const requestTradeDate = ref('')
 const nextTradingDay = ref('')
 const emptyMessage = ref('')
 const plan = ref(null)
-/** Focus plan produced by the latest successful generate-next (UI-only). */
-const preferredGeneratedPlanId = ref(0)
-const preferredGeneratedTradeDate = ref('')
 /** Last known pricing_stage from materialize response (UI-only until upcoming exposes it). */
 const knownPricingStage = ref('')
 const materializeResult = ref(null)
@@ -59,8 +55,8 @@ const materializeDisplay = ref(null)
 
 const tradeDatePlaceholder = computed(() =>
   nextTradingDay.value
-    ? `trade_date（默认 ${nextTradingDay.value}）`
-    : 'trade_date YYYY-MM-DD（可选）',
+    ? `交易日期（下一交易日 ${nextTradingDay.value}）`
+    : '交易日期（未选则查今日）',
 )
 
 const readinessLoading = ref(false)
@@ -287,71 +283,78 @@ async function loadReadiness(planId) {
   }
 }
 
+async function applyPlanResponse(res, { queryDate } = {}) {
+  requestTradeDate.value = res.trade_date || queryDate || String(tradeDateInput.value || '').trim() || ''
+  nextTradingDay.value = res.next_trading_day || ''
+  if (res.code === TRADE_PLAN_CODE_NO_UPCOMING) {
+    plan.value = null
+    knownPricingStage.value = ''
+    clearMaterializeResult()
+    emptyMessage.value = res.message || '暂无即将交易的计划'
+    return null
+  }
+  if (res.code !== TRADE_PLAN_CODE_OK) {
+    plan.value = null
+    knownPricingStage.value = ''
+    clearMaterializeResult()
+    emptyMessage.value = res.message || `加载失败 (code=${res.code})`
+    message.error(emptyMessage.value)
+    return null
+  }
+  const prevId = Number(plan.value?.id) || 0
+  plan.value = res.plan
+  if (!res.plan) {
+    knownPricingStage.value = ''
+    clearMaterializeResult()
+    emptyMessage.value = res.message || '暂无即将交易的计划'
+    return null
+  }
+  if (prevId && prevId !== Number(res.plan.id)) {
+    knownPricingStage.value = ''
+    clearMaterializeResult()
+  }
+  if (res.plan.trade_date) {
+    tradeDateInput.value = res.plan.trade_date
+  }
+  emptyMessage.value = ''
+  return res.plan
+}
+
+async function refreshFromPlanId(planId) {
+  const id = Math.trunc(Number(planId) || 0)
+  if (id <= 0) {
+    await refresh()
+    return
+  }
+  loading.value = true
+  emptyMessage.value = ''
+  clearReadiness()
+  try {
+    const res = await getTradePlanById(id)
+    const loaded = await applyPlanResponse(res)
+    if (!loaded) return
+    await loadReadiness(id)
+  } catch (e) {
+    plan.value = null
+    knownPricingStage.value = ''
+    clearMaterializeResult()
+    emptyMessage.value = e?.message || String(e)
+    message.error(emptyMessage.value)
+  } finally {
+    loading.value = false
+  }
+}
+
 async function refresh() {
   loading.value = true
   emptyMessage.value = ''
   clearReadiness()
   try {
-    const queryDate = resolveUpcomingQueryTradeDateAfterGenerate({
-      planId: preferredGeneratedPlanId.value,
-      generatedTradeDate: preferredGeneratedTradeDate.value,
-      inputTradeDate: tradeDateInput.value,
-    })
-    let res = await getUpcomingTradePlan(queryDate)
-    // Prefer generated plan: if focus id set but first hit differs, retry once on generated trade_date.
-    if (
-      preferredGeneratedPlanId.value > 0
-      && preferredGeneratedTradeDate.value
-      && res.plan
-      && !isPreferredGeneratedPlan(preferredGeneratedPlanId.value, res.plan.id)
-    ) {
-      res = await getUpcomingTradePlan(preferredGeneratedTradeDate.value)
-    }
-    requestTradeDate.value = res.trade_date || queryDate || tradeDateInput.value || ''
-    nextTradingDay.value = res.next_trading_day || ''
-    if (res.code === TRADE_PLAN_CODE_NO_UPCOMING) {
-      plan.value = null
-      knownPricingStage.value = ''
-      clearMaterializeResult()
-      emptyMessage.value = res.message || '暂无即将交易的计划'
-      return
-    }
-    if (res.code !== TRADE_PLAN_CODE_OK) {
-      plan.value = null
-      knownPricingStage.value = ''
-      clearMaterializeResult()
-      emptyMessage.value = res.message || `加载失败 (code=${res.code})`
-      message.error(emptyMessage.value)
-      return
-    }
-    const prevId = Number(plan.value?.id) || 0
-    plan.value = res.plan
-    if (!res.plan) {
-      knownPricingStage.value = ''
-      clearMaterializeResult()
-      emptyMessage.value = res.message || '暂无即将交易的计划'
-      return
-    }
-    if (prevId && prevId !== Number(res.plan.id)) {
-      knownPricingStage.value = ''
-      clearMaterializeResult()
-    }
-    if (
-      preferredGeneratedPlanId.value > 0
-      && isPreferredGeneratedPlan(preferredGeneratedPlanId.value, res.plan.id)
-      && res.plan.trade_date
-    ) {
-      tradeDateInput.value = res.plan.trade_date
-    }
-    loading.value = false
-    // Readiness by plan id keeps focus on the generated plan when preferred.
-    const readinessPlanId =
-      preferredGeneratedPlanId.value > 0
-      && isPreferredGeneratedPlan(preferredGeneratedPlanId.value, res.plan.id)
-        ? preferredGeneratedPlanId.value
-        : res.plan.id
-    await loadReadiness(readinessPlanId)
-    return
+    const queryDate = tradeDateInput.value ? String(tradeDateInput.value).trim() : undefined
+    const res = await getUpcomingTradePlan(queryDate)
+    const loaded = await applyPlanResponse(res, { queryDate })
+    if (!loaded) return
+    await loadReadiness(loaded.id)
   } catch (e) {
     plan.value = null
     knownPricingStage.value = ''
@@ -365,53 +368,51 @@ async function refresh() {
 
 function confirmGenerateNext() {
   if (generating.value) return
-  const targetDay = nextTradingDay.value || '下一交易日'
+  const selectedTradeDate = tradeDateInput.value ? String(tradeDateInput.value).trim() : ''
+  const targetDay = selectedTradeDate || nextTradingDay.value || '下一交易日'
   dialog.warning({
     title: '生成交易计划',
     content: `将按盘后 Candidate → Draft → Risk 链路写入 ${targetDay} 的交易计划。不会自动批准、冻结或执行，也不会写入模拟盘观察（paper_sim）；重复生成会创建新的 PlanVersion。`,
     positiveText: '确认生成',
     negativeText: '取消',
-    onPositiveClick: () => {
-      // Enter generating immediately so the primary button disables before the async call.
+    maskClosable: false,
+    closeOnEsc: false,
+    onPositiveClick: async () => {
       if (generating.value) return false
       generating.value = true
-      return (async () => {
-        try {
-          const res = await generateNextTradePlan({ actor: UI_ACTOR })
-          if (res.code !== TRADE_PLAN_CODE_OK) {
-            message.error(res.message || `生成失败 (code=${res.code})`)
-            return
-          }
-          if (!res.ok && res.failed_step === 'risk') {
-            message.warning(
-              `计划 v${res.plan_version || '—'} 已生成，但 Risk 未通过；未批准、未冻结、未执行`,
-            )
-          } else if (!res.ok) {
-            message.error(res.message || `生成失败（${res.failed_step || 'unknown'}）`)
-            return
-          } else {
-            message.success(`已生成 ${res.trade_date} 交易计划 v${res.plan_version}`)
-          }
-          // Focus the newly generated plan on refresh (do not change upcoming API semantics).
-          const newPlanId = Number(res.plan_id) || 0
-          if (newPlanId > 0) {
-            preferredGeneratedPlanId.value = newPlanId
-            preferredGeneratedTradeDate.value = String(res.trade_date || '').trim()
-            if (preferredGeneratedTradeDate.value) {
-              tradeDateInput.value = preferredGeneratedTradeDate.value
-            }
-          } else {
-            preferredGeneratedPlanId.value = 0
-            preferredGeneratedTradeDate.value = ''
-            tradeDateInput.value = ''
-          }
-          await refresh()
-        } catch (e) {
-          message.error(e?.message || String(e))
-        } finally {
-          generating.value = false
+      try {
+        const res = await generateNextTradePlan({
+          actor: UI_ACTOR,
+          ...(selectedTradeDate ? { tradeDate: selectedTradeDate } : {}),
+        })
+        if (res.code !== TRADE_PLAN_CODE_OK) {
+          message.error(res.message || `生成失败 (code=${res.code})`)
+          return
         }
-      })()
+        if (!res.ok && res.failed_step === 'risk') {
+          message.warning(
+            `计划 v${res.plan_version || '—'} 已生成，但 Risk 未通过；未批准、未冻结、未执行`,
+          )
+        } else if (!res.ok) {
+          message.error(res.message || `生成失败（${res.failed_step || 'unknown'}）`)
+          return
+        } else {
+          message.success(`已生成 ${res.trade_date} 交易计划 v${res.plan_version}`)
+        }
+        const newPlanId = Number(res.plan_id) || 0
+        if (res.trade_date) {
+          tradeDateInput.value = String(res.trade_date).trim()
+        }
+        if (newPlanId > 0) {
+          await refreshFromPlanId(newPlanId)
+        } else {
+          await refresh()
+        }
+      } catch (e) {
+        message.error(e?.message || String(e))
+      } finally {
+        generating.value = false
+      }
     },
   })
 }
@@ -575,11 +576,13 @@ onMounted(refresh)
         <n-text>下一交易日：{{ nextTradingDay || '—' }}</n-text>
       </n-space>
       <n-space align="center">
-        <n-input
-          v-model:value="tradeDateInput"
-          :placeholder="tradeDatePlaceholder"
+        <n-date-picker
+          v-model:formatted-value="tradeDateInput"
+          value-format="yyyy-MM-dd"
+          type="date"
           clearable
           :disabled="generating"
+          :placeholder="tradeDatePlaceholder"
           style="width: 240px"
         />
         <n-button
@@ -588,7 +591,7 @@ onMounted(refresh)
           :disabled="loading || readinessLoading || approving || freezing || materializing || generating"
           @click="confirmGenerateNext"
         >
-          {{ generating ? '生成中，请等待。' : '生成明日计划' }}
+          {{ generating ? '生成中，请等待。' : '生成交易计划' }}
         </n-button>
         <n-button
           :loading="loading || readinessLoading"
@@ -608,7 +611,7 @@ onMounted(refresh)
       当前计划用于策略观察与验证，不代表实际成交价格或执行订单。生成结果为 Draft，不会自动进入模拟盘观察（paper_sim）。
     </n-text>
 
-    <n-spin :show="loading">
+    <n-spin :show="loading || generating">
       <template v-if="hasPlan">
         <n-space vertical :size="10" style="margin-bottom: 14px">
           <div class="meta-grid">
