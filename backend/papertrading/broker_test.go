@@ -41,6 +41,11 @@ func enablePaperTrading(t *testing.T) {
 	papertrading.SetConfigForTest(papertrading.Config{EnablePaperTrading: true, InitialCash: 1_000_000})
 }
 
+// sessionANow is a fixed mid-morning clock for tests that must pass Session Policy.
+func sessionANow() time.Time {
+	return time.Date(2026, 8, 5, 10, 0, 0, 0, time.Local)
+}
+
 func seedFrozenPlan(t *testing.T, tradeDate string, items []models.TradePlanItem) *models.TradePlan {
 	t.Helper()
 	now := time.Now()

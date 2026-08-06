@@ -58,6 +58,7 @@ func TestPaperTradingStatus_ReadOnly(t *testing.T) {
 	_, err := papertrading.RunExecution(papertrading.ExecutionRequest{
 		TradeDate: plan.TradeDate, Trigger: papertrading.TriggerManual, Actor: "dev",
 		SkipWeekdayCheck: true,
+		Now:              time.Date(2026, 8, 5, 10, 0, 0, 0, time.Local),
 	})
 	require.NoError(t, err)
 

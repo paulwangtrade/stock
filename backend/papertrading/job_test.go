@@ -28,6 +28,7 @@ func TestPaperTradingJob_FlagOff_NoOrders(t *testing.T) {
 		Actor:            "cron",
 		Price:            papertrading.StaticPriceProvider{Quotes: map[string]papertrading.Quote{"sz000001": {Open: 10.05}}},
 		SkipWeekdayCheck: true,
+		Now:              sessionANow(),
 	})
 	require.NoError(t, err)
 	require.Equal(t, papertrading.RunStatusSkippedDisabled, res.Status)
@@ -48,6 +49,7 @@ func TestPaperTradingJob_FrozenPlan_CreatesOrders(t *testing.T) {
 		Actor:            "cron",
 		Price:            papertrading.StaticPriceProvider{Quotes: map[string]papertrading.Quote{"sz000001": {Open: 10.05, LimitUp: 11}}},
 		SkipWeekdayCheck: true,
+		Now:              sessionANow(),
 	})
 	require.NoError(t, err)
 	require.Equal(t, papertrading.RunStatusCompleted, res.Status)
@@ -70,7 +72,7 @@ func TestPaperTradingJob_Idempotent_NoDuplicateOrders(t *testing.T) {
 	price := papertrading.StaticPriceProvider{Quotes: map[string]papertrading.Quote{"sz000001": {Open: 10.0}}}
 	req := papertrading.ExecutionRequest{
 		TradeDate: plan.TradeDate, Trigger: papertrading.TriggerCron, Actor: "cron",
-		Price: price, SkipWeekdayCheck: true,
+		Price: price, SkipWeekdayCheck: true, Now: sessionANow(),
 	}
 	res1, err := papertrading.RunExecution(req)
 	require.NoError(t, err)
@@ -92,7 +94,7 @@ func TestPaperTradingJob_MissingPrice_Rejected(t *testing.T) {
 	plan := seedFrozenPlan(t, "2026-07-30", []models.TradePlanItem{buyItem("sz000003", "国农科技", 1000)})
 	res, err := papertrading.RunExecution(papertrading.ExecutionRequest{
 		TradeDate: plan.TradeDate, Trigger: papertrading.TriggerCron, Actor: "cron",
-		Price: papertrading.MissingPriceProvider{}, SkipWeekdayCheck: true,
+		Price: papertrading.MissingPriceProvider{}, SkipWeekdayCheck: true, Now: sessionANow(),
 	})
 	require.NoError(t, err)
 	require.Equal(t, papertrading.RunStatusCompletedWithRejects, res.Status)
@@ -117,6 +119,7 @@ func TestPaperTradingJob_NotFrozen_Rejected(t *testing.T) {
 		TradeDate: plan.TradeDate, PlanID: plan.ID, Trigger: papertrading.TriggerManual, Actor: "tester",
 		Price: papertrading.StaticPriceProvider{Quotes: map[string]papertrading.Quote{"sz000001": {Open: 10}}},
 		SkipWeekdayCheck: true,
+		Now:              sessionANow(),
 	})
 	require.Error(t, err)
 	require.Equal(t, papertrading.RunStatusFailed, res.Status)
@@ -130,7 +133,7 @@ func TestSettlementJob_DoesNotUnlockSameDay(t *testing.T) {
 	price := papertrading.StaticPriceProvider{Quotes: map[string]papertrading.Quote{"sz000001": {Open: 10.0}}}
 	_, err := papertrading.RunExecution(papertrading.ExecutionRequest{
 		TradeDate: plan.TradeDate, Trigger: papertrading.TriggerCron, Actor: "cron",
-		Price: price, SkipWeekdayCheck: true,
+		Price: price, SkipWeekdayCheck: true, Now: sessionANow(),
 	})
 	require.NoError(t, err)
 
@@ -171,6 +174,8 @@ func TestPaperTradingAPI_RunRequiresActorAndManualTrigger(t *testing.T) {
 		return &[]data.StockInfo{{Code: codes[0], Open: "10.05", Price: "10.05"}}, nil
 	})
 	t.Cleanup(func() { papertrading.SetQuoteFetcherForTest(nil) })
+	papertrading.SetExecutionNowForTest(sessionANow)
+	t.Cleanup(func() { papertrading.SetExecutionNowForTest(nil) })
 
 	// Use Static via Job path indirectly — API uses DefaultOpenPriceProvider.
 	// Inject quote fetcher so realtime provider works.

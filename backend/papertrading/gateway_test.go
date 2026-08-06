@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"go-stock/backend/api"
 	"go-stock/backend/data"
@@ -39,6 +40,7 @@ func TestRunExecution_FrozenPlan_WritesPaperSimOnly(t *testing.T) {
 		Actor:            "test:c2a",
 		Price:            price,
 		SkipWeekdayCheck: true,
+		Now:              sessionANow(),
 	})
 	require.NoError(t, err)
 	require.Equal(t, papertrading.ExecutionEntryGateway, res.Entry)
@@ -70,7 +72,7 @@ func TestRunExecution_ManualAndCron_SameEntry(t *testing.T) {
 
 	cronRes, err := papertrading.RunExecution(papertrading.ExecutionRequest{
 		TradeDate: planCron.TradeDate, Trigger: papertrading.TriggerCron, Actor: "cron",
-		Price: price, SkipWeekdayCheck: true,
+		Price: price, SkipWeekdayCheck: true, Now: sessionANow(),
 	})
 	require.NoError(t, err)
 	require.Equal(t, papertrading.ExecutionEntryGateway, cronRes.Entry)
@@ -78,7 +80,7 @@ func TestRunExecution_ManualAndCron_SameEntry(t *testing.T) {
 
 	manualRes, err := papertrading.RunExecution(papertrading.ExecutionRequest{
 		TradeDate: planManual.TradeDate, Trigger: papertrading.TriggerManual, Actor: "ui:future",
-		Price: price, SkipWeekdayCheck: true,
+		Price: price, SkipWeekdayCheck: true, Now: sessionANow(),
 	})
 	require.NoError(t, err)
 	require.Equal(t, papertrading.ExecutionEntryGateway, manualRes.Entry)
@@ -94,6 +96,10 @@ func TestPaperTradingAssetMiddleware_RunUsesGateway(t *testing.T) {
 		return &[]data.StockInfo{{Code: codes[0], Open: "10.05", Price: "10.05"}}, nil
 	})
 	t.Cleanup(func() { papertrading.SetQuoteFetcherForTest(nil) })
+	papertrading.SetExecutionNowForTest(func() time.Time {
+		return time.Date(2026, 8, 5, 10, 0, 0, 0, time.Local)
+	})
+	t.Cleanup(func() { papertrading.SetExecutionNowForTest(nil) })
 
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)

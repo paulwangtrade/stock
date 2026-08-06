@@ -18,7 +18,7 @@ func TestGenerateDailyReport_Idempotent_AfterSettlement(t *testing.T) {
 	price := papertrading.StaticPriceProvider{Quotes: map[string]papertrading.Quote{"sz000001": {Open: 10.05}}}
 	_, err := papertrading.RunExecution(papertrading.ExecutionRequest{
 		TradeDate: plan.TradeDate, Trigger: papertrading.TriggerCron, Actor: "cron",
-		Price: price, SkipWeekdayCheck: true,
+		Price: price, SkipWeekdayCheck: true, Now: sessionANow(),
 	})
 	require.NoError(t, err)
 
