@@ -18,6 +18,11 @@ const DefaultInitialCash = 1_000_000.0
 type Config struct {
 	EnablePaperTrading bool    `json:"enablePaperTrading"`
 	InitialCash        float64 `json:"initialCash,omitempty"`
+	// FillMode selects exclusive Fill cron (Phase10-C.4-A).
+	// "A" (default): 09:31 Session A open fill.
+	// "B": 15:10 Session B close fill (observation sampling).
+	// Empty / unknown → A. Does not bypass Session Policy; only which cron is registered.
+	FillMode string `json:"fillMode,omitempty"`
 }
 
 var (
@@ -26,7 +31,7 @@ var (
 )
 
 func defaultConfig() Config {
-	return Config{EnablePaperTrading: false, InitialCash: DefaultInitialCash}
+	return Config{EnablePaperTrading: false, InitialCash: DefaultInitialCash, FillMode: FillModeA}
 }
 
 func configPath() string {
@@ -51,6 +56,7 @@ func GetConfig() Config {
 	if cfg.InitialCash <= 0 {
 		cfg.InitialCash = DefaultInitialCash
 	}
+	cfg.FillMode = NormalizeFillMode(cfg.FillMode)
 
 	cfgMu.Lock()
 	cfgCached = &cfg
@@ -68,6 +74,7 @@ func SaveConfig(cfg Config) error {
 	if cfg.InitialCash <= 0 {
 		cfg.InitialCash = DefaultInitialCash
 	}
+	cfg.FillMode = NormalizeFillMode(cfg.FillMode)
 	if err := os.MkdirAll("data", 0o755); err != nil {
 		return err
 	}
@@ -96,7 +103,13 @@ func SetConfigForTest(cfg Config) {
 	if cfg.InitialCash <= 0 {
 		cfg.InitialCash = DefaultInitialCash
 	}
+	cfg.FillMode = NormalizeFillMode(cfg.FillMode)
 	cfgMu.Lock()
 	cfgCached = &cfg
 	cfgMu.Unlock()
+}
+
+// EffectiveFillMode returns the exclusive fill cron mode from current config.
+func EffectiveFillMode() string {
+	return NormalizeFillMode(GetConfig().FillMode)
 }

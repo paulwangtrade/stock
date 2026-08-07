@@ -141,6 +141,11 @@ func TestPhase10C2A_MainWiring_Markers(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(cronBody), "RunExecution")
 	require.False(t, strings.Contains(string(cronBody), "paperTradingJob("))
+	// Phase10-C.4-A: Session B exclusive cron spec + key present; still via Gateway.
+	require.Contains(t, string(cronBody), "paper_trading_session_b")
+	require.Contains(t, string(cronBody), "0 10 15 * * 1-5")
+	require.Contains(t, string(cronBody), "runPaperTradingSessionBJob")
+	require.Contains(t, string(cronBody), "FillCronExclusive")
 }
 
 func TestRunExecution_SessionB_UsesCloseFill(t *testing.T) {
