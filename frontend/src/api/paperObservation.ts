@@ -292,3 +292,105 @@ export async function getPaperDailyReports(opts?: {
     to: body.to ? str(body.to) : undefined,
   }
 }
+
+/** Phase10-C.3-O.2 Observation Metrics (read-only; legacy baseline already isolated server-side). */
+export type ObservationSessionDistribution = {
+  sessionA: number
+  sessionB: number
+  sessionC: number
+  sessionClosed: number
+}
+
+export type ObservationFillPolicy = {
+  totalFills: number
+  marketOpenFills: number
+  marketCloseFills: number
+  bWindowTotal: number
+  bWindowCloseFills: number
+  bWindowOpenFills: number
+  bWindowCompliant: number
+  bWindowViolation: number
+}
+
+export type ObservationQuality = {
+  okCount: number
+  anomalyCount: number
+  incompleteCount: number
+  legacyCount: number
+}
+
+export type ObservationLegacy = {
+  legacyBaselineCount: number
+  excludedFillCount: number
+}
+
+export type ObservationMetrics = {
+  enabled: boolean
+  tradeDate?: string
+  totalRuns: number
+  sessionDistribution: ObservationSessionDistribution
+  fillPolicy: ObservationFillPolicy
+  quality: ObservationQuality
+  legacy: ObservationLegacy
+  pricePolicyCompliance: number
+}
+
+function mapObservationMetrics(raw: any): ObservationMetrics {
+  const sess = raw?.sessionDistribution || {}
+  const fill = raw?.fillPolicy || {}
+  const quality = raw?.quality || {}
+  const legacy = raw?.legacy || {}
+  return {
+    enabled: !!raw?.enabled,
+    tradeDate: raw?.tradeDate ? str(raw.tradeDate) : undefined,
+    totalRuns: num(raw?.totalRuns),
+    sessionDistribution: {
+      sessionA: num(sess.sessionA),
+      sessionB: num(sess.sessionB),
+      sessionC: num(sess.sessionC),
+      sessionClosed: num(sess.sessionClosed),
+    },
+    fillPolicy: {
+      totalFills: num(fill.totalFills),
+      marketOpenFills: num(fill.marketOpenFills),
+      marketCloseFills: num(fill.marketCloseFills),
+      bWindowTotal: num(fill.bWindowTotal),
+      bWindowCloseFills: num(fill.bWindowCloseFills),
+      bWindowOpenFills: num(fill.bWindowOpenFills),
+      bWindowCompliant: num(fill.bWindowCompliant),
+      bWindowViolation: num(fill.bWindowViolation),
+    },
+    quality: {
+      okCount: num(quality.okCount),
+      anomalyCount: num(quality.anomalyCount),
+      incompleteCount: num(quality.incompleteCount),
+      legacyCount: num(quality.legacyCount),
+    },
+    legacy: {
+      legacyBaselineCount: num(legacy.legacyBaselineCount),
+      excludedFillCount: num(legacy.excludedFillCount),
+    },
+    pricePolicyCompliance: num(raw?.pricePolicyCompliance, 1),
+  }
+}
+
+/** GET /api/papertrading/observation/metrics?trade_date= */
+export async function getPaperObservationMetrics(tradeDate?: string): Promise<ObservationMetrics> {
+  const q = tradeDate?.trim() ? `?trade_date=${encodeURIComponent(tradeDate.trim())}` : ''
+  const res = await fetch(`/api/papertrading/observation/metrics${q}`)
+  if (!res.ok) throw new Error(`执行观察 metrics 请求失败: HTTP ${res.status}`)
+  const body = await res.json()
+  if (!body?.ok) throw new Error(body?.message || '执行观察 metrics 响应无效')
+  // Prefer nested metrics object; fall back to flat aliases from O.2 handler.
+  const raw = body.metrics || {
+    enabled: body.enabled,
+    tradeDate: body.tradeDate,
+    totalRuns: body.totalRuns,
+    sessionDistribution: body.sessionDistribution,
+    fillPolicy: body.fillPolicy,
+    quality: body.quality,
+    legacy: body.legacy,
+    pricePolicyCompliance: body.pricePolicyCompliance,
+  }
+  return mapObservationMetrics(raw)
+}

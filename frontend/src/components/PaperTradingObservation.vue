@@ -20,6 +20,7 @@ import {
   getPaperDashboardPositions,
   getPaperDashboardRuns,
   getPaperDashboardToday,
+  getPaperObservationMetrics,
 } from '../api/paperObservation'
 
 const message = useMessage()
@@ -31,6 +32,8 @@ const today = ref(null)
 const positions = ref(null)
 const runs = ref(null)
 const dailyReports = ref(null)
+const metrics = ref(null)
+const metricsUnavailable = ref(false)
 
 const dataSourceNote = computed(
   () =>
@@ -291,11 +294,29 @@ const dailyReportColumns = [
   },
 ]
 
+function formatCompliance(v) {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return '—'
+  return `${(n * 100).toFixed(1)}%`
+}
+
 async function refresh() {
   loading.value = true
   errorMessage.value = ''
+  const date = tradeDate.value.trim() || undefined
+
+  // Metrics must not block / clear the existing observation panels on failure.
+  const metricsPromise = getPaperObservationMetrics(date)
+    .then((m) => {
+      metrics.value = m
+      metricsUnavailable.value = false
+    })
+    .catch(() => {
+      metrics.value = null
+      metricsUnavailable.value = true
+    })
+
   try {
-    const date = tradeDate.value.trim() || undefined
     const [t, p, r, d] = await Promise.all([
       getPaperDashboardToday(date),
       getPaperDashboardPositions(),
@@ -317,6 +338,7 @@ async function refresh() {
     errorMessage.value = e?.message || String(e)
     message.error(errorMessage.value)
   } finally {
+    await metricsPromise
     loading.value = false
   }
 }
@@ -383,6 +405,67 @@ onMounted(refresh)
               <n-statistic label="权益" :value="formatMoney(today.equity)" />
             </n-space>
           </template>
+
+          <div class="exec-observation">
+            <n-space align="center" style="margin: 4px 0 10px">
+              <n-text strong>Execution Observation</n-text>
+              <n-tag size="small" type="info" :bordered="false">合规观察</n-tag>
+              <n-tag size="small" :bordered="false">只读 · metrics API</n-tag>
+            </n-space>
+
+            <template v-if="metrics">
+              <n-text strong style="display: block; margin-bottom: 6px">执行窗口运行次数</n-text>
+              <n-text depth="3" style="display: block; margin-bottom: 8px; font-size: 12px">
+                按 run.started_at 派生 Session；此处为运行次数，不是成交数量。
+              </n-text>
+              <n-space :wrap="true" :size="24" style="margin-bottom: 16px">
+                <n-statistic label="A窗口运行次数" :value="metrics.sessionDistribution.sessionA" />
+                <n-statistic label="B窗口运行次数" :value="metrics.sessionDistribution.sessionB" />
+                <n-statistic label="C窗口运行次数" :value="metrics.sessionDistribution.sessionC" />
+                <n-statistic label="关闭窗口运行次数" :value="metrics.sessionDistribution.sessionClosed" />
+                <n-statistic label="总运行次数" :value="metrics.totalRuns" />
+              </n-space>
+
+              <n-text strong style="display: block; margin-bottom: 6px">B窗口成交价格策略</n-text>
+              <n-space :wrap="true" :size="24" style="margin-bottom: 16px">
+                <n-statistic label="符合：B窗口 Close 成交" :value="metrics.fillPolicy.bWindowCloseFills" />
+                <n-statistic label="异常：B窗口 Open 成交" :value="metrics.fillPolicy.bWindowOpenFills" />
+              </n-space>
+
+              <n-text strong style="display: block; margin-bottom: 6px">历史基线（已排除）</n-text>
+              <n-text depth="3" style="display: block; margin-bottom: 8px; font-size: 12px">
+                C.2-C修复前历史成交，不参与当前合规统计
+              </n-text>
+              <n-space :wrap="true" :size="24" style="margin-bottom: 16px">
+                <n-statistic label="历史基线笔数" :value="metrics.legacy.legacyBaselineCount" />
+                <n-statistic label="已排除笔数" :value="metrics.legacy.excludedFillCount" />
+              </n-space>
+
+              <n-text strong style="display: block; margin-bottom: 6px">Quality</n-text>
+              <n-space :wrap="true" :size="24" style="margin-bottom: 16px">
+                <n-statistic label="OK" :value="metrics.quality.okCount" />
+                <n-statistic label="ANOMALY" :value="metrics.quality.anomalyCount" />
+                <n-statistic label="LEGACY_BASELINE" :value="metrics.quality.legacyCount" />
+              </n-space>
+
+              <n-text strong style="display: block; margin-bottom: 6px">Compliance</n-text>
+              <n-space :wrap="true" :size="24" style="margin-bottom: 8px">
+                <n-statistic
+                  label="执行价格策略合规率"
+                  :value="formatCompliance(metrics.pricePolicyCompliance)"
+                />
+              </n-space>
+            </template>
+
+            <n-empty
+              v-else-if="metricsUnavailable"
+              description="执行观察数据暂不可用"
+              style="margin: 8px 0 12px"
+            />
+            <n-text v-else depth="3" style="display: block; margin-bottom: 8px">
+              执行观察加载中…
+            </n-text>
+          </div>
 
           <template v-if="positions">
             <n-space align="center" style="margin: 8px 0">
@@ -471,5 +554,12 @@ onMounted(refresh)
   margin: 6px 0 4px;
   font-size: 13px;
   line-height: 1.5;
+}
+.exec-observation {
+  margin: 8px 0 18px;
+  padding: 12px 14px;
+  border: 1px solid rgba(32, 128, 240, 0.25);
+  border-radius: 6px;
+  background: rgba(32, 128, 240, 0.04);
 }
 </style>
