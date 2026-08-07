@@ -122,7 +122,12 @@ func parseStrategyRunItems(strat *models.StockStrategy, run *models.StockStrateg
 	seen := map[string]bool{}
 	for i, row := range rows {
 		codeRaw := firstString(row, "SECUCODE", "secucode", "SECURITY_CODE", "security_code", "stockCode", "StockCode", "code", "Code")
-		nameRaw := firstString(row, "SECURITY_NAME_ABBR", "security_name_abbr", "stockName", "StockName", "name", "Name")
+		// Name keys: keep legacy priority, then Eastmoney SECURITY_SHORT_NAME (Phase10 stock_name fix).
+		nameRaw := firstString(row,
+			"SECURITY_NAME_ABBR", "security_name_abbr",
+			"stockName", "StockName", "name", "Name",
+			"SECURITY_SHORT_NAME", "security_short_name",
+		)
 		industry := firstString(row, "INDUSTRY", "industry")
 		sina, nerr := toSinaAShareCode(codeRaw)
 		if nerr != nil {
