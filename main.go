@@ -46,7 +46,7 @@ var alipay []byte
 //go:embed build/screenshot/wxpay.jpg
 var wxpay []byte
 
-//go:embed build/screenshot/扫码_搜索联合传播样式-白色版.png
+//go:embed build/screenshot/鎵爜_鎼滅储鑱斿悎浼犳挱鏍峰紡-鐧借壊鐗?png
 var wxgzh []byte
 
 //go:embed build/stock_basic.json
@@ -58,7 +58,7 @@ var stocksBinHK []byte
 //go:embed build/stock_base_info_us.json
 var stocksBinUS []byte
 
-// 勿 go generate 覆盖 build/bin/data：exe 运行时数据在 build/bin/data，编译请用 scripts/build-windows.ps1
+// 鍕?go generate 瑕嗙洊 build/bin/data锛歟xe 杩愯鏃舵暟鎹湪 build/bin/data锛岀紪璇戣鐢?scripts/build-windows.ps1
 
 var Version string
 var VersionCommit string
@@ -81,7 +81,7 @@ func main() {
 	AutoMigrate()
 
 	//db.Dao.Model(&data.Group{}).Where("id = ?", 0).FirstOrCreate(&data.Group{
-	//	Name: "默认分组",
+	//	Name: "榛樿鍒嗙粍",
 	//	Sort: 0,
 	//})
 
@@ -89,7 +89,7 @@ func main() {
 	log.SugaredLogger.Infof("version: %s  commit: %s", Version, VersionCommit)
 	//log.SugaredLogger.Infof("build key: %s", BuildKey)
 
-	// 程序启动时预缓存东财 Cookie
+	// 绋嬪簭鍚姩鏃堕缂撳瓨涓滆储 Cookie
 	//go func() {
 	//	cacheCookies("https://push2his.eastmoney.com/api/qt/stock/kline/get")
 	//}()
@@ -100,41 +100,41 @@ func main() {
 	if IsMacOS() {
 		AppMenu.Append(menu.EditMenu())
 	}
-	//FileMenu := AppMenu.AddSubmenu("设置")
-	//FileMenu.AddText("窗口全屏", keys.CmdOrCtrl("f"), func(callback *menu.CallbackData) {
+	//FileMenu := AppMenu.AddSubmenu("璁剧疆")
+	//FileMenu.AddText("绐楀彛鍏ㄥ睆", keys.CmdOrCtrl("f"), func(callback *menu.CallbackData) {
 	//	runtime.WindowFullscreen(app.ctx)
 	//})
-	//FileMenu.AddText("窗口还原", keys.Key("Esc"), func(callback *menu.CallbackData) {
+	//FileMenu.AddText("绐楀彛杩樺師", keys.Key("Esc"), func(callback *menu.CallbackData) {
 	//	runtime.WindowUnfullscreen(app.ctx)
 	//})
-	//FileMenu.AddText("显示搜索框", keys.CmdOrCtrl("s"), func(callbackData *menu.CallbackData) {
+	//FileMenu.AddText("鏄剧ず鎼滅储妗?, keys.CmdOrCtrl("s"), func(callbackData *menu.CallbackData) {
 	//	runtime.EventsEmit(app.ctx, "showSearch", 1)
 	//})
-	//FileMenu.AddText("隐藏搜索框", keys.CmdOrCtrl("d"), func(callbackData *menu.CallbackData) {
+	//FileMenu.AddText("闅愯棌鎼滅储妗?, keys.CmdOrCtrl("d"), func(callbackData *menu.CallbackData) {
 	//	runtime.EventsEmit(app.ctx, "showSearch", 0)
 	//})
-	//FileMenu.AddText("刷新数据", keys.CmdOrCtrl("r"), func(callbackData *menu.CallbackData) {
+	//FileMenu.AddText("鍒锋柊鏁版嵁", keys.CmdOrCtrl("r"), func(callbackData *menu.CallbackData) {
 	//	//runtime.EventsEmit(app.ctx, "refresh", "setting-"+time.Now().Format("2006-01-02 15:04:05"))
 	//	runtime.EventsEmit(app.ctx, "refreshFollowList", "refresh-"+time.Now().Format("2006-01-02 15:04:05"))
 	//})
 	//FileMenu.AddSeparator()
 
 	//if goruntime.GOOS == "windows" {
-	//	FileMenu.AddText("隐藏到托盘区", keys.CmdOrCtrl("z"), func(_ *menu.CallbackData) {
+	//	FileMenu.AddText("闅愯棌鍒版墭鐩樺尯", keys.CmdOrCtrl("z"), func(_ *menu.CallbackData) {
 	//		runtime.WindowHide(app.ctx)
 	//	})
 	//}
 
-	//FileMenu.AddText("退出", keys.CmdOrCtrl("q"), func(_ *menu.CallbackData) {
+	//FileMenu.AddText("閫€鍑?, keys.CmdOrCtrl("q"), func(_ *menu.CallbackData) {
 	//	runtime.Quit(app.ctx)
 	//})
 	log.SugaredLogger.Info("version: " + Version)
 	log.SugaredLogger.Info("commit: " + VersionCommit)
-	// 根据屏幕分辨率自适应窗口尺寸
+	// 鏍规嵁灞忓箷鍒嗚鲸鐜囪嚜閫傚簲绐楀彛灏哄
 	width, height, _, _, err := getScreenResolution()
 	if err != nil {
 		log.SugaredLogger.Error("get screen resolution error")
-		// 获取失败时给一个合理的默认值
+		// 鑾峰彇澶辫触鏃剁粰涓€涓悎鐞嗙殑榛樿鍊?
 		width = 1412
 		height = 834
 	}
@@ -147,13 +147,13 @@ func main() {
 
 	//frameless := getFrameless()
 
-	// 计算默认窗口大小：优先使用上次保存的用户尺寸，否则自适应
+	// 璁＄畻榛樿绐楀彛澶у皬锛氫紭鍏堜娇鐢ㄤ笂娆′繚瀛樼殑鐢ㄦ埛灏哄锛屽惁鍒欒嚜閫傚簲
 	config := data.GetSettingConfig()
 
 	appWidth := config.WindowWidth
 	appHeight := config.WindowHeight
 
-	// 若用户尚未调整过窗口或记录为 0，则按屏幕比例给一个合适默认值
+	// 鑻ョ敤鎴峰皻鏈皟鏁磋繃绐楀彛鎴栬褰曚负 0锛屽垯鎸夊睆骞曟瘮渚嬬粰涓€涓悎閫傞粯璁ゅ€?
 	if appWidth <= 0 || appHeight <= 0 {
 		appWidth = width * 5 / 10
 		appHeight = height * 5 / 10
@@ -161,8 +161,8 @@ func main() {
 	log.SugaredLogger.Info("screen resolution: " + convertor.ToString(width) + "x" + convertor.ToString(height))
 	log.SugaredLogger.Info("window size: " + convertor.ToString(appWidth) + "x" + convertor.ToString(appHeight))
 
-	// 作为 go-stock 子组件启动独立 Web 服务
-	// 端口默认由 AI_ASSISTANT_WEB_ADDR 决定。
+	// 浣滀负 go-stock 瀛愮粍浠跺惎鍔ㄧ嫭绔?Web 鏈嶅姟
+	// 绔彛榛樿鐢?AI_ASSISTANT_WEB_ADDR 鍐冲畾銆?
 	go func() {
 		if err := assistantweb.Start(); err != nil {
 			log.SugaredLogger.Errorf("ai-assistant-web start error: %v", err)
@@ -171,13 +171,13 @@ func main() {
 
 	// Create application with options
 	err = wails.Run(&options.App{
-		Title: "股票分析",
-		// 默认窗口大小：自适应但保留明显边距
+		Title: "鑲＄エ鍒嗘瀽",
+		// 榛樿绐楀彛澶у皬锛氳嚜閫傚簲浣嗕繚鐣欐槑鏄捐竟璺?
 		Width:  appWidth,
 		Height: appHeight,
 		//MinWidth:  minWidth,
 		//MinHeight: minHeight,
-		// 限制最大尺寸不超过屏幕
+		// 闄愬埗鏈€澶у昂瀵镐笉瓒呰繃灞忓箷
 		//MaxWidth:                 width,
 		//MaxHeight:                height,
 		DisableResize:            false,
@@ -195,6 +195,7 @@ func main() {
 				api.TradePlansAssetMiddleware,
 				api.PaperTradingAssetMiddleware, // Phase10-C.2-A: observation + POST /run
 				api.OpsTradingDayAssetMiddleware,
+				api.ProductCapabilitiesAssetMiddleware, // Phase13-D: FeatureGate / Explain / Risk / Usage
 			),
 		},
 		Menu:               AppMenu,
@@ -235,7 +236,7 @@ func main() {
 			WindowIsTranslucent:  true,
 			About: &mac.AboutInfo{
 				Title:   "go-stock",
-				Message: "go-stock：股票分析✨ ",
+				Message: "go-stock锛氳偂绁ㄥ垎鏋愨湪 ",
 				Icon:    icon,
 			},
 		},
@@ -248,12 +249,12 @@ func main() {
 }
 
 func cacheCookies(url string) {
-	log.SugaredLogger.Info("预缓存东财 Cookie...")
+	log.SugaredLogger.Info("棰勭紦瀛樹笢璐?Cookie...")
 	_, err := data.FetchEastMoneyCookiesViaChromedp("", 3*time.Minute, url)
 	if err != nil {
-		log.SugaredLogger.Warnf("预缓存东财 Cookie 失败：%v", err)
+		log.SugaredLogger.Warnf("棰勭紦瀛樹笢璐?Cookie 澶辫触锛?v", err)
 	} else {
-		log.SugaredLogger.Info("东财 Cookie 预缓存完成")
+		log.SugaredLogger.Info("涓滆储 Cookie 棰勭紦瀛樺畬鎴?)
 	}
 }
 
@@ -315,26 +316,26 @@ func runSchemaMigrations() error {
 	return err
 }
 
-// initGlobalStockIndexCacheTask 检查并创建 global_stock_index_cache 定时任务
+// initGlobalStockIndexCacheTask 妫€鏌ュ苟鍒涘缓 global_stock_index_cache 瀹氭椂浠诲姟
 func initGlobalStockIndexCacheTask() {
 	var count int64
 	db.Dao.Model(&models.CronTask{}).Where("task_type = ?", "global_stock_index_cache").Count(&count)
 	if count == 0 {
 		task := &models.CronTask{
-			Name:        "全球指数缓存",
-			CronExpr:    "0 0/5 * * * *", // 每分钟执行一次
+			Name:        "鍏ㄧ悆鎸囨暟缂撳瓨",
+			CronExpr:    "0 0/5 * * * *", // 姣忓垎閽熸墽琛屼竴娆?
 			TaskType:    "global_stock_index_cache",
 			Target:      "",
 			Params:      `{"crawlTimeOut": 30}`,
 			Enable:      true,
 			Status:      "active",
-			Description: "自动缓存全球股票指数数据",
+			Description: "鑷姩缂撳瓨鍏ㄧ悆鑲＄エ鎸囨暟鏁版嵁",
 		}
 		err := db.Dao.Create(task).Error
 		if err != nil {
-			log.SugaredLogger.Errorf("创建 global_stock_index_cache 定时任务失败：%v", err)
+			log.SugaredLogger.Errorf("鍒涘缓 global_stock_index_cache 瀹氭椂浠诲姟澶辫触锛?v", err)
 		} else {
-			log.SugaredLogger.Info("创建 global_stock_index_cache 定时任务成功")
+			log.SugaredLogger.Info("鍒涘缓 global_stock_index_cache 瀹氭椂浠诲姟鎴愬姛")
 		}
 	}
 
@@ -396,7 +397,7 @@ func initStockDataHK(ctx context.Context) {
 func updateBasicInfo() {
 	config := data.GetSettingConfig()
 	if config.UpdateBasicInfoOnStart {
-		//更新基本信息
+		//鏇存柊鍩烘湰淇℃伅
 		go data.NewStockDataApi().GetStockBaseInfo()
 		go data.NewStockDataApi().GetIndexBasic()
 	}
@@ -484,7 +485,7 @@ func checkDir(dir string) {
 	}
 }
 
-// PanicHandler 捕获 panic 的包装函数
+// PanicHandler 鎹曡幏 panic 鐨勫寘瑁呭嚱鏁?
 func PanicHandler() {
 	if r := recover(); r != nil {
 		fmt.Printf("Recovered from panic: %v\n", r)
