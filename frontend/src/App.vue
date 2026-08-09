@@ -44,7 +44,7 @@ import {FireFilled, MoneyCollectOutlined, NotificationFilled, StockOutlined} fro
 
 const router = useRouter()
 const loading = ref(true)
-const loadingMsg = ref("鍔犺浇鏁版嵁涓?..")
+const loadingMsg = ref("加载数据中...")
 const enableNews = ref(false)
 const contentStyle = ref("")
 const mainScrollbarStyle = computed(() => {
@@ -72,7 +72,7 @@ const menuOptions = ref([
               to: {
                 name: 'stock',
                 query: {
-                  groupName: '鍏ㄩ儴',
+                  groupName: '全部',
                   groupId: 0,
                 },
                 params: {},
@@ -81,7 +81,7 @@ const menuOptions = ref([
                 activeKey.value = 'stock'
               },
             },
-            {default: () => '鑷€夎偂',}
+            {default: () => '自选股',}
         ),
     key: 'stock',
     icon: renderIcon(StarOutline),
@@ -99,21 +99,21 @@ const menuOptions = ref([
                     router.push({
                       name: 'stock',
                       query: {
-                        groupName: '鍏ㄩ儴',
+                        groupName: '全部',
                         groupId: 0,
                       },
                     })
-                    EventsEmit("changeTab", {ID: 0, name: '鍏ㄩ儴'})
+                    EventsEmit("changeTab", {ID: 0, name: '全部'})
                   },
                   to: {
                     name: 'stock',
                     query: {
-                      groupName: '鍏ㄩ儴',
+                      groupName: '全部',
                       groupId: 0,
                     },
                   }
                 },
-                {default: () => '鍏ㄩ儴',}
+                {default: () => '全部',}
             ),
         key: 0,
       }
@@ -129,7 +129,7 @@ const menuOptions = ref([
                 activeKey.value = 'holdings'
               },
             },
-            {default: () => '鎸佷粨鑲?}
+            {default: () => '持仓股'}
         ),
     key: 'holdings',
     icon: renderIcon(Wallet),
@@ -144,7 +144,7 @@ const menuOptions = ref([
                 activeKey.value = 'holdingT'
               },
             },
-            {default: () => '鎸佷粨鍋歍'}
+            {default: () => '持仓做T'}
         ),
     key: 'holdingT',
     icon: renderIcon(Pulse),
@@ -159,7 +159,7 @@ const menuOptions = ref([
                 activeKey.value = 'quantTrading'
               },
             },
-            {default: () => '閲忓寲浜ゆ槗'}
+            {default: () => '量化交易'}
         ),
     key: 'quantTrading',
     icon: renderIcon(AnalyticsOutline),
@@ -174,7 +174,7 @@ const menuOptions = ref([
                 activeKey.value = 'tradePlanUpcoming'
               },
             },
-            { default: () => '鏄庢棩浜ゆ槗璁″垝' },
+            { default: () => '明日交易计划' },
         ),
     key: 'tradePlanUpcoming',
     icon: renderIcon(TimeOutline),
@@ -189,7 +189,7 @@ const menuOptions = ref([
                 activeKey.value = 'paperObservation'
               },
             },
-            { default: () => '妯℃嫙鐩樿瀵? },
+            { default: () => '模拟盘观察' },
         ),
     key: 'paperObservation',
     icon: renderIcon(AnalyticsOutline),
@@ -223,7 +223,7 @@ const menuOptions = ref([
                 EventsEmit('allStockListRefresh')
               },
             },
-            { default: () => '鑲＄エ绛涢€? },
+            { default: () => '股票筛选' },
         ),
     key: 'stockScreen',
     icon: renderIcon(AppsList20Regular),
@@ -240,10 +240,10 @@ const menuOptions = ref([
               },
               onClick: () => {
                 activeKey.value = 'market'
-                EventsEmit("changeMarketTab", {ID: 0, name: '甯傚満蹇'})
+                EventsEmit("changeMarketTab", {ID: 0, name: '市场快讯'})
               },
             },
-            {default: () => '甯傚満琛屾儏'}
+            {default: () => '市场行情'}
         ),
     key: 'market',
     icon: renderIcon(NewspaperOutline),
@@ -257,15 +257,15 @@ const menuOptions = ref([
                   to: {
                     name: 'market',
                     query: {
-                      name: "甯傚満蹇",
+                      name: "市场快讯",
                     }
                   },
                   onClick: () => {
                     activeKey.value = 'market'
-                    EventsEmit("changeMarketTab", {ID: 0, name: '甯傚満蹇'})
+                    EventsEmit("changeMarketTab", {ID: 0, name: '市场快讯'})
                   },
                 },
-                {default: () => '甯傚満蹇',}
+                {default: () => '市场快讯',}
             ),
         key: 'market1',
         icon: renderIcon(NewspaperSharp),
@@ -279,15 +279,15 @@ const menuOptions = ref([
                   to: {
                     name: 'market',
                     query: {
-                      name: "鍏ㄧ悆鑲℃寚",
+                      name: "全球股指",
                     },
                   },
                   onClick: () => {
                     activeKey.value = 'market'
-                    EventsEmit("changeMarketTab", {ID: 0, name: '鍏ㄧ悆鑲℃寚'})
+                    EventsEmit("changeMarketTab", {ID: 0, name: '全球股指'})
                   },
                 },
-                {default: () => '鍏ㄧ悆鑲℃寚',}
+                {default: () => '全球股指',}
             ),
         key: 'market2',
         icon: renderIcon(BarChartSharp),
@@ -301,15 +301,15 @@ const menuOptions = ref([
                   to: {
                     name: 'market',
                     query: {
-                      name: "閲嶅ぇ鎸囨暟",
+                      name: "重大指数",
                     }
                   },
                   onClick: () => {
                     activeKey.value = 'market'
-                    EventsEmit("changeMarketTab", {ID: 0, name: '閲嶅ぇ鎸囨暟'})
+                    EventsEmit("changeMarketTab", {ID: 0, name: '重大指数'})
                   },
                 },
-                {default: () => '閲嶅ぇ鎸囨暟',}
+                {default: () => '重大指数',}
             ),
         key: 'market3',
         icon: renderIcon(AnalyticsOutline),
@@ -323,15 +323,15 @@ const menuOptions = ref([
                   to: {
                     name: 'market',
                     query: {
-                      name: "琛屼笟鎺掑悕",
+                      name: "行业排名",
                     }
                   },
                   onClick: () => {
                     activeKey.value = 'market'
-                    EventsEmit("changeMarketTab", {ID: 0, name: '琛屼笟鎺掑悕'})
+                    EventsEmit("changeMarketTab", {ID: 0, name: '行业排名'})
                   },
                 },
-                {default: () => '琛屼笟鎺掑悕',}
+                {default: () => '行业排名',}
             ),
         key: 'market4',
         icon: renderIcon(Flag),
@@ -345,15 +345,15 @@ const menuOptions = ref([
                   to: {
                     name: 'market',
                     query: {
-                      name: "涓偂璧勯噾娴佸悜",
+                      name: "个股资金流向",
                     }
                   },
                   onClick: () => {
                     activeKey.value = 'market'
-                    EventsEmit("changeMarketTab", {ID: 0, name: '涓偂璧勯噾娴佸悜'})
+                    EventsEmit("changeMarketTab", {ID: 0, name: '个股资金流向'})
                   },
                 },
-                {default: () => '涓偂璧勯噾娴佸悜',}
+                {default: () => '个股资金流向',}
             ),
         key: 'market5',
         icon: renderIcon(Pulse),
@@ -367,15 +367,15 @@ const menuOptions = ref([
                   to: {
                     name: 'market',
                     query: {
-                      name: "榫欒檸姒?,
+                      name: "龙虎榜",
                     }
                   },
                   onClick: () => {
                     activeKey.value = 'market'
-                    EventsEmit("changeMarketTab", {ID: 0, name: '榫欒檸姒?})
+                    EventsEmit("changeMarketTab", {ID: 0, name: '龙虎榜'})
                   },
                 },
-                {default: () => '榫欒檸姒?,}
+                {default: () => '龙虎榜',}
             ),
         key: 'market6',
         icon: renderIcon(Dragon),
@@ -389,15 +389,15 @@ const menuOptions = ref([
                   to: {
                     name: 'market',
                     query: {
-                      name: "涓偂鐮旀姤",
+                      name: "个股研报",
                     }
                   },
                   onClick: () => {
                     activeKey.value = 'market'
-                    EventsEmit("changeMarketTab", {ID: 0, name: '涓偂鐮旀姤'})
+                    EventsEmit("changeMarketTab", {ID: 0, name: '个股研报'})
                   },
                 },
-                {default: () => '涓偂鐮旀姤',}
+                {default: () => '个股研报',}
             ),
         key: 'market7',
         icon: renderIcon(StockOutlined),
@@ -411,15 +411,15 @@ const menuOptions = ref([
                   to: {
                     name: 'market',
                     query: {
-                      name: "鍏徃鍏憡",
+                      name: "公司公告",
                     }
                   },
                   onClick: () => {
                     activeKey.value = 'market'
-                    EventsEmit("changeMarketTab", {ID: 0, name: '鍏徃鍏憡'})
+                    EventsEmit("changeMarketTab", {ID: 0, name: '公司公告'})
                   },
                 },
-                {default: () => '鍏徃鍏憡',}
+                {default: () => '公司公告',}
             ),
         key: 'market8',
         icon: renderIcon(NotificationFilled),
@@ -433,15 +433,15 @@ const menuOptions = ref([
                   to: {
                     name: 'market',
                     query: {
-                      name: "琛屼笟鐮旂┒",
+                      name: "行业研究",
                     }
                   },
                   onClick: () => {
                     activeKey.value = 'market'
-                    EventsEmit("changeMarketTab", {ID: 0, name: '琛屼笟鐮旂┒'})
+                    EventsEmit("changeMarketTab", {ID: 0, name: '行业研究'})
                   },
                 },
-                {default: () => '琛屼笟鐮旂┒',}
+                {default: () => '行业研究',}
             ),
         key: 'market9',
         icon: renderIcon(ReportSearch),
@@ -455,15 +455,15 @@ const menuOptions = ref([
                   to: {
                     name: 'market',
                     query: {
-                      name: "褰撳墠鐑棬",
+                      name: "当前热门",
                     }
                   },
                   onClick: () => {
                     activeKey.value = 'market'
-                    EventsEmit("changeMarketTab", {ID: 0, name: '褰撳墠鐑棬'})
+                    EventsEmit("changeMarketTab", {ID: 0, name: '当前热门'})
                   },
                 },
-                {default: () => '褰撳墠鐑棬',}
+                {default: () => '当前热门',}
             ),
         key: 'market10',
         icon: renderIcon(Gripfire),
@@ -477,15 +477,15 @@ const menuOptions = ref([
                   to: {
                     name: 'market',
                     query: {
-                      name: "鎸囨爣閫夎偂",
+                      name: "指标选股",
                     }
                   },
                   onClick: () => {
                     activeKey.value = 'market'
-                    EventsEmit("changeMarketTab", {ID: 0, name: '鎸囨爣閫夎偂'})
+                    EventsEmit("changeMarketTab", {ID: 0, name: '指标选股'})
                   },
                 },
-                {default: () => '鎸囨爣閫夎偂',}
+                {default: () => '指标选股',}
             ),
         key: 'market11',
         icon: renderIcon(BoxSearch20Regular),
@@ -499,15 +499,15 @@ const menuOptions = ref([
                   to: {
                     name: 'market',
                     query: {
-                      name: "鍚嶇珯浼橀€?,
+                      name: "名站优选",
                     }
                   },
                   onClick: () => {
                     activeKey.value = 'market'
-                    EventsEmit("changeMarketTab", {ID: 0, name: '鍚嶇珯浼橀€?})
+                    EventsEmit("changeMarketTab", {ID: 0, name: '名站优选'})
                   },
                 },
-                {default: () => '鍚嶇珯浼橀€?,}
+                {default: () => '名站优选',}
             ),
         key: 'market12',
         icon: renderIcon(FirefoxBrowser),
@@ -522,21 +522,21 @@ const menuOptions = ref([
               to: {
                 name: 'fund',
                 query: {
-                  name: '鍩洪噾鑷€?,
+                  name: '基金自选',
                 },
               },
               onClick: () => {
                 activeKey.value = 'fund'
               },
             },
-            {default: () => '鍩洪噾鑷€?,}
+            {default: () => '基金自选',}
         ),
     show: enableFund.value,
     key: 'fund',
     icon: renderIcon(SparklesOutline),
     children: [
       {
-        label: () => h(NText, {type: realtimeProfit.value > 0 ? 'error' : 'success'}, {default: () => '鍔熻兘瀹屽杽涓紒'}),
+        label: () => h(NText, {type: realtimeProfit.value > 0 ? 'error' : 'success'}, {default: () => '功能完善中！'}),
         key: 'realtimeProfit',
         show: realtimeProfit.value,
         icon: renderIcon(AlarmOutline),
@@ -551,14 +551,14 @@ const menuOptions = ref([
               to: {
                 name: 'agent',
                 query: {
-                  name:"Ai鏅鸿兘浣?,
+                  name:"Ai智能体",
                 },
                 onClick: () => {
                   activeKey.value = 'agent'
                 },
               }
             },
-            {default: () => 'Ai鏅鸿兘浣?}
+            {default: () => 'Ai智能体'}
         ),
     key: 'agent',
     show:enableAgent.value,
@@ -572,17 +572,17 @@ const menuOptions = ref([
                 to: {
                   name: 'research',
                   query: {
-                    name:"鐮旂┒涓績",
+                    name:"研究中心",
                   },
                 },
                 onClick: () => {
                   activeKey.value = 'research'
                   setTimeout(() => {
-                    EventsEmit("changeResearchTab", {ID: 0, name: 'AI鍒嗘瀽鎶ュ憡'})
+                    EventsEmit("changeResearchTab", {ID: 0, name: 'AI分析报告'})
                   }, 100)
                 },
               },
-              {default: () => '鐮旂┒涓績'}
+              {default: () => '研究中心'}
           ),
       key: 'research',
       icon: renderIcon(FlaskOutline),
@@ -595,17 +595,17 @@ const menuOptions = ref([
                       to: {
                         name: 'research',
                         query: {
-                          name:"AI鍒嗘瀽鎶ュ憡",
+                          name:"AI分析报告",
                         },
                       },
                       onClick: () => {
                         activeKey.value = 'research'
                         setTimeout(() => {
-                          EventsEmit("changeResearchTab", {ID: 0, name: 'AI鍒嗘瀽鎶ュ憡'})
+                          EventsEmit("changeResearchTab", {ID: 0, name: 'AI分析报告'})
                         }, 100)
                       },
                     },
-                    {default: () => 'AI鍒嗘瀽鎶ュ憡'}
+                    {default: () => 'AI分析报告'}
                 ),
             key: 'research1',
             icon: renderIcon(ReportAnalytics),
@@ -618,17 +618,17 @@ const menuOptions = ref([
                     to: {
                       name: 'research',
                       query: {
-                        name:"鑲＄エ鎺ㄨ崘璁板綍",
+                        name:"股票推荐记录",
                       },
                     },
                     onClick: () => {
                       activeKey.value = 'research'
                       setTimeout(() => {
-                        EventsEmit("changeResearchTab", {ID: 1, name: '鑲＄エ鎺ㄨ崘璁板綍'})
+                        EventsEmit("changeResearchTab", {ID: 1, name: '股票推荐记录'})
                       }, 100)
                     },
                   },
-                  {default: () => '鑲＄エ鎺ㄨ崘璁板綍'}
+                  {default: () => '股票推荐记录'}
               ),
           key: 'research2',
           icon: renderIcon(DiamondOutline),
@@ -641,17 +641,17 @@ const menuOptions = ref([
                     to: {
                       name: 'research',
                       query: {
-                        name:"寮傚姩鐩戞帶",
+                        name:"异动监控",
                       },
                     },
                     onClick: () => {
                       activeKey.value = 'research'
                       setTimeout(() => {
-                        EventsEmit("changeResearchTab", {ID: 2, name: '寮傚姩鐩戞帶'})
+                        EventsEmit("changeResearchTab", {ID: 2, name: '异动监控'})
                       }, 100)
                     },
                   },
-                  {default: () => '寮傚姩鐩戞帶'}
+                  {default: () => '异动监控'}
               ),
           key: 'stockChanges',
           icon: renderIcon(TrendingUp),
@@ -664,17 +664,17 @@ const menuOptions = ref([
                     to: {
                       name: 'research',
                       query: {
-                        name:"鎻愮ず璇嶆ā鏉?,
+                        name:"提示词模板",
                       },
                     },
                     onClick: () => {
                       activeKey.value = 'research'
                       setTimeout(() => {
-                        EventsEmit("changeResearchTab", {ID: 3, name: '鎻愮ず璇嶆ā鏉?})
+                        EventsEmit("changeResearchTab", {ID: 3, name: '提示词模板'})
                       }, 100)
                     },
                   },
-                  {default: () => '鎻愮ず璇嶆ā鏉?}
+                  {default: () => '提示词模板'}
               ),
           key: 'research3',
           icon: renderIcon(Prompt),
@@ -687,17 +687,17 @@ const menuOptions = ref([
                     to: {
                       name: 'research',
                       query: {
-                        name:"鎴戠殑绛栫暐",
+                        name:"我的策略",
                       },
                     },
                     onClick: () => {
                       activeKey.value = 'research'
                       setTimeout(() => {
-                        EventsEmit("changeResearchTab", {ID: 0, name: '鎴戠殑绛栫暐'})
+                        EventsEmit("changeResearchTab", {ID: 0, name: '我的策略'})
                       }, 100)
                     },
                   },
-                  {default: () => '鎴戠殑绛栫暐'}
+                  {default: () => '我的策略'}
               ),
           key: 'research_strategy',
           icon: renderIcon(FlaskOutline),
@@ -710,17 +710,17 @@ const menuOptions = ref([
                     to: {
                       name: 'cronTasks',
                       query: {
-                        name:"瀹氭椂浠诲姟",
+                        name:"定时任务",
                       },
                     },
                     onClick: () => {
                       activeKey.value = 'research'
                       setTimeout(() => {
-                        EventsEmit("changeResearchTab", {ID: 5, name: '瀹氭椂浠诲姟'})
+                        EventsEmit("changeResearchTab", {ID: 5, name: '定时任务'})
                       }, 100)
                     },
                   },
-                  {default: () => '瀹氭椂浠诲姟'}
+                  {default: () => '定时任务'}
               ),
           key: 'research5',
           icon: renderIcon(TimeOutline),
@@ -733,17 +733,17 @@ const menuOptions = ref([
                     to: {
                       name: 'research',
                       query: {
-                        name:"浜ゆ槗鏃ュ織",
+                        name:"交易日志",
                       },
                     },
                     onClick: () => {
                       activeKey.value = 'research'
                       setTimeout(() => {
-                        EventsEmit("changeResearchTab", {ID: 6, name: '浜ゆ槗鏃ュ織'})
+                        EventsEmit("changeResearchTab", {ID: 6, name: '交易日志'})
                       }, 100)
                     },
                   },
-                  {default: () => '浜ゆ槗鏃ュ織(beta)'}
+                  {default: () => '交易日志(beta)'}
               ),
           key: 'research6',
           icon: renderIcon(MoneyCollectOutlined),
@@ -758,14 +758,14 @@ const menuOptions = ref([
               to: {
                 name: 'settings',
                 query: {
-                  name:"璁剧疆",
+                  name:"设置",
                 },
                 onClick: () => {
                   activeKey.value = 'settings'
                 },
               }
             },
-            {default: () => '璁剧疆'}
+            {default: () => '设置'}
         ),
     key: 'settings',
     icon: renderIcon(SettingsOutline),
@@ -775,8 +775,8 @@ const menuOptions = ref([
     label: () => h("a", {
       href: '#',
       onClick: toggleFullscreen,
-      title: '鍏ㄥ睆 Ctrl+F 閫€鍑哄叏灞?Esc',
-    }, {default: () => isFullscreen.value ? '鍙栨秷鍏ㄥ睆' : '鍏ㄥ睆'}),
+      title: '全屏 Ctrl+F 退出全屏 Esc',
+    }, {default: () => isFullscreen.value ? '取消全屏' : '全屏'}),
     key: 'full',
     icon: renderIcon(ExpandOutline),
   },
@@ -785,7 +785,7 @@ const menuOptions = ref([
   //     href: 'javascript:void(0)',
   //     style: 'cursor: move;',
   //     onClick: toggleStartMoveWindow,
-  //   }, { default: () => '绉诲姩' }),
+  //   }, { default: () => '移动' }),
   //   key: 'move',
   //   icon: renderIcon(MoveOutline),
   // },
@@ -794,7 +794,7 @@ const menuOptions = ref([
     label: () => h("a", {
       href: '#',
       onClick: Quit,
-    }, {default: () => '閫€鍑虹▼搴?}),
+    }, {default: () => '退出程序'}),
     key: 'exit',
     icon: renderIcon(PowerOutline),
   },
@@ -819,10 +819,10 @@ function toggleFullscreen(e) {
   //console.log(e)
   if (isFullscreen.value) {
     WindowUnfullscreen()
-    //e.target.innerHTML = '鍏ㄥ睆'
+    //e.target.innerHTML = '全屏'
   } else {
     WindowFullscreen()
-    // e.target.innerHTML = '鍙栨秷鍏ㄥ睆'
+    // e.target.innerHTML = '取消全屏'
   }
   isFullscreen.value = !isFullscreen.value
 }
@@ -858,7 +858,7 @@ EventsOn("telegraph", (data) => {
 
 EventsOn("loadingMsg", (data) => {
   if(data==="done"){
-    loadingMsg.value = "鍔犺浇瀹屾垚..."
+    loadingMsg.value = "加载完成..."
     EventsEmit("loadingDone", "app")
     loading.value  = false
   }else{
@@ -885,7 +885,7 @@ onBeforeUnmount(() => {
 })
 
 window.onerror = function (msg, source, lineno, colno, error) {
-  // 灏嗛敊璇俊鎭彂閫佺粰鍚庣
+  // 将错误信息发送给后端
   EventsEmit("frontendError", {
     page: "App.vue",
     message: msg,
@@ -956,9 +956,9 @@ onBeforeMount(() => {
 
 function openStockStrategySave(payload) {
   activeKey.value = 'research'
-  router.push({ name: 'research', query: { name: '鎴戠殑绛栫暐' } })
+  router.push({ name: 'research', query: { name: '我的策略' } })
   setTimeout(() => {
-    EventsEmit('changeResearchTab', { name: '鎴戠殑绛栫暐' })
+    EventsEmit('changeResearchTab', { name: '我的策略' })
     setTimeout(() => EventsEmit('openSaveStockStrategy', payload), 400)
   }, 150)
 }
@@ -978,11 +978,11 @@ function applySettingsToShell(cfg) {
 onMounted(() => {
   initSignalSettingsSync()
   EventsOn('requestSaveStockStrategy', openStockStrategySave)
-  // 璁剧疆鐑洿鏂帮細閬垮厤浠呮敼鍒锋柊闂撮殧/鏆楅粦涓婚涔熸暣椤?reload 鏃跺３灞備笉鍚屾
+  // 设置热更新：避免仅改刷新间隔/暗黑主题也整页 reload 时壳层不同步
   EventsOn('updateSettings', (cfg) => {
     applySettingsToShell(cfg || {})
   })
-  WindowSetTitle("鑲＄エ鍒嗘瀽")
+  WindowSetTitle("股票分析")
   contentStyle.value = "height: calc(92vh); max-height: calc(92vh); overflow: hidden; padding-bottom: 52px;"
   GetConfig().then((res) => {
     applySettingsToShell(res)
@@ -993,7 +993,7 @@ onMounted(() => {
       },
     })
     const recentNewsPushKeys = new Set()
-    /** 鏄惁鍦ㄥ彸渚у脊鍑烘柊闂婚€氱煡锛堟殏鍏抽棴锛屾柊闂讳粛鍙湪銆屽競鍦鸿祫璁€嶉〉鏌ョ湅锛?*/
+    /** 是否在右侧弹出新闻通知（暂关闭，新闻仍可在「市场资讯」页查看） */
     const enableNewsRightPopup = false
     EventsOn("newsPush", (data) => {
       if (!enableNewsRightPopup) return
@@ -1041,10 +1041,10 @@ onMounted(() => {
 
       if (data.type === 'watchlistAction') {
         const alert = data.watchlistAlert || data
-        const isRisk = !!data.isRed || alert?.actionLabel === '鍏堥鎺?
+        const isRisk = !!data.isRed || alert?.actionLabel === '先风控'
         notification.create({
           type: isRisk ? 'warning' : 'success',
-          title: data.title || '鑷€夋搷浣滄彁绀?,
+          title: data.title || '自选操作提示',
           content: () => h(WatchlistActionNotification, { alert }),
           duration: 1000 * 20,
           keepAliveOnHover: true,
@@ -1053,7 +1053,7 @@ onMounted(() => {
       }
 
       notification.create({
-        title: data.title || '閲忓寲鎻愰啋',
+        title: data.title || '量化提醒',
         content: () =>
           h(
             'div',
@@ -1071,7 +1071,7 @@ onMounted(() => {
           h(
             NText,
             { depth: 3 },
-            { default: () => '閲忓寲鑷姩鍖? },
+            { default: () => '量化自动化' },
           ),
         duration: 1000 * 45,
       })
