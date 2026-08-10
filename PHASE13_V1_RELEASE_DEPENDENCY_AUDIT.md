@@ -208,7 +208,7 @@ D1/D2 编译 ─────────┤
 - [x] 列出 direct / transitive  
 - [x] 给出建议提交范围与排除项  
 - [x] 产出 `PHASE13_V1_RELEASE_DEPENDENCY_AUDIT.md`  
-- [ ] Step 2：最小入库 + clean 验证（下一阶段）
+- [x] Step 2：最小入库 + clean 验证 → 见 `PHASE13_V1_RELEASE_DEPENDENCY_CLOSURE_REPORT.md`（tip `f014ac7`）
 
 ---
 
