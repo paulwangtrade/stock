@@ -209,3 +209,16 @@ D1/D2 编译 ─────────┤
 - [x] 给出建议提交范围与排除项  
 - [x] 产出 `PHASE13_V1_RELEASE_DEPENDENCY_AUDIT.md`  
 - [ ] Step 2：最小入库 + clean 验证（下一阶段）
+
+---
+
+## 8. Step 2 编译跟进（补丁范围）
+
+首批五包 + handlers 入库后，clean `go build` 仍失败，额外直接依赖：
+
+| 缺口 | 处理（最小） | 不纳入 |
+|------|--------------|--------|
+| `models.TradePlan/Item` 缺 Intent/Pricing 等字段 | **仅**补齐 struct 字段（与 WT 对齐 22 行级） | 不改 Execution 语义 |
+| `riskreport/sources.go` → 未入库的 `papertrading.Build*Observation` | **降级** `FetchLiveSources`：仅 `marketstate`；observation 标记 `degraded_beta_tip` | **不**拉入 Phase10 Observation 大包 |
+
+此为 Beta **可编译闭包**必要补丁，不是 Observation 功能完整化。

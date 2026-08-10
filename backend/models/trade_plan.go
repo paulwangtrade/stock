@@ -60,8 +60,16 @@ type TradePlan struct {
 	ApprovedAt     *time.Time `json:"approvedAt" gorm:"column:approved_at"`
 	ApprovedBy     string     `json:"approvedBy" gorm:"column:approved_by;size:64"`
 	ApprovalReason string     `json:"approvalReason" gorm:"column:approval_reason;size:500"`
+	// ApprovedSource 审批渠道审计（Phase6.5.6.15 v5；如 system / http_api / wails）。
+	ApprovedSource string `json:"approvedSource" gorm:"column:approved_source;size:32"`
 	// SourceSession 如 after_close / morning_rebuild。
 	SourceSession string `json:"sourceSession" gorm:"column:source_session;size:32"`
+
+	// Execution Intent 默认（Phase6.5.6 schema v4；Writer 未接前保持零值）。
+	DefaultEntryRule     string   `json:"defaultEntryRule" gorm:"column:default_entry_rule;size:32"`
+	DefaultMaxSlippage   *float64 `json:"defaultMaxSlippage" gorm:"column:default_max_slippage"` // nil=未配置；0=禁止上浮
+	PricingPolicyVersion int      `json:"pricingPolicyVersion" gorm:"column:pricing_policy_version"`
+	PricingStage         string   `json:"pricingStage" gorm:"column:pricing_stage;size:32"`
 
 	RiskStatus        string     `json:"riskStatus" gorm:"size:16"`
 	MarketLevel       int        `json:"marketLevel"`
@@ -130,8 +138,20 @@ type TradePlanItem struct {
 	FilledPrice     float64   `json:"filledPrice"`
 	FilledVolume    int64     `json:"filledVolume"`
 	FilledFee       float64   `json:"filledFee"`
-	CreatedAt       time.Time `json:"createdAt"`
-	UpdatedAt       time.Time `json:"updatedAt"`
+
+	// Execution Intent（Phase6.5.6 schema v4；零值=legacy，不回填历史）。
+	RefPrice     float64    `json:"refPrice" gorm:"column:ref_price"`
+	RefSource    string     `json:"refSource" gorm:"column:ref_source;size:32"`
+	RefAsOf      string     `json:"refAsOf" gorm:"column:ref_as_of;size:32"`
+	EntryRule    string     `json:"entryRule" gorm:"column:entry_rule;size:32"`
+	MaxSlippage  *float64   `json:"maxSlippage" gorm:"column:max_slippage"` // nil=继承 Plan 默认
+	IntentStatus string     `json:"intentStatus" gorm:"column:intent_status;size:16"`
+	OpenRefPrice float64    `json:"openRefPrice" gorm:"column:open_ref_price"`
+	PricedAt     *time.Time `json:"pricedAt" gorm:"column:priced_at"`
+	PricedBy     string     `json:"pricedBy" gorm:"column:priced_by;size:64"`
+
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 func (TradePlanItem) TableName() string { return "trade_plan_items" }
