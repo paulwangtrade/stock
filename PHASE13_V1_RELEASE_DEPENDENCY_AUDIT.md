@@ -222,3 +222,11 @@ D1/D2 编译 ─────────┤
 | `riskreport/sources.go` → 未入库的 `papertrading.Build*Observation` | **降级** `FetchLiveSources`：仅 `marketstate`；observation 标记 `degraded_beta_tip` | **不**拉入 Phase10 Observation 大包 |
 
 此为 Beta **可编译闭包**必要补丁，不是 Observation 功能完整化。
+
+### 8.1 第二轮编译缺口（strategy / assistant）
+
+| 缺口 | 处理 | 说明 |
+|------|------|------|
+| tip `morning_intent_materialize.go` 引用未入库的 `MorningOpenPriceFunc` 等 | 入库 `morning_price_materialize.go` + `morning_position_materialize.go`（及测试） | tip **已依赖**；补齐符号，非改写既有 strategy 算法文件 |
+| `morning_position` → `tradingconfig` | 入库 `backend/tradingconfig`（Provider/LegacyAdapter） | 只读配置门面；**不**改 Broker/Gateway/Execution |
+| `assistant` → `papertrading.ExecutionSummaryView` | 仅入库 **类型** `execution_summary_view.go` | **不**入库 Phase10 ExecutionReadService 大包 |
