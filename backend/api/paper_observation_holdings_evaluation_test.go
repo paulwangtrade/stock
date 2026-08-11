@@ -286,3 +286,41 @@ func TestHoldingsEvaluationAPI_QuoteOverlayPnL(t *testing.T) {
 	require.NoError(t, db.Dao.Where("account_id = ? AND stock_code = ?", acc.ID, "sz000001").First(&pos).Error)
 	require.InDelta(t, 10.05, pos.MarkPrice, 1e-9)
 }
+
+func TestHoldingsEvaluationAPI_IncludesHoldingDecision(t *testing.T) {
+	setupAPITestDB(t)
+	acc := seedEvalObsAccount(t)
+	plan, item := seedEvalObsPlanItem(t, "2026-08-11", "sz000001", "平安银行")
+	seedEvalObsFill(t, acc.ID, plan, item, 10.00, 1000)
+	require.NoError(t, db.Dao.Create(&papertrading.PaperSimPosition{
+		AccountID: acc.ID, StockCode: "sz000001", StockName: "平安银行",
+		TotalVolume: 1000, AvgCost: 10.00, MarkPrice: 10.00,
+	}).Error)
+	papertrading.SetHoldingEvalQuoteServiceForTest(&stubHoldingsQuoteService{quotes: []marketdata.Quote{{
+		Code: "sz000001", Price: 11.00, FetchedAt: time.Now(),
+	}}})
+	t.Cleanup(func() { papertrading.SetHoldingEvalQuoteServiceForTest(nil) })
+
+	mux := http.NewServeMux()
+	api.RegisterPaperObservationRoutes(mux)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/papertrading/observation/holdings/evaluation", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.True(t, body["ok"].(bool))
+	require.NotNil(t, body["evaluation"])
+	require.Equal(t, "HOLD_NORMAL", body["decision_state"])
+	require.Equal(t, "NONE", body["decision_reason"])
+	dec, ok := body["holding_decision"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, false, dec["exit_candidate_enabled"])
+	holdings := dec["holdings"].([]any)
+	require.Len(t, holdings, 1)
+	row := holdings[0].(map[string]any)
+	require.Equal(t, "HOLD_NORMAL", row["state"])
+	require.Equal(t, "none", row["action"])
+	raw := rec.Body.String()
+	require.NotContains(t, raw, "EXIT_NOW")
+	require.NotContains(t, raw, "FORCE_CLOSE")
+}

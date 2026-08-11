@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"go-stock/backend/holdingdecision"
 	"go-stock/backend/papertrading"
 )
 
@@ -25,9 +26,45 @@ func (h *PaperObservationHandler) handleHoldingsEvaluation(w http.ResponseWriter
 		})
 		return
 	}
+	decision := holdingdecision.EvaluateObservation(view, holdingdecision.DefaultPolicy())
 	writeJSON(w, http.StatusOK, map[string]any{
-		"code":       0,
-		"ok":         true,
-		"evaluation": view,
+		"code":              0,
+		"ok":                true,
+		"evaluation":        view,
+		"holding_decision":  decision,
+		"decision_state":    summaryDecisionState(decision),
+		"decision_reason":   summaryDecisionReason(decision),
 	})
+}
+
+func summaryDecisionState(v *holdingdecision.View) string {
+	if v == nil || len(v.Holdings) == 0 {
+		return holdingdecision.StateHoldNormal
+	}
+	worst := holdingdecision.StateHoldNormal
+	rank := map[string]int{
+		holdingdecision.StateHoldNormal:    0,
+		holdingdecision.StateHoldWatch:     1,
+		holdingdecision.StateHoldReview:    2,
+		holdingdecision.StateExitCandidate: 3,
+	}
+	for _, h := range v.Holdings {
+		if rank[h.State] > rank[worst] {
+			worst = h.State
+		}
+	}
+	return worst
+}
+
+func summaryDecisionReason(v *holdingdecision.View) string {
+	if v == nil || len(v.Holdings) == 0 {
+		return holdingdecision.ReasonNone
+	}
+	want := summaryDecisionState(v)
+	for _, h := range v.Holdings {
+		if h.State == want {
+			return h.Reason
+		}
+	}
+	return v.Holdings[0].Reason
 }
