@@ -27,7 +27,8 @@ func isPaperObservationPath(path string) bool {
 		"/api/papertrading/dashboard/positions",
 		"/api/papertrading/dashboard/runs",
 		"/api/papertrading/reports/daily",
-		"/api/papertrading/observation/metrics":
+		"/api/papertrading/observation/metrics",
+		"/api/papertrading/observation/holdings/evaluation":
 		return true
 	default:
 		return false
@@ -48,6 +49,8 @@ func (h *PaperObservationHandler) ServeHTTP(w http.ResponseWriter, r *http.Reque
 		h.handleReportsDaily(w, r)
 	case "/api/papertrading/observation/metrics":
 		h.handleObservationMetrics(w, r)
+	case "/api/papertrading/observation/holdings/evaluation":
+		h.handleHoldingsEvaluation(w, r)
 	default:
 		http.NotFound(w, r)
 	}
@@ -202,6 +205,7 @@ func RegisterPaperObservationRoutes(mux *http.ServeMux) {
 	mux.Handle("/api/papertrading/dashboard/runs", h)
 	mux.Handle("/api/papertrading/reports/daily", h)
 	mux.Handle("/api/papertrading/observation/metrics", h)
+	mux.Handle("/api/papertrading/observation/holdings/evaluation", h)
 }
 
 // PaperObservationAssetMiddleware mounts only read-only /api/papertrading observation paths.

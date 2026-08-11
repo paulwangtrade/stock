@@ -394,3 +394,166 @@ export async function getPaperObservationMetrics(tradeDate?: string): Promise<Ob
   }
   return mapObservationMetrics(raw)
 }
+
+// --- Holding Evaluation (C.5-B.1 quote overlay on GET-time mark-to-market) ---
+
+export type HoldingEvalLot = {
+  fillId: number
+  planId: number
+  planItemId: number
+  buyDate?: string
+  volume: number
+  costPrice: number
+  currentPrice: number | null
+  quoteSource?: string
+  quoteTime?: string
+  pnl: number | null
+  returnRate: number | null
+  holdingDays: number
+  evalState: string
+  profitState?: string
+  holdingPeriodState?: string
+}
+
+export type SecurityDisplayName = {
+  snapshotName: string
+  currentName: string
+  displayName: string
+  nameChanged: boolean
+}
+
+export type HoldingEvalStockRow = {
+  stockCode: string
+  stockName: string
+  totalVolume: number
+  avgCost: number | null
+  marketPrice: number | null
+  currentPrice: number | null
+  quoteSource?: string
+  quoteTime?: string
+  marketValue: number | null
+  unrealizedPnl: number | null
+  unrealizedReturn: number | null
+  holdingDays: number
+  trendState: string
+  riskState: string
+  profitState?: string
+  holdingPeriodState?: string
+  evalState: string
+  lots: HoldingEvalLot[]
+  reconcileStatus?: string
+  firstBuyDate?: string
+  displayName?: SecurityDisplayName
+}
+
+export type HoldingEvalUnattributable = {
+  stockCode: string
+  stockName?: string
+  volume: number
+  reasonCode: string
+  message?: string
+}
+
+export type HoldingsEvaluationView = {
+  enabled: boolean
+  accountId?: number
+  asOf?: string
+  reconcileAllMatched: boolean
+  holdings: HoldingEvalStockRow[]
+  unattributable: HoldingEvalUnattributable[]
+  dataSourceNote: string
+}
+
+function nullableNum(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+function mapHoldingEvalLot(raw: any): HoldingEvalLot {
+  return {
+    fillId: num(raw?.fill_id ?? raw?.fillId),
+    planId: num(raw?.plan_id ?? raw?.planId),
+    planItemId: num(raw?.plan_item_id ?? raw?.planItemId),
+    buyDate: raw?.buy_date || raw?.buyDate ? str(raw?.buy_date ?? raw?.buyDate) : undefined,
+    volume: num(raw?.volume),
+    costPrice: num(raw?.cost_price ?? raw?.costPrice),
+    currentPrice: nullableNum(raw?.current_price ?? raw?.currentPrice),
+    quoteSource: raw?.quote_source || raw?.quoteSource ? str(raw?.quote_source ?? raw?.quoteSource) : undefined,
+    quoteTime: raw?.quote_time || raw?.quoteTime ? str(raw?.quote_time ?? raw?.quoteTime) : undefined,
+    pnl: nullableNum(raw?.pnl),
+    returnRate: nullableNum(raw?.return_rate ?? raw?.returnRate),
+    holdingDays: num(raw?.holding_days ?? raw?.holdingDays),
+    evalState: str(raw?.eval_state ?? raw?.evalState, 'NORMAL'),
+    profitState: str(raw?.profit_state ?? raw?.profitState, 'UNKNOWN'),
+    holdingPeriodState: str(raw?.holding_period_state ?? raw?.holdingPeriodState, 'SHORT_TERM'),
+  }
+}
+
+function mapDisplayName(raw: any, fallbackName: string): SecurityDisplayName {
+  const d = raw || {}
+  return {
+    snapshotName: str(d.snapshot_name ?? d.snapshotName, fallbackName),
+    currentName: str(d.current_name ?? d.currentName, 'UNKNOWN'),
+    displayName: str(d.display_name ?? d.displayName, fallbackName || 'UNKNOWN'),
+    nameChanged: !!(d.name_changed ?? d.nameChanged),
+  }
+}
+
+function mapHoldingEvalStock(raw: any): HoldingEvalStockRow {
+  const stockName = str(raw?.stock_name ?? raw?.stockName)
+  return {
+    stockCode: str(raw?.stock_code ?? raw?.stockCode),
+    stockName,
+    totalVolume: num(raw?.total_volume ?? raw?.totalVolume),
+    avgCost: nullableNum(raw?.avg_cost ?? raw?.avgCost),
+    marketPrice: nullableNum(raw?.market_price ?? raw?.marketPrice),
+    currentPrice: nullableNum(raw?.current_price ?? raw?.currentPrice ?? raw?.market_price ?? raw?.marketPrice),
+    quoteSource: raw?.quote_source || raw?.quoteSource ? str(raw?.quote_source ?? raw?.quoteSource) : undefined,
+    quoteTime: raw?.quote_time || raw?.quoteTime ? str(raw?.quote_time ?? raw?.quoteTime) : undefined,
+    marketValue: nullableNum(raw?.market_value ?? raw?.marketValue),
+    unrealizedPnl: nullableNum(raw?.unrealized_pnl ?? raw?.unrealizedPnl),
+    unrealizedReturn: nullableNum(raw?.unrealized_return ?? raw?.unrealizedReturn),
+    holdingDays: num(raw?.holding_days ?? raw?.holdingDays),
+    trendState: str(raw?.trend_state ?? raw?.trendState, 'UNKNOWN'),
+    riskState: str(raw?.risk_state ?? raw?.riskState, 'NORMAL'),
+    profitState: str(raw?.profit_state ?? raw?.profitState, 'UNKNOWN'),
+    holdingPeriodState: str(raw?.holding_period_state ?? raw?.holdingPeriodState, 'SHORT_TERM'),
+    evalState: str(raw?.eval_state ?? raw?.evalState, 'NORMAL'),
+    lots: Array.isArray(raw?.lots) ? raw.lots.map(mapHoldingEvalLot) : [],
+    reconcileStatus: raw?.reconcile_status || raw?.reconcileStatus
+      ? str(raw?.reconcile_status ?? raw?.reconcileStatus)
+      : undefined,
+    firstBuyDate: raw?.first_buy_date || raw?.firstBuyDate
+      ? str(raw?.first_buy_date ?? raw?.firstBuyDate)
+      : undefined,
+    displayName: mapDisplayName(raw?.display_name ?? raw?.displayName, stockName),
+  }
+}
+
+/** GET /api/papertrading/observation/holdings/evaluation */
+export async function getPaperHoldingsEvaluation(stockCode?: string): Promise<HoldingsEvaluationView> {
+  const q = stockCode?.trim() ? `?stock_code=${encodeURIComponent(stockCode.trim())}` : ''
+  const res = await fetch(`/api/papertrading/observation/holdings/evaluation${q}`)
+  if (!res.ok) throw new Error(`持仓评价请求失败: HTTP ${res.status}`)
+  const body = await res.json()
+  if (!body?.ok) throw new Error(body?.message || '持仓评价响应无效')
+  const raw = body.evaluation || {}
+  return {
+    enabled: !!raw.enabled,
+    accountId: raw.account_id || raw.accountId ? num(raw.account_id ?? raw.accountId) : undefined,
+    asOf: raw.as_of || raw.asOf ? str(raw.as_of ?? raw.asOf) : undefined,
+    reconcileAllMatched: !!(raw.reconcile_all_matched ?? raw.reconcileAllMatched),
+    holdings: Array.isArray(raw.holdings) ? raw.holdings.map(mapHoldingEvalStock) : [],
+    unattributable: Array.isArray(raw.unattributable)
+      ? raw.unattributable.map((u: any) => ({
+          stockCode: str(u?.stock_code ?? u?.stockCode),
+          stockName: u?.stock_name || u?.stockName ? str(u?.stock_name ?? u?.stockName) : undefined,
+          volume: num(u?.volume),
+          reasonCode: str(u?.reason_code ?? u?.reasonCode),
+          message: u?.message ? str(u.message) : undefined,
+        }))
+      : [],
+    dataSourceNote: str(raw.data_source_note ?? raw.dataSourceNote),
+  }
+}

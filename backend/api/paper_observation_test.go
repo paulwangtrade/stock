@@ -22,6 +22,7 @@ func TestPaperObservation_RegisterRoutes_GETOnly(t *testing.T) {
 		"/api/papertrading/dashboard/runs",
 		"/api/papertrading/reports/daily",
 		"/api/papertrading/observation/metrics",
+		"/api/papertrading/observation/holdings/evaluation",
 	}
 	for _, p := range paths {
 		rec := httptest.NewRecorder()
@@ -66,6 +67,12 @@ func TestPaperObservation_AssetMiddleware_DoesNotCaptureRun(t *testing.T) {
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/papertrading/observation/metrics", nil))
 	require.False(t, calledNext, "observation metrics path must be handled by observation middleware")
+	require.NotEqual(t, http.StatusTeapot, rec.Code)
+
+	calledNext = false
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/papertrading/observation/holdings/evaluation", nil))
+	require.False(t, calledNext, "holdings evaluation path must be handled by observation middleware")
 	require.NotEqual(t, http.StatusTeapot, rec.Code)
 
 	calledNext = false
