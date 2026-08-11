@@ -10,6 +10,7 @@ import (
 	"go-stock/backend/db"
 	"go-stock/backend/logger"
 	"go-stock/backend/models"
+	"go-stock/backend/stockname"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -205,6 +206,10 @@ func (b *PaperBroker) fillBuy(acc *PaperSimAccount, plan *models.TradePlan, item
 	if fillReason == "" {
 		fillReason = FillReasonMarketOpen
 	}
+	stockName := resolvePaperSimStockName(plan, item)
+	if strings.TrimSpace(stockName) == "" {
+		stockName = stockname.UnknownName
+	}
 	return db.Dao.Transaction(func(tx *gorm.DB) error {
 		fill := &PaperSimFill{
 			AccountID:  acc.ID,
@@ -212,7 +217,7 @@ func (b *PaperBroker) fillBuy(acc *PaperSimAccount, plan *models.TradePlan, item
 			PlanID:     plan.ID,
 			PlanItemID: item.ID,
 			StockCode:  item.StockCode,
-			StockName:  item.StockName,
+			StockName:  stockName,
 			Side:       "buy",
 			Price:      price,
 			Volume:     qty,
@@ -229,15 +234,20 @@ func (b *PaperBroker) fillBuy(acc *PaperSimAccount, plan *models.TradePlan, item
 		order.FilledVolume = qty
 		order.Fee = fee
 		order.UpdatedAt = now
+		orderUpdates := map[string]any{
+			"status":        OrderStatusFilled,
+			"filled_price":  price,
+			"filled_volume": qty,
+			"fee":           fee,
+			"quantity":      qty,
+			"updated_at":    now,
+		}
+		if strings.TrimSpace(order.StockName) == "" {
+			orderUpdates["stock_name"] = stockName
+			order.StockName = stockName
+		}
 		if err := tx.Model(&PaperSimOrder{}).Where("id = ?", order.ID).
-			Updates(map[string]any{
-				"status":        OrderStatusFilled,
-				"filled_price":  price,
-				"filled_volume": qty,
-				"fee":           fee,
-				"quantity":      qty,
-				"updated_at":    now,
-			}).Error; err != nil {
+			Updates(orderUpdates).Error; err != nil {
 			return err
 		}
 
@@ -248,10 +258,13 @@ func (b *PaperBroker) fillBuy(acc *PaperSimAccount, plan *models.TradePlan, item
 			pos = PaperSimPosition{
 				AccountID: acc.ID,
 				StockCode: item.StockCode,
-				StockName: item.StockName,
+				StockName: stockName,
 			}
 		} else if err != nil {
 			return err
+		}
+		if strings.TrimSpace(pos.StockName) == "" {
+			pos.StockName = stockName
 		}
 		newTotal := pos.TotalVolume + qty
 		if newTotal > 0 {

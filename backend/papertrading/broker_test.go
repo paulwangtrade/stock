@@ -9,6 +9,7 @@ import (
 	"go-stock/backend/db"
 	"go-stock/backend/models"
 	"go-stock/backend/papertrading"
+	"go-stock/backend/stockname"
 
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
@@ -126,6 +127,12 @@ func TestPaperBroker_FrozenPlan_FillsAtOpenPrice(t *testing.T) {
 	require.NotNil(t, acc)
 	require.InDelta(t, 1_000_000-10.05*1000, acc.Cash, 1e-6)
 	require.InDelta(t, acc.Cash+10.05*1000, acc.Equity, 1e-6)
+
+	positions, err := papertrading.GetPositions(acc.ID)
+	require.NoError(t, err)
+	require.Len(t, positions, 1)
+	require.Equal(t, "sz000001", positions[0].StockCode)
+	require.Equal(t, "平安银行", positions[0].StockName)
 }
 
 // 4. Limit up → rejected buy.
@@ -229,4 +236,56 @@ func TestPaperBroker_NotFrozen_Error(t *testing.T) {
 	})
 	_, err := broker.RunForPlan(plan.ID)
 	require.Error(t, err)
+}
+
+func TestPaperBroker_EmptyStockName_ResolverSuccess(t *testing.T) {
+	setupTestDB(t)
+	enablePaperTrading(t)
+	t.Cleanup(func() { stockname.SetResolveForTest(nil) })
+	stockname.SetResolveForTest(func(symbol string, hint stockname.Hint) stockname.Result {
+		require.Equal(t, "sz000001", symbol)
+		return stockname.Result{Name: "解析平安", Source: stockname.SourceFollowed}
+	})
+
+	plan := seedFrozenPlan(t, "2026-07-30", []models.TradePlanItem{buyItem("sz000001", "", 1000)})
+	broker := papertrading.NewPaperBroker(papertrading.StaticPriceProvider{
+		Quotes: map[string]papertrading.Quote{"sz000001": {Open: 10.05, LimitUp: 11.0}},
+	})
+	res, err := broker.RunForPlan(plan.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, res.FilledCount)
+
+	acc, err := papertrading.GetDefaultAccount()
+	require.NoError(t, err)
+	positions, err := papertrading.GetPositions(acc.ID)
+	require.NoError(t, err)
+	require.Len(t, positions, 1)
+	require.Equal(t, "sz000001", positions[0].StockCode)
+	require.Equal(t, "解析平安", positions[0].StockName)
+}
+
+func TestPaperBroker_EmptyStockName_ResolverFail_SentinelStillFills(t *testing.T) {
+	setupTestDB(t)
+	enablePaperTrading(t)
+	t.Cleanup(func() { stockname.SetResolveForTest(nil) })
+	stockname.SetResolveForTest(func(symbol string, hint stockname.Hint) stockname.Result {
+		return stockname.Result{Name: "", Source: ""}
+	})
+
+	plan := seedFrozenPlan(t, "2026-07-30", []models.TradePlanItem{buyItem("sz000001", "  ", 1000)})
+	broker := papertrading.NewPaperBroker(papertrading.StaticPriceProvider{
+		Quotes: map[string]papertrading.Quote{"sz000001": {Open: 10.05, LimitUp: 11.0}},
+	})
+	res, err := broker.RunForPlan(plan.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, res.FilledCount)
+	require.Equal(t, 0, res.RejectCount)
+
+	acc, err := papertrading.GetDefaultAccount()
+	require.NoError(t, err)
+	positions, err := papertrading.GetPositions(acc.ID)
+	require.NoError(t, err)
+	require.Len(t, positions, 1)
+	require.Equal(t, stockname.UnknownName, positions[0].StockName)
+	require.NotEmpty(t, positions[0].StockName)
 }

@@ -3,9 +3,9 @@ package api
 import (
 	"strings"
 
-	"go-stock/backend/data"
 	"go-stock/backend/db"
 	"go-stock/backend/papertrading"
+	"go-stock/backend/stockname"
 )
 
 // stockNameLookup resolves stock_code → display name (read-only).
@@ -77,62 +77,24 @@ func enrichUpcomingItemNames(plan *UpcomingTradePlanDTO, lookup stockNameLookup)
 	}
 }
 
-// defaultStockNameLookup batches CN names from tushare_stock_basic by symbol.
-// Silent degrade: nil Dao / query errors → empty map.
+// defaultStockNameLookup uses stockname.Resolve (not tushare-only).
+// Unknown sentinel is omitted so the UI can show 未知名称(code).
 func defaultStockNameLookup(codes []string) map[string]string {
 	out := map[string]string{}
 	if db.Dao == nil || len(codes) == 0 {
 		return out
 	}
-
-	type codeKey struct {
-		code   string
-		symbol string
-	}
-	keys := make([]codeKey, 0, len(codes))
-	symbols := make([]string, 0, len(codes))
-	seenSym := map[string]bool{}
 	for _, raw := range codes {
 		raw = strings.TrimSpace(raw)
 		if raw == "" {
 			continue
 		}
-		norm, err := data.NormalizeStockCode(raw)
-		if err != nil || norm.Symbol == "" {
+		res := stockname.ResolveWithDB(db.Dao, raw, stockname.Hint{})
+		name := strings.TrimSpace(res.Name)
+		if name == "" || name == stockname.UnknownName {
 			continue
 		}
-		keys = append(keys, codeKey{code: raw, symbol: norm.Symbol})
-		if !seenSym[norm.Symbol] {
-			seenSym[norm.Symbol] = true
-			symbols = append(symbols, norm.Symbol)
-		}
-	}
-	if len(symbols) == 0 {
-		return out
-	}
-
-	var rows []data.StockBasic
-	if err := db.Dao.Model(&data.StockBasic{}).
-		Select("symbol", "name").
-		Where("symbol IN ?", symbols).
-		Find(&rows).Error; err != nil {
-		return out
-	}
-	bySymbol := map[string]string{}
-	for _, row := range rows {
-		sym := strings.TrimSpace(row.Symbol)
-		name := strings.TrimSpace(row.Name)
-		if sym == "" || name == "" {
-			continue
-		}
-		if _, exists := bySymbol[sym]; !exists {
-			bySymbol[sym] = name
-		}
-	}
-	for _, k := range keys {
-		if name := bySymbol[k.symbol]; name != "" {
-			out[k.code] = name
-		}
+		out[raw] = name
 	}
 	return out
 }

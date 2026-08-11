@@ -94,9 +94,7 @@ const positionColumns = [
     width: 120,
     ellipsis: { tooltip: true },
     render(row) {
-      const name = String(row?.stockName || '').trim()
-      const code = String(row?.stockCode || '').trim()
-      return name || code || '—'
+      return formatStockDisplayName(row?.stockName, row?.stockCode)
     },
   },
   { title: '持仓数量', key: 'totalVolume', width: 90 },
@@ -293,6 +291,15 @@ const dailyReportColumns = [
     },
   },
 ]
+
+/** Empty or sentinel names must not be disguised as the stock code. */
+function formatStockDisplayName(name, code) {
+  const n = String(name || '').trim()
+  const c = String(code || '').trim()
+  if (n && n !== '未知名称' && n !== c) return n
+  if (c) return `未知名称(${c})`
+  return '未知名称'
+}
 
 function formatCompliance(v) {
   const n = Number(v)
