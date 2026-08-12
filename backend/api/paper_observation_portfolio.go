@@ -56,6 +56,7 @@ func (h *PaperObservationHandler) handlePortfolioObservation(w http.ResponseWrit
 	diff := rebalance.Diff(current, target, rebalance.DefaultPolicy())
 
 	obs := portfolioobs.Assemble(snap, eval, decision, diff, target, warnings, time.Now())
+	captureObservationRecords(obs)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"code":       0,
 		"ok":         true,

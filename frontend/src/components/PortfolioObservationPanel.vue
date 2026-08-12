@@ -2,9 +2,12 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { NDataTable, NEmpty, NSpace, NStatistic, NTag, NText } from 'naive-ui'
 import { getPaperPortfolioObservation } from '../api/portfolioObservation'
+import { getObservationPerformance } from '../api/observationPerformance'
 
 const portfolioObs = ref(null)
 const unavailable = ref(false)
+const perf = ref(null)
+const perfUnavailable = ref(false)
 
 function formatMoney(v) {
   const n = Number(v)
@@ -237,6 +240,14 @@ const agingRows = computed(() => {
   return rows.filter((r) => !!r?.isAging)
 })
 
+function formatSignedPct(v) {
+  if (v === null || v === undefined) return '—'
+  const n = Number(v)
+  if (!Number.isFinite(n)) return '—'
+  const sign = n > 0 ? '+' : ''
+  return `${sign}${(n * 100).toFixed(1)}%`
+}
+
 async function load() {
   try {
     portfolioObs.value = await getPaperPortfolioObservation({ target: 'identity' })
@@ -244,6 +255,13 @@ async function load() {
   } catch {
     portfolioObs.value = null
     unavailable.value = true
+  }
+  try {
+    perf.value = await getObservationPerformance({ horizon: 5, benchmark: 'csi300' })
+    perfUnavailable.value = false
+  } catch {
+    perf.value = null
+    perfUnavailable.value = true
   }
 }
 
@@ -358,7 +376,42 @@ onMounted(load)
       />
       <n-empty v-else description="暂无 Decision 观察" style="margin: 8px 0 12px" />
 
-      <n-text strong style="display: block; margin: 8px 0 6px">7. 模拟调仓观察</n-text>
+      <n-text strong style="display: block; margin: 8px 0 6px">7. 持仓判断效果（观察）</n-text>
+      <n-text strong type="warning" style="display: block; margin-bottom: 8px; font-size: 13px">
+        历史判断统计，不代表未来收益
+      </n-text>
+      <n-text v-if="perfUnavailable" depth="3" type="warning" style="display: block; margin-bottom: 8px; font-size: 12px">
+        判断效果 API 暂不可用（不影响买入模拟盘）。
+      </n-text>
+      <template v-else-if="perf">
+        <n-space :wrap="true" :size="24" style="margin-bottom: 10px">
+          <n-statistic label="样本" :value="perf.samples" />
+          <n-statistic label="已评价(T+5)" :value="perf.evaluated" />
+          <n-statistic label="5日胜率" :value="formatSignedPct(perf.winRate).replace('+','')" />
+          <n-statistic label="平均收益" :value="formatSignedPct(perf.avgReturn)" />
+          <n-statistic label="平均超额" :value="formatSignedPct(perf.avgAlpha)" />
+          <n-statistic label="判断准确率" :value="formatSignedPct(perf.decisionAccuracy).replace('+','')" />
+        </n-space>
+        <n-space :wrap="true" :size="16" style="margin-bottom: 8px">
+          <n-tag size="small" :bordered="false">
+            HOLD_NORMAL 样本 {{ perf.byState.HOLD_NORMAL?.samples ?? 0 }} · 5日胜率
+            {{ formatSignedPct(perf.byState.HOLD_NORMAL?.winRate).replace('+','') }}
+          </n-tag>
+          <n-tag size="small" type="info" :bordered="false">
+            HOLD_WATCH 样本 {{ perf.byState.HOLD_WATCH?.samples ?? 0 }} · 风险捕获
+            {{ formatSignedPct(perf.byState.HOLD_WATCH?.riskCaptureRate).replace('+','') }}
+          </n-tag>
+          <n-tag size="small" type="warning" :bordered="false">
+            HOLD_REVIEW 样本 {{ perf.byState.HOLD_REVIEW?.samples ?? 0 }} · 平均
+            {{ formatSignedPct(perf.byState.HOLD_REVIEW?.avgReturn) }}
+          </n-tag>
+        </n-space>
+        <n-text depth="3" style="display: block; margin-bottom: 12px; font-size: 12px">
+          {{ perf.disclaimer }} 基准默认沪深300。行业指数未启用。不是买卖建议。
+        </n-text>
+      </template>
+
+      <n-text strong style="display: block; margin: 8px 0 6px">8. 模拟调仓观察</n-text>
       <n-space :wrap="true" :size="16" style="margin-bottom: 8px">
         <n-tag size="small" :bordered="false">KEEP {{ portfolioObs.rebalance.keepCount }}</n-tag>
         <n-tag size="small" type="info" :bordered="false">ADD {{ portfolioObs.rebalance.addCount }}</n-tag>
