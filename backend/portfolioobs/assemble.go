@@ -37,6 +37,12 @@ func Assemble(
 			"decision":   holdingdecision.StateHoldNormal + " / WATCH / REVIEW · not a sell recommendation",
 			"rebalance":  "Rebalance Diff · observation only; not an order",
 		},
+		OpportunityCost: OpportunityCostView{
+			Available: false,
+			Level:     OpportunityCostUnknown,
+			Note:      opportunityCostNote,
+		},
+		Health: PortfolioHealthSummary{PortfolioHealth: HealthUnknown},
 	}
 
 	if snap != nil && !snap.AsOf.IsZero() {
@@ -96,6 +102,7 @@ func Assemble(
 	}
 
 	out.Positions = joinPositions(snap, eval, decision, diff)
+	Enhance(out)
 	return out
 }
 
@@ -150,6 +157,9 @@ func joinPositions(
 			e.row.PnL = h.UnrealizedPnL
 			e.row.Return = h.UnrealizedReturn
 			e.row.HoldingDays = h.HoldingDays
+			e.row.FirstBuyDate = strings.TrimSpace(h.FirstBuyDate)
+			e.row.RiskState = strings.TrimSpace(h.RiskState)
+			e.row.ProfitState = strings.TrimSpace(h.ProfitState)
 		}
 	}
 	if decision != nil {

@@ -88,6 +88,14 @@ func TestPortfolioObservationAPI_NormalBookNoMutation(t *testing.T) {
 	require.Equal(t, "HOLD_NORMAL", row["decision_state"])
 	require.Equal(t, "KEEP", row["rebalance_action"])
 	require.Equal(t, "none", row["action"])
+	require.Equal(t, "HEALTHY", row["health_level"])
+	require.Equal(t, "SHORT", row["holding_period_bucket"])
+	require.False(t, row["is_aging"].(bool))
+	health := p["health"].(map[string]any)
+	require.Equal(t, "HEALTHY", health["portfolio_health"])
+	require.Equal(t, float64(1), health["healthy_positions"])
+	oc := p["opportunity_cost"].(map[string]any)
+	require.False(t, oc["available"].(bool))
 
 	var pos papertrading.PaperSimPosition
 	require.NoError(t, db.Dao.Where("account_id = ? AND stock_code = ?", acc.ID, "sz000001").First(&pos).Error)
@@ -96,6 +104,7 @@ func TestPortfolioObservationAPI_NormalBookNoMutation(t *testing.T) {
 	var acc2 papertrading.PaperSimAccount
 	require.NoError(t, db.Dao.First(&acc2, acc.ID).Error)
 	require.InDelta(t, 1_000_000.0, acc2.Cash, 1e-6)
+	require.InDelta(t, acc.Equity, acc2.Equity, 1e-6)
 	raw, _ := json.Marshal(p)
 	up := strings.ToUpper(string(raw))
 	require.NotContains(t, up, `"BUY"`)
@@ -154,4 +163,67 @@ func TestPortfolioObservationAPI_WatchReviewAndRebalance(t *testing.T) {
 		}
 	}
 	require.True(t, foundRemove)
+}
+
+func TestPortfolioObservationAPI_LongHoldingAgingNoSell(t *testing.T) {
+	setupAPITestDB(t)
+	acc := seedEvalObsAccount(t)
+	plan, item := seedEvalObsPlanItem(t, "2026-06-01", "sz000001", "平安银行")
+	seedEvalObsFill(t, acc.ID, plan, item, 10.00, 1000)
+	require.NoError(t, db.Dao.Create(&papertrading.PaperSimPosition{
+		AccountID: acc.ID, StockCode: "sz000001", StockName: "平安银行",
+		TotalVolume: 1000, AvailableVolume: 1000, AvgCost: 10.00, MarkPrice: 10.00,
+	}).Error)
+	papertrading.SetHoldingEvalQuoteServiceForTest(&stubHoldingsQuoteService{quotes: []marketdata.Quote{{
+		Code: "sz000001", Price: 11.00, FetchedAt: time.Now(),
+	}}})
+	t.Cleanup(func() { papertrading.SetHoldingEvalQuoteServiceForTest(nil) })
+
+	p := getPortfolioObs(t, "target=identity")
+	rows := p["positions"].([]any)
+	require.Len(t, rows, 1)
+	row := rows[0].(map[string]any)
+	require.Equal(t, "LONG", row["holding_period_bucket"])
+	require.True(t, row["is_aging"].(bool))
+	require.Equal(t, "none", row["action"])
+	require.Equal(t, "HEALTHY", row["health_level"])
+	health := p["health"].(map[string]any)
+	require.Equal(t, float64(1), health["aging_positions"])
+	require.Equal(t, "none", p["action"])
+	raw, _ := json.Marshal(p)
+	up := strings.ToUpper(string(raw))
+	require.NotContains(t, up, `"BUY"`)
+	require.NotContains(t, up, `"SELL"`)
+
+	var pos papertrading.PaperSimPosition
+	require.NoError(t, db.Dao.Where("account_id = ? AND stock_code = ?", acc.ID, "sz000001").First(&pos).Error)
+	require.InDelta(t, 10.00, pos.MarkPrice, 1e-9)
+	require.Equal(t, int64(1000), pos.TotalVolume)
+	var acc2 papertrading.PaperSimAccount
+	require.NoError(t, db.Dao.First(&acc2, acc.ID).Error)
+	require.InDelta(t, acc.Cash, acc2.Cash, 1e-6)
+	require.InDelta(t, acc.Equity, acc2.Equity, 1e-6)
+}
+
+func TestPortfolioObservationAPI_MissingQuoteNotRiskUpgrade(t *testing.T) {
+	setupAPITestDB(t)
+	acc := seedEvalObsAccount(t)
+	plan, item := seedEvalObsPlanItem(t, "2026-08-11", "sz000001", "平安银行")
+	seedEvalObsFill(t, acc.ID, plan, item, 10.00, 1000)
+	require.NoError(t, db.Dao.Create(&papertrading.PaperSimPosition{
+		AccountID: acc.ID, StockCode: "sz000001", StockName: "平安银行",
+		TotalVolume: 1000, AvailableVolume: 1000, AvgCost: 10.00, MarkPrice: 0, // overlay fallback also missing
+	}).Error)
+	papertrading.SetHoldingEvalQuoteServiceForTest(&stubHoldingsQuoteService{quotes: nil})
+	t.Cleanup(func() { papertrading.SetHoldingEvalQuoteServiceForTest(nil) })
+
+	p := getPortfolioObs(t, "target=identity")
+	rows := p["positions"].([]any)
+	require.Len(t, rows, 1)
+	row := rows[0].(map[string]any)
+	require.Equal(t, "UNKNOWN", row["health_level"])
+	health := p["health"].(map[string]any)
+	require.NotEqual(t, "RISK", health["portfolio_health"])
+	require.Equal(t, float64(0), health["risk_positions"])
+	require.Equal(t, "none", row["action"])
 }

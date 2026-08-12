@@ -30,6 +30,8 @@ func TestAssemble_Empty(t *testing.T) {
 	require.Equal(t, 0, obs.Rebalance.KeepCount)
 	require.Empty(t, obs.Positions)
 	require.InDelta(t, 1_000_000.0, obs.Account.Cash, 1e-9)
+	require.Equal(t, HealthUnknown, obs.Health.PortfolioHealth)
+	require.False(t, obs.OpportunityCost.Available)
 }
 
 func TestAssemble_JoinsEvalDecisionDiff(t *testing.T) {
@@ -49,11 +51,13 @@ func TestAssemble_JoinsEvalDecisionDiff(t *testing.T) {
 				StockCode: "sz000001", StockName: "平安银行", AvgCost: ptr(10), CurrentPrice: &pxGood,
 				UnrealizedPnL: ptr(1000), UnrealizedReturn: &rGood, RiskState: papertrading.RiskStateNormal,
 				ProfitState: papertrading.ProfitStateProfit, HoldingPeriodState: papertrading.HoldingPeriodMid,
+				HoldingDays: 10, FirstBuyDate: "2026-08-02",
 			},
 			{
 				StockCode: "sz000002", StockName: "万科A", AvgCost: ptr(10), CurrentPrice: &pxBad,
 				UnrealizedPnL: ptr(-1200), UnrealizedReturn: &rBad, RiskState: papertrading.RiskStateDanger,
 				ProfitState: papertrading.ProfitStateLoss, HoldingPeriodState: papertrading.HoldingPeriodMid,
+				HoldingDays: 12, FirstBuyDate: "2026-07-31",
 			},
 		},
 	}
@@ -86,6 +90,14 @@ func TestAssemble_JoinsEvalDecisionDiff(t *testing.T) {
 	require.Equal(t, rebalance.ActionRemove, b.RebalanceAction)
 	require.Equal(t, actionNone, b.Action)
 	require.InDelta(t, -0.12, *b.Return, 1e-9)
+	require.Equal(t, AgingMedium, a.HoldingPeriodBucket)
+	require.False(t, a.IsAging)
+	require.Equal(t, HealthHealthy, a.HealthLevel)
+	require.Equal(t, HealthRisk, b.HealthLevel)
+	require.GreaterOrEqual(t, obs.Health.ReviewPositions, 1)
+	require.GreaterOrEqual(t, obs.Health.RiskPositions, 1)
+	require.Equal(t, HealthRisk, obs.Health.PortfolioHealth)
+	require.False(t, obs.OpportunityCost.Available)
 	raw, err := json.Marshal(obs)
 	require.NoError(t, err)
 	up := strings.ToUpper(string(raw))

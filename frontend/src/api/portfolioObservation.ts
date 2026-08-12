@@ -1,4 +1,4 @@
-/** Portfolio Management Observation — read-only (Phase10-E.2) */
+/** Portfolio Management Observation — read-only (Phase10-E.2 / E.3) */
 
 function num(v: unknown, d = 0): number {
   const n = Number(v)
@@ -45,6 +45,29 @@ export type PortfolioObsRebalance = {
   available: boolean
 }
 
+export type PortfolioObsHealth = {
+  portfolioHealth: string
+  healthyPositions: number
+  watchPositions: number
+  reviewPositions: number
+  agingPositions: number
+  riskPositions: number
+  unknownHealthCount: number
+}
+
+export type PortfolioObsOpportunityCost = {
+  available: boolean
+  level: string
+  note: string
+}
+
+export type PortfolioObsHistoryPoint = {
+  asOf: string
+  state: string
+  reason: string
+  source: string
+}
+
 export type PortfolioObsPosition = {
   symbol: string
   stockName: string
@@ -57,8 +80,19 @@ export type PortfolioObsPosition = {
   currentPrice: number | null
   pnl: number | null
   returnRate: number | null
+  holdingDays: number
+  firstBuyDate: string
+  holdingPeriodBucket: string
+  isAging: boolean
+  riskState: string
+  profitState: string
+  healthScore: number | null
+  healthLevel: string
   decisionState: string
   decisionReason: string
+  decisionHistory: PortfolioObsHistoryPoint[]
+  decisionHistoryNote: string
+  opportunityCostLevel: string
   rebalanceAction: string
   rebalanceReason: string
 }
@@ -69,9 +103,13 @@ export type PortfolioObservationView = {
   account: PortfolioObsAccount
   decision: PortfolioObsDecision
   rebalance: PortfolioObsRebalance
+  health: PortfolioObsHealth
+  opportunityCost: PortfolioObsOpportunityCost
   positions: PortfolioObsPosition[]
   warnings: string[]
 }
+
+const fallbackDisclaimer = '观察结果不是交易建议。不生成买卖单，不执行调仓，不会自动卖出。'
 
 /** GET /api/papertrading/observation/portfolio */
 export async function getPaperPortfolioObservation(query?: {
@@ -92,8 +130,10 @@ export async function getPaperPortfolioObservation(query?: {
   const acct = raw.account || {}
   const dec = raw.decision || {}
   const reb = raw.rebalance || {}
+  const health = raw.health || {}
+  const oc = raw.opportunity_cost || raw.opportunityCost || {}
   return {
-    disclaimer: str(body.disclaimer || raw.disclaimer, '观察结果不是交易建议。不生成买卖单，不执行调仓。'),
+    disclaimer: str(body.disclaimer || raw.disclaimer, fallbackDisclaimer),
     observationTime: raw.observation_time || raw.observationTime ? str(raw.observation_time ?? raw.observationTime) : undefined,
     account: {
       totalEquity: num(acct.total_equity ?? acct.totalEquity),
@@ -121,6 +161,20 @@ export async function getPaperPortfolioObservation(query?: {
       removeCount: num(reb.remove_count ?? reb.removeCount),
       available: !!reb.available,
     },
+    health: {
+      portfolioHealth: str(health.portfolio_health ?? health.portfolioHealth, 'UNKNOWN'),
+      healthyPositions: num(health.healthy_positions ?? health.healthyPositions),
+      watchPositions: num(health.watch_positions ?? health.watchPositions),
+      reviewPositions: num(health.review_positions ?? health.reviewPositions),
+      agingPositions: num(health.aging_positions ?? health.agingPositions),
+      riskPositions: num(health.risk_positions ?? health.riskPositions),
+      unknownHealthCount: num(health.unknown_health_count ?? health.unknownHealthCount),
+    },
+    opportunityCost: {
+      available: !!oc.available,
+      level: str(oc.level, 'UNKNOWN'),
+      note: str(oc.note),
+    },
     positions: Array.isArray(raw.positions)
       ? raw.positions.map((row: any) => ({
           symbol: str(row?.symbol),
@@ -134,8 +188,26 @@ export async function getPaperPortfolioObservation(query?: {
           currentPrice: nullableNum(row?.current_price ?? row?.currentPrice),
           pnl: nullableNum(row?.pnl),
           returnRate: nullableNum(row?.return ?? row?.returnRate),
+          holdingDays: num(row?.holding_days ?? row?.holdingDays),
+          firstBuyDate: str(row?.first_buy_date ?? row?.firstBuyDate),
+          holdingPeriodBucket: str(row?.holding_period_bucket ?? row?.holdingPeriodBucket),
+          isAging: !!(row?.is_aging ?? row?.isAging),
+          riskState: str(row?.risk_state ?? row?.riskState),
+          profitState: str(row?.profit_state ?? row?.profitState),
+          healthScore: nullableNum(row?.health_score ?? row?.healthScore),
+          healthLevel: str(row?.health_level ?? row?.healthLevel),
           decisionState: str(row?.decision_state ?? row?.decisionState),
           decisionReason: str(row?.decision_reason ?? row?.decisionReason),
+          decisionHistory: Array.isArray(row?.decision_history ?? row?.decisionHistory)
+            ? (row.decision_history ?? row.decisionHistory).map((pt: any) => ({
+                asOf: str(pt?.as_of ?? pt?.asOf),
+                state: str(pt?.state),
+                reason: str(pt?.reason),
+                source: str(pt?.source),
+              }))
+            : [],
+          decisionHistoryNote: str(row?.decision_history_note ?? row?.decisionHistoryNote),
+          opportunityCostLevel: str(row?.opportunity_cost_level ?? row?.opportunityCostLevel, 'UNKNOWN'),
           rebalanceAction: str(row?.rebalance_action ?? row?.rebalanceAction),
           rebalanceReason: str(row?.rebalance_reason ?? row?.rebalanceReason),
         }))
