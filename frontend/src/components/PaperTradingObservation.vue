@@ -22,6 +22,7 @@ import {
   getPaperDashboardToday,
   getPaperObservationMetrics,
 } from '../api/paperObservation'
+import PortfolioObservationPanel from './PortfolioObservationPanel.vue'
 
 const message = useMessage()
 const loading = ref(false)
@@ -520,6 +521,10 @@ onMounted(refresh)
             />
             <n-empty v-else description="暂无运行记录" style="margin: 12px 0" />
           </template>
+        </n-tab-pane>
+
+        <n-tab-pane name="portfolio" tab="组合观察">
+          <PortfolioObservationPanel />
         </n-tab-pane>
 
         <n-tab-pane name="daily" tab="历史日报">
