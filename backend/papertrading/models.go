@@ -100,6 +100,8 @@ const (
 	RunStatusSkippedNonTradingDay  = "skipped_non_trading_day"
 	RunStatusSkippedNoFrozenPlan   = "skipped_no_frozen_plan"
 	RunStatusSkippedAlreadyRun     = "skipped_already_run"
+	// RunStatusSkippedPlanLifecycle: TryBeginExecute CAS miss (plan not ready).
+	RunStatusSkippedPlanLifecycle = "skipped_plan_lifecycle"
 )
 
 // Trigger values.
@@ -140,6 +142,7 @@ type PaperSimFill struct {
 	StockName  string    `gorm:"size:64" json:"stockName"`
 	Side       string    `gorm:"size:8" json:"side"`
 	Price      float64   `json:"price"`
+	// Volume is the physical column for fill size. Phase12-M0 canonical name is qty — use Qty().
 	Volume     int64     `json:"volume"`
 	Fee        float64   `json:"fee"`
 	FillReason string    `gorm:"size:32" json:"fillReason"`
@@ -147,6 +150,9 @@ type PaperSimFill struct {
 }
 
 func (PaperSimFill) TableName() string { return "paper_sim_fills" }
+
+// Qty returns canonical fill quantity (Phase12-M0). Sole source: physical column volume.
+func (f PaperSimFill) Qty() int64 { return f.Volume }
 
 // PaperSimDailyReport is an immutable end-of-day account snapshot (UNIQUE account_id + report_date).
 type PaperSimDailyReport struct {
