@@ -6,7 +6,8 @@ import (
 )
 
 // Select ranks candidates and keeps at most MaxSelectedNames.
-// E.1: Rank ascending (1 best), then Score descending. Does not read holdings or cash.
+// E.2 also skips already-held names, duplicate symbols, and cash-limit overflow.
+// Rank ascending (1 best), then Score descending. Does not load DB or call Portfolio APIs.
 func Select(candidates []Candidate, ctx SelectionContext) *SelectedCandidates {
 	out := &SelectedCandidates{
 		Selected: []CandidateDecision{},
@@ -20,6 +21,8 @@ func Select(candidates []Candidate, ctx SelectionContext) *SelectedCandidates {
 	if maxN <= 0 {
 		maxN = DefaultMaxSelectedNames
 	}
+	held := holdingSet(ctx.ExistingPositions)
+	cashOn := ctx.EstimatedAmountPerName > 0
 
 	indexed := make([]Candidate, 0, len(candidates))
 	for _, c := range candidates {
@@ -29,14 +32,29 @@ func Select(candidates []Candidate, ctx SelectionContext) *SelectedCandidates {
 		return lessCandidate(indexed[i], indexed[j])
 	})
 
+	seen := map[string]bool{}
 	taken := 0
 	for _, c := range indexed {
-		if strings.TrimSpace(c.StockCode) == "" {
+		key := normalizeCode(c.StockCode)
+		if key == "" {
 			out.Skipped = append(out.Skipped, skippedDecision(c, ReasonInvalidCandidate))
+			continue
+		}
+		if seen[key] {
+			out.Skipped = append(out.Skipped, skippedDecision(c, ReasonDuplicateSymbol))
+			continue
+		}
+		seen[key] = true
+		if held[key] {
+			out.Skipped = append(out.Skipped, skippedDecision(c, ReasonAlreadyHolding))
 			continue
 		}
 		if taken >= maxN {
 			out.Skipped = append(out.Skipped, skippedDecision(c, ReasonOverNameLimit))
+			continue
+		}
+		if cashOn && (float64(taken+1)*ctx.EstimatedAmountPerName > ctx.AvailableCash+1e-9) {
+			out.Skipped = append(out.Skipped, skippedDecision(c, ReasonCashLimit))
 			continue
 		}
 		taken++
@@ -47,6 +65,21 @@ func Select(candidates []Candidate, ctx SelectionContext) *SelectedCandidates {
 			SelectionReason: ReasonRankTop,
 			SelectionRank:   taken,
 		})
+	}
+	return out
+}
+
+func normalizeCode(code string) string {
+	return strings.ToLower(strings.TrimSpace(code))
+}
+
+func holdingSet(positions []ExistingPosition) map[string]bool {
+	out := map[string]bool{}
+	for _, p := range positions {
+		key := normalizeCode(p.StockCode)
+		if key != "" {
+			out[key] = true
+		}
 	}
 	return out
 }
@@ -81,5 +114,6 @@ func skippedDecision(c Candidate, reason string) CandidateDecision {
 		Selected:      false,
 		Rank:          c.Rank,
 		SkippedReason: reason,
+		SkipReason:    reason,
 	}
 }

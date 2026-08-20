@@ -123,18 +123,101 @@ func TestSelect_ScoreBreaksUnranked(t *testing.T) {
 	}
 }
 
-func TestSelect_DoesNotReadReservedHoldingsOrCash(t *testing.T) {
+func TestSelect_FiltersExistingHoldings(t *testing.T) {
+	t.Parallel()
+	got := Select([]Candidate{
+		{StockCode: "sz000001", Rank: 1, Score: 90},
+		{StockCode: "SZ000001", Rank: 2, Score: 80}, // dup + holding
+		{StockCode: "sz000002", Rank: 3, Score: 70},
+		{StockCode: "sz000003", Rank: 4, Score: 60},
+	}, SelectionContext{
+		MaxSelectedNames:  2,
+		ExistingPositions: []ExistingPosition{{StockCode: "SZ000001"}},
+	})
+	if len(got.Selected) != 2 {
+		t.Fatalf("selected=%d want 2 (held name must not consume slots)", len(got.Selected))
+	}
+	if got.Selected[0].Candidate.StockCode != "sz000002" || got.Selected[1].Candidate.StockCode != "sz000003" {
+		t.Fatalf("selected=%s %s", got.Selected[0].Candidate.StockCode, got.Selected[1].Candidate.StockCode)
+	}
+	if len(got.Skipped) != 2 {
+		t.Fatalf("skipped=%d", len(got.Skipped))
+	}
+	if got.Skipped[0].SkipReason != ReasonAlreadyHolding || got.Skipped[0].SkippedReason != ReasonAlreadyHolding {
+		t.Fatalf("holding skip=%q", got.Skipped[0].SkipReason)
+	}
+}
+
+func TestSelect_DuplicateKeepsBetterRank(t *testing.T) {
+	t.Parallel()
+	got := Select([]Candidate{
+		{StockCode: "sz000002", Rank: 2, Score: 50},
+		{StockCode: "SZ000002", Rank: 9, Score: 99},
+		{StockCode: "sz000001", Rank: 1, Score: 80},
+	}, SelectionContext{MaxSelectedNames: 2})
+	if len(got.Selected) != 2 {
+		t.Fatalf("selected=%d", len(got.Selected))
+	}
+	if got.Selected[0].Candidate.StockCode != "sz000001" {
+		t.Fatalf("first=%s", got.Selected[0].Candidate.StockCode)
+	}
+	if got.Selected[1].Candidate.StockCode != "sz000002" || got.Selected[1].Rank != 2 {
+		t.Fatalf("kept worse-score better-rank, got %+v", got.Selected[1])
+	}
+	if len(got.Skipped) != 1 || got.Skipped[0].SkipReason != ReasonDuplicateSymbol {
+		t.Fatalf("dup skip=%+v", got.Skipped)
+	}
+}
+
+func TestSelect_CashLimit(t *testing.T) {
+	t.Parallel()
+	cands := []Candidate{
+		{StockCode: "sz000001", Rank: 1, Score: 9},
+		{StockCode: "sz000002", Rank: 2, Score: 8},
+		{StockCode: "sz000003", Rank: 3, Score: 7},
+	}
+	got := Select(cands, SelectionContext{
+		MaxSelectedNames:       5,
+		AvailableCash:          150_000,
+		EstimatedAmountPerName: 100_000,
+	})
+	if len(got.Selected) != 1 || got.Selected[0].Candidate.StockCode != "sz000001" {
+		t.Fatalf("selected=%+v", got.Selected)
+	}
+	if len(got.Skipped) != 2 {
+		t.Fatalf("skipped=%d", len(got.Skipped))
+	}
+	for _, d := range got.Skipped {
+		if d.SkipReason != ReasonCashLimit {
+			t.Fatalf("want cash_limit got %q for %s", d.SkipReason, d.Candidate.StockCode)
+		}
+	}
+
+	none := Select(cands, SelectionContext{
+		MaxSelectedNames:       5,
+		AvailableCash:          0,
+		EstimatedAmountPerName: 100_000,
+	})
+	if len(none.Selected) != 0 {
+		t.Fatalf("zero cash selected=%d", len(none.Selected))
+	}
+	for _, d := range none.Skipped {
+		if d.SkipReason != ReasonCashLimit {
+			t.Fatalf("zero cash reason=%q", d.SkipReason)
+		}
+	}
+}
+
+func TestSelect_CashOffWhenAmountUnset(t *testing.T) {
 	t.Parallel()
 	got := Select([]Candidate{
 		{StockCode: "sz000001", Rank: 1, Score: 9},
 		{StockCode: "sz000002", Rank: 2, Score: 8},
 	}, SelectionContext{
-		MaxSelectedNames:  2,
-		AvailableCash:     0,
-		ExistingPositions: []ExistingPosition{{StockCode: "sz000001"}},
-		PortfolioSnapshot: &PortfolioSnapshot{Cash: 0, Equity: 0},
+		MaxSelectedNames: 2,
+		AvailableCash:    0,
 	})
 	if len(got.Selected) != 2 {
-		t.Fatalf("E.1 must not skip holdings or cash, selected=%d", len(got.Selected))
+		t.Fatalf("without estimated_amount_per_name, cash must not apply, selected=%d", len(got.Selected))
 	}
 }
