@@ -31,9 +31,10 @@ import {
   tradingStatusLabel,
   tradingStepLabel,
 } from '../api/investmentHome'
-import { TRADE_PLAN_CODE_NO_UPCOMING, getUpcomingTradePlan } from '../api/tradePlans'
+import { getUpcomingTradePlan } from '../api/tradePlans'
 import { positionStateTagType } from '../utils/positionStateDisplay.js'
 import { applyStockClickAction, toStockDisplay } from '../utils/stockDisplay.js'
+import { buildDashboardPlanContext, shanghaiDate } from '../utils/planContext.js'
 import { GetPaperOpenBuyConfig } from '../../wailsjs/go/main/App'
 import StockKlineModal from './StockKlineModal.vue'
 import StockLink from './StockLink.vue'
@@ -46,7 +47,7 @@ const message = useMessage()
 const loading = ref(false)
 const errorMessage = ref('')
 const view = ref(null)
-const upcomingPlan = ref(null)
+const planContext = ref(null)
 const enableOpenBuy = ref(false)
 
 const portfolio = computed(() => view.value?.portfolio || null)
@@ -74,6 +75,11 @@ function formatScoreGap(v) {
   return r > 0 ? `+${r}` : String(r)
 }
 
+const displayPlanSlot = computed(() => planContext.value?.active_plan || null)
+const upcomingPlan = computed(() => displayPlanSlot.value?.plan || null)
+const planContextTitle = computed(() => displayPlanSlot.value?.title || '我的计划')
+const planContextDate = computed(() => String(displayPlanSlot.value?.trade_date || '').trim())
+const planEmptyText = computed(() => displayPlanSlot.value?.empty_text || '暂无交易计划')
 const planCard = computed(() => planUserStatus(upcomingPlan.value))
 const planItemCount = computed(() => {
   const items = upcomingPlan.value?.items
@@ -106,10 +112,11 @@ function openStockKline(model) {
 }
 
 const isTodayPlan = computed(() => {
-  const planDate = String(upcomingPlan.value?.trade_date || '').trim()
-  const homeDate = String(view.value?.tradeDate || '').trim()
-  if (!planDate || !homeDate) return !!upcomingPlan.value
-  return planDate === homeDate
+  const ctx = planContext.value
+  if (!ctx || ctx.active !== 'current') return false
+  const planDate = String(ctx.active_plan?.plan?.trade_date || '').trim()
+  const today = String(ctx.current_plan?.trade_date || '').trim()
+  return !!planDate && planDate === today
 })
 const currentStatusText = computed(() =>
   autoExecuteSentence({
@@ -196,16 +203,21 @@ async function loadOpenBuySwitch() {
   }
 }
 
-async function loadUpcoming(tradeDate) {
+async function loadPlanContext() {
   try {
-    const res = await getUpcomingTradePlan(tradeDate || undefined)
-    if (!res?.ok || res.code === TRADE_PLAN_CODE_NO_UPCOMING || !res.plan) {
-      upcomingPlan.value = null
-      return
-    }
-    upcomingPlan.value = res.plan
+    const now = new Date()
+    const resCurrent = await getUpcomingTradePlan(shanghaiDate(now))
+    const nextDay = buildDashboardPlanContext({
+      now,
+      resCurrent,
+      resNext: { ok: false, plan: null },
+    }).next_plan.trade_date
+    const resNext = nextDay
+      ? await getUpcomingTradePlan(nextDay)
+      : { ok: false, plan: null }
+    planContext.value = buildDashboardPlanContext({ now, resCurrent, resNext })
   } catch {
-    upcomingPlan.value = null
+    planContext.value = buildDashboardPlanContext({ now: new Date() })
   }
 }
 
@@ -216,10 +228,10 @@ async function refresh() {
     const homePromise = getInvestmentHome()
     const switchPromise = loadOpenBuySwitch()
     view.value = await homePromise
-    await Promise.all([switchPromise, loadUpcoming(view.value?.tradeDate)])
+    await Promise.all([switchPromise, loadPlanContext()])
   } catch (e) {
     view.value = null
-    upcomingPlan.value = null
+    planContext.value = null
     errorMessage.value = e?.message || String(e)
     message.error(errorMessage.value)
   } finally {
@@ -322,15 +334,14 @@ onMounted(refresh)
 
         <section class="block">
           <n-text strong class="block-title">我的计划</n-text>
+          <n-text v-if="planContextTitle" depth="3" class="block-sub">{{ planContextTitle }}</n-text>
           <template v-if="upcomingPlan && planCard.key !== 'none'">
             <n-space align="center" :wrap="true" style="margin: 8px 0 6px">
               <n-tag size="medium" :type="planTagType(planCard.key)" :bordered="false">
                 {{ planCard.label }}
               </n-tag>
               <n-text v-if="planItemCount > 0" depth="3">共 {{ planItemCount }} 只</n-text>
-              <n-text v-if="!isTodayPlan && upcomingPlan.trade_date" depth="3">
-                下一交易日 {{ upcomingPlan.trade_date }}
-              </n-text>
+              <n-text v-if="planContextDate" depth="3">{{ planContextDate }}</n-text>
             </n-space>
             <n-space v-if="planStocks.length" :wrap="true" :size="[12, 8]" style="margin-top: 4px">
               <stock-link
@@ -341,7 +352,7 @@ onMounted(refresh)
               />
             </n-space>
           </template>
-          <n-empty v-else description="暂无交易计划" size="small" />
+          <n-empty v-else :description="planEmptyText" size="small" />
           <n-button text type="primary" style="margin-top: 8px" @click="goPlan">
             查看计划
           </n-button>
