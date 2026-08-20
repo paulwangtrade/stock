@@ -26,8 +26,6 @@ import {
   autoExecuteSentence,
   getInvestmentHome,
   itemTypeLabel,
-  opportunityUserLabel,
-  pickOpportunityItems,
   planUserStatus,
   sanitizeInternalCopy,
   tradingStatusLabel,
@@ -59,7 +57,22 @@ const dailyAttention = computed(() => view.value?.dailyAttention || null)
 const attentionRows = computed(() => dailyAttention.value?.items || [])
 const positionStates = computed(() => view.value?.positionStates || [])
 
-const opportunityRows = computed(() => pickOpportunityItems(attentionRows.value, 3))
+const opportunityCards = computed(() =>
+  Array.isArray(view.value?.opportunityCards) ? view.value.opportunityCards : [],
+)
+
+function formatScore(v) {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return '—'
+  return String(Math.round(n))
+}
+
+function formatScoreGap(v) {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return '—'
+  const r = Math.round(n)
+  return r > 0 ? `+${r}` : String(r)
+}
 
 const planCard = computed(() => planUserStatus(upcomingPlan.value))
 const planItemCount = computed(() => {
@@ -268,23 +281,36 @@ onMounted(refresh)
 
         <section class="block">
           <n-text strong class="block-title">今日机会</n-text>
-          <n-list v-if="opportunityRows.length" bordered>
-            <n-list-item v-for="(item, idx) in opportunityRows" :key="idx">
-              <n-space vertical :size="4" style="width: 100%">
+          <n-list v-if="opportunityCards.length" bordered>
+            <n-list-item
+              v-for="(card, idx) in opportunityCards"
+              :key="(card.candidate_stock?.code || '') + '-' + (card.holding_stock?.code || '') + '-' + idx"
+            >
+              <n-space vertical :size="6" style="width: 100%">
                 <n-space align="center" :wrap="true">
                   <n-tag
                     size="tiny"
-                    :type="opportunityTagType(opportunityUserLabel(item))"
+                    :type="opportunityTagType(card.user_label)"
                     :bordered="false"
                   >
-                    {{ opportunityUserLabel(item) }}
+                    {{ card.user_label }}
                   </n-tag>
-                  <n-text strong>{{ sanitizeInternalCopy(item.title) }}</n-text>
-                  <n-text v-if="item.stockCode" depth="3">{{ item.stockCode }}</n-text>
+                  <n-text strong>机会对比</n-text>
+                  <stock-link
+                    v-if="card.candidate_stock?.display"
+                    :model="card.candidate_stock.display"
+                    @open="openStockKline"
+                  />
                 </n-space>
-                <n-text v-if="sanitizeInternalCopy(item.reason)" depth="3">
-                  {{ sanitizeInternalCopy(item.reason) }}
-                </n-text>
+                <n-text depth="3">候选评分：{{ formatScore(card.candidate_score) }}</n-text>
+                <n-text depth="3">超过当前持仓：</n-text>
+                <stock-link
+                  v-if="card.holding_stock?.display"
+                  :model="card.holding_stock.display"
+                  @open="openStockKline"
+                />
+                <n-text depth="3">持仓评分：{{ formatScore(card.holding_score) }}</n-text>
+                <n-text>机会优势：{{ formatScoreGap(card.score_gap) }}</n-text>
               </n-space>
             </n-list-item>
           </n-list>
