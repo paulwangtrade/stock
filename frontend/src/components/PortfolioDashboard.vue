@@ -10,6 +10,7 @@
  * Phase17-B.2：组合开 K 注入持仓上下文 + Modal 摘要/footer 卖出（复用 SellDraftDialog；不改图表核心）。
  * Phase17.1：盈亏色统一 A 股红涨绿跌（marketColor.pnlColor）；不改 daily_pnl 计算。
  * Phase17-C4：持仓健康等级/原因摘要（exit-evaluation HealthScore 只读展示；无自动卖出）。
+ * Phase17.1：做 T 适宜性列 + HoldingTSuitabilityDrawer（只读；无买卖按钮）。
  * Phase17.2：行情参考价 + 行情时间/新鲜度（display projection；不改 mark/Settlement）。
  * Phase17.5：PositionOriginDrawer「为什么买入」（复用 Provenance API；不改来源模型）。
  * 资产事实：GET /api/portfolio/snapshot（include_display=1 仅用于行情展示 overlay）。
@@ -41,6 +42,7 @@ import SellDraftDialog from './SellDraftDialog.vue'
 import PortfolioProvenanceDrawer from './PortfolioProvenanceDrawer.vue'
 import PositionOriginDrawer from './PositionOriginDrawer.vue'
 import HoldingHealthDrawer from './HoldingHealthDrawer.vue'
+import HoldingTSuitabilityDrawer from './HoldingTSuitabilityDrawer.vue'
 import { canShowSellButton, maxSellQuantity } from '../utils/portfolioSellEntry.js'
 import {
   pickLatestPlanIdFromTrades,
@@ -52,6 +54,11 @@ import {
   healthGradeListLabel,
   healthGradeTagType,
 } from '../utils/holdingHealthDisplay.js'
+import {
+  tSuitLevelEmoji,
+  tSuitLevelLabel,
+  tSuitLevelTagType,
+} from '../utils/holdingTSuitabilityDisplay.js'
 import {
   buildQuotePriceTooltip,
   formatPriceWithContext,
@@ -84,8 +91,12 @@ const originDrawerVisible = ref(false)
 const originTargetRow = ref(null)
 const healthDrawerVisible = ref(false)
 const healthTargetRow = ref(null)
+const tSuitDrawerVisible = ref(false)
+const tSuitTargetRow = ref(null)
 /** @type {import('vue').Ref<Record<string, any>>} */
 const healthByCode = ref({})
+/** @type {import('vue').Ref<Record<string, any>>} */
+const tSuitByCode = ref({})
 /** @type {import('vue').Ref<Record<string, { bucket: string, planId: number }>>} */
 const sourceChipByCode = ref({})
 let sourceEnrichToken = 0
@@ -168,7 +179,8 @@ const positions = computed(() => {
   return rows.map((row) => {
     const key = normCode(row.stockCode)
     const health = key ? healthByCode.value[key] || null : null
-    return { ...row, health }
+    const tSuitability = key ? tSuitByCode.value[key] || null : null
+    return { ...row, health, tSuitability }
   })
 })
 const quoteOverlayActive = computed(() => !!snapshot.value?.quoteOverlay)
@@ -251,7 +263,13 @@ function openHealthDrawer(row) {
   healthDrawerVisible.value = true
 }
 
+function openTSuitDrawer(row) {
+  tSuitTargetRow.value = row
+  tSuitDrawerVisible.value = true
+}
+
 const healthDrawerHealth = computed(() => healthTargetRow.value?.health || null)
+const tSuitDrawerSuitability = computed(() => tSuitTargetRow.value?.tSuitability || null)
 
 function renderHealthGrade(row) {
   const health = row?.health
@@ -331,6 +349,41 @@ function renderHealthReasons(row) {
           ),
         ),
       default: () => tip,
+    },
+  )
+}
+
+function renderTSuitLevel(row) {
+  const suit = row?.tSuitability
+  const level = String(suit?.level || '').trim().toLowerCase()
+  if (!level) {
+    return h(
+      NTooltip,
+      { trigger: 'hover' },
+      {
+        trigger: () => h(NText, { depth: 3 }, { default: () => '—' }),
+        default: () => '暂无做 T 适宜性评价（评价未就绪或不适用）',
+      },
+    )
+  }
+  const label = `${tSuitLevelEmoji(level)} ${tSuitLevelLabel(level)}`.trim()
+  return h(
+    NTooltip,
+    { trigger: 'hover' },
+    {
+      trigger: () =>
+        h(
+          NTag,
+          {
+            size: 'small',
+            bordered: false,
+            type: tSuitLevelTagType(level),
+            style: { cursor: 'pointer' },
+            onClick: () => openTSuitDrawer(row),
+          },
+          { default: () => label },
+        ),
+      default: () => '持仓做 T 适宜性 · 非交易指令。点击查看原因。',
     },
   )
 }
@@ -866,6 +919,23 @@ const positionColumns = computed(() => [
         NTooltip,
         { trigger: 'hover' },
         {
+          trigger: () => h('span', null, '做 T'),
+          default: () =>
+            '持仓做 T 适宜性（可考虑 / 观察 / 条件不足）。非交易指令。点击查看原因。',
+        },
+      ),
+    key: 'tSuitability',
+    width: 108,
+    render(row) {
+      return renderTSuitLevel(row)
+    },
+  },
+  {
+    title: () =>
+      h(
+        NTooltip,
+        { trigger: 'hover' },
+        {
           trigger: () => h('span', null, '来源'),
           default: () =>
             '持仓来源浅标签（Strategy / Watchlist / Manual）。点击打开「为什么买入」解释；完整成交溯源见抽屉内入口。',
@@ -977,21 +1047,26 @@ async function enrichHoldingHealth(positions) {
   const rows = Array.isArray(positions) ? positions : []
   if (!rows.length) {
     healthByCode.value = {}
+    tSuitByCode.value = {}
     return
   }
   try {
     const view = await getPaperExitEvaluation()
     if (token !== healthEnrichToken) return
-    const next = {}
+    const nextHealth = {}
+    const nextSuit = {}
     for (const h of view?.holdings || []) {
       const key = normCode(h.stockCode)
-      if (!key || !h.healthScore) continue
-      next[key] = h.healthScore
+      if (!key) continue
+      if (h.healthScore) nextHealth[key] = h.healthScore
+      if (h.tSuitability) nextSuit[key] = h.tSuitability
     }
-    healthByCode.value = next
+    healthByCode.value = nextHealth
+    tSuitByCode.value = nextSuit
   } catch (_) {
     if (token === healthEnrichToken) {
       healthByCode.value = {}
+      tSuitByCode.value = {}
     }
   }
 }
@@ -1012,6 +1087,7 @@ async function refresh() {
     // Non-blocking: chips default to 未知来源 until enrichment finishes.
     sourceChipByCode.value = {}
     healthByCode.value = {}
+    tSuitByCode.value = {}
     const pos = snapRes.value?.positions || []
     void enrichSourceChips(pos, fillsByNormCode.value).catch(() => {
       /* ignore enrichment errors */
@@ -1024,6 +1100,7 @@ async function refresh() {
     dash.value = null
     sourceChipByCode.value = {}
     healthByCode.value = {}
+    tSuitByCode.value = {}
     errorMessage.value = e?.message || String(e)
     message.error(errorMessage.value)
   } finally {
@@ -1128,7 +1205,7 @@ onMounted(refresh)
           <n-text v-if="dataAsOf" depth="3" style="font-size: 12px">截至 {{ dataAsOf }}</n-text>
         </n-space>
         <n-text depth="3" style="display: block; margin-bottom: 8px; font-size: 12px">
-          估值价/市值/累计浮盈为账本口径（mark）。持仓今日浮盈 = (行情 − 昨收)×数量（仅展示）。行情价仅参考并带行情时间；不改总权益。健康等级为质量评价（非卖出建议）。
+          估值价/市值/累计浮盈为账本口径（mark）。持仓今日浮盈 = (行情 − 昨收)×数量（仅展示）。行情价仅参考并带行情时间；不改总权益。健康 / 做 T 列可点击查看解释（非买卖建议）。来源列可打开「为什么买入」。
         </n-text>
         <div v-if="positions.length" class="holdings-table-wrap">
           <n-data-table
@@ -1178,6 +1255,11 @@ onMounted(refresh)
           v-model:show="healthDrawerVisible"
           :row="healthTargetRow"
           :health="healthDrawerHealth"
+        />
+        <HoldingTSuitabilityDrawer
+          v-model:show="tSuitDrawerVisible"
+          :row="tSuitTargetRow"
+          :suitability="tSuitDrawerSuitability"
         />
 
         <stock-kline-modal

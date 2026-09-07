@@ -1,9 +1,14 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+/**
+ * Phase17.6：Holding T Signal v0 — 观察 WATCH 展示 + ChartMarker。
+ * 不改主 K 线冰点系统；不自动下单。
+ */
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   NButton,
   NCard,
   NEmpty,
+  NSpace,
   NSpin,
   NTag,
   NText,
@@ -12,6 +17,13 @@ import {
 import { GetFollowRealtimeList, GetStockEastMoneyKLine } from '../../wailsjs/go/main/App'
 import { buildIntradayChartModel } from '../utils/chartMarkers'
 import { getOrFetch, klineCacheKey } from '../utils/klineCache'
+import { buildHoldingTSignal, holdingTSignalsToChartMarkers } from '../utils/holdingTSignal'
+import {
+  formatTSignalConfidence,
+  tSignalLevelLabelZH,
+  tSignalReasonLabelZH,
+  tSignalTypeLabelZH,
+} from '../utils/holdingTSignalDisplay'
 
 const KLINE_TIMEFRAME = '5'
 const KLINE_BARS = 120
@@ -26,6 +38,8 @@ const klineError = ref('')
 const klineBarsByCode = ref({})
 /** @type {import('vue').Ref<Record<string, import('../utils/chartMarkers.js').ChartMarker[]>>} */
 const chartMarkersByCode = ref({})
+/** @type {import('vue').Ref<Record<string, { signals: object[], notes: string[] }>>} */
+const tSignalByCode = ref({})
 let refreshTimer = null
 
 function field(row, ...keys) {
@@ -43,6 +57,8 @@ function normalizeHolding(row) {
   const price = Number(field(row, '当前价格', 'Price', 'price', 'close')) || 0
   const profit = (price - costPrice) * costVolume
   const profitRate = costPrice > 0 ? ((price / costPrice) - 1) * 100 : 0
+  // Follow list has no paper_sim PositionState; v0 assumes sellable when volume>0 (T+1 unknown → canSell true for observe).
+  const canSell = costVolume > 0
   return {
     ...row,
     code,
@@ -52,6 +68,8 @@ function normalizeHolding(row) {
     price,
     profit,
     profitRate,
+    canSell,
+    positionId: String(field(row, 'positionId', 'PositionID', 'id') || ''),
   }
 }
 
@@ -60,6 +78,7 @@ const klineBars = computed(() => klineBarsByCode.value[selectedCode.value] || []
 const chartMarkers = computed(() => chartMarkersByCode.value[selectedCode.value] || [])
 const chartModel = computed(() => buildIntradayChartModel(klineBars.value.slice(-36), chartMarkers.value))
 const latestBars = computed(() => klineBars.value.slice(-18).reverse())
+const tSignalResult = computed(() => tSignalByCode.value[selectedCode.value] || { signals: [], notes: [] })
 
 function formatPrice(value) {
   return Number.isFinite(Number(value)) ? Number(value).toFixed(2) : '--'
@@ -78,6 +97,37 @@ function formatProfit(value, rate) {
   const sign = n >= 0 ? '+' : ''
   const pct = Number.isFinite(r) ? `${sign}${r.toFixed(2)}%` : ''
   return `${pct} ${sign}${Math.round(n)}元`.trim()
+}
+
+function signalTagType(signalType) {
+  return String(signalType) === 'T_SELL_WATCH' ? 'error' : 'success'
+}
+
+function recomputeTSignals(code) {
+  const holding = holdings.value.find((h) => h.code === code)
+  if (!holding) {
+    tSignalByCode.value = { ...tSignalByCode.value, [code]: { signals: [], notes: ['NO_POSITION'] } }
+    chartMarkersByCode.value = { ...chartMarkersByCode.value, [code]: [] }
+    return
+  }
+  const bars = klineBarsByCode.value[code] || []
+  const res = buildHoldingTSignal({
+    stockCode: holding.code,
+    positionId: holding.positionId,
+    hasPosition: holding.costVolume > 0,
+    canSell: holding.canSell,
+    availableQty: holding.costVolume,
+    costPrice: holding.costPrice,
+    freshness: 'FRESH', // HoldingTPanel 无 C2 freshness 接线；过期由缺 K / 空仓等覆盖
+    suitabilityLevel: 'suitable',
+    healthGrade: '',
+    bars,
+  })
+  tSignalByCode.value = { ...tSignalByCode.value, [code]: res }
+  chartMarkersByCode.value = {
+    ...chartMarkersByCode.value,
+    [code]: holdingTSignalsToChartMarkers(res.signals),
+  }
 }
 
 async function fetchKlineRows(code, name) {
@@ -100,7 +150,7 @@ async function refreshHoldings() {
       selectedCode.value = next[0]?.code || ''
     }
     if (selectedCode.value) {
-      loadKlineForSelected({ silent: true })
+      await loadKlineForSelected({ silent: true })
     }
   } catch (error) {
     message.error(error?.message || String(error))
@@ -120,8 +170,11 @@ async function loadKlineForSelected(opts = {}) {
       ...klineBarsByCode.value,
       [holding.code]: Array.isArray(raw) ? raw : [],
     }
+    recomputeTSignals(holding.code)
   } catch (error) {
     klineError.value = `${holding.name} 行情加载失败：${error?.message || String(error)}`
+    klineBarsByCode.value = { ...klineBarsByCode.value, [holding.code]: [] }
+    recomputeTSignals(holding.code)
     if (!opts.silent) message.error(klineError.value)
   } finally {
     loadingKline.value = false
@@ -132,8 +185,14 @@ async function selectHolding(code) {
   selectedCode.value = code
   if (!klineBarsByCode.value[code]) {
     await loadKlineForSelected()
+  } else {
+    recomputeTSignals(code)
   }
 }
+
+watch(selectedCode, (code) => {
+  if (code && klineBarsByCode.value[code]) recomputeTSignals(code)
+})
 
 onMounted(() => {
   refreshHoldings()
@@ -152,7 +211,9 @@ onBeforeUnmount(() => {
     <div class="toolbar">
       <div>
         <n-text strong>持仓辅助决策工具</n-text>
-        <n-text depth="3" class="subtitle">观察用 · 不自动下单 · 等待 T 策略信号模型接入</n-text>
+        <n-text depth="3" class="subtitle">
+          观察用 · Holding T Signal v0 · 不自动下单 · 不改主 K 线冰点系统
+        </n-text>
       </div>
       <n-button size="small" :loading="loadingList" @click="refreshHoldings">刷新持仓</n-button>
     </div>
@@ -198,16 +259,41 @@ onBeforeUnmount(() => {
 
           <n-card size="small" class="t-observe-card" title="T 操作观察区">
             <n-text depth="3" style="display: block; margin-bottom: 8px">
-              定位：持仓辅助决策工具，用于观察与复盘；不产生自动买卖指令。
+              定位：持仓辅助决策 · 仅 WATCH 观察 · 不产生自动买卖指令。
             </n-text>
-            <div class="t-strategy-placeholder">
-              <n-text strong>T 策略观察</n-text>
-              <n-tag size="small" type="default" :bordered="false">等待信号模型接入</n-tag>
-              <n-text depth="3" style="display: block; margin-top: 8px">
-                当前：未生成交易建议
-              </n-text>
-              <n-text depth="3" style="display: block; margin-top: 4px; font-size: 12px">
-                未来可在此展示 ↑T买 / ↓T卖 标记与策略解释（ChartMarker.reason）。
+
+            <div v-if="tSignalResult.signals.length" class="t-signal-list">
+              <div
+                v-for="(sig, idx) in tSignalResult.signals"
+                :key="`${sig.signal_type}-${idx}`"
+                class="t-signal-row"
+              >
+                <n-space align="center" :size="8" wrap>
+                  <n-tag size="small" :type="signalTagType(sig.signal_type)" :bordered="false">
+                    {{ tSignalTypeLabelZH(sig.signal_type) }}
+                  </n-tag>
+                  <n-tag size="tiny" :bordered="false">{{ tSignalLevelLabelZH(sig.level) }}</n-tag>
+                  <n-text depth="3" style="font-size: 12px">
+                    置信 {{ formatTSignalConfidence(sig.confidence) }}
+                    · {{ formatPrice(sig.signal_price) }}
+                    · {{ String(sig.signal_time || '').match(/\d{1,2}:\d{2}/)?.[0] || sig.signal_time }}
+                  </n-text>
+                </n-space>
+                <ul class="t-reason-list">
+                  <li v-for="(r, ri) in sig.reasons || []" :key="ri">
+                    {{ tSignalReasonLabelZH(r) }}
+                  </li>
+                </ul>
+              </div>
+            </div>
+            <div v-else class="t-strategy-placeholder">
+              <n-text strong>暂无 T 买/卖观察信号</n-text>
+              <n-text depth="3" style="display: block; margin-top: 8px; font-size: 12px">
+                {{
+                  (tSignalResult.notes || [])
+                    .map((n) => tSignalReasonLabelZH(n))
+                    .join(' · ') || '当前 5 分钟结构未触发观察条件'
+                }}
               </n-text>
             </div>
           </n-card>
@@ -216,6 +302,9 @@ onBeforeUnmount(() => {
             <n-space align="center" :wrap="true" style="margin-bottom: 8px">
               <n-button size="tiny" :loading="loadingKline" @click="loadKlineForSelected()">刷新行情</n-button>
               <n-text v-if="loadingKline" depth="3" style="font-size: 12px">正在加载行情…</n-text>
+              <n-text v-if="chartMarkers.length" depth="3" style="font-size: 12px">
+                图上标记：{{ chartMarkers.length }}（仅观察）
+              </n-text>
             </n-space>
             <n-tag v-if="klineError" type="warning" :bordered="false" style="margin-bottom: 8px">{{ klineError }}</n-tag>
             <n-spin :show="loadingKline && !klineBars.length">
@@ -229,6 +318,7 @@ onBeforeUnmount(() => {
                 <line x1="24" y1="196" x2="696" y2="196" class="chart-axis" />
                 <polyline :points="chartModel.points" class="chart-line" />
                 <g v-for="(marker, index) in chartModel.markers" :key="`${marker.type}-${marker.time}-${index}`">
+                  <title>{{ marker.label }} {{ formatPrice(marker.price) }} · {{ marker.reason || '' }}</title>
                   <circle :cx="marker.x" :cy="marker.y" r="6" :class="marker.className" />
                   <text :x="marker.x + 8" :y="marker.y - 8" class="chart-label">
                     {{ marker.label }} {{ formatPrice(marker.price) }}
@@ -274,6 +364,9 @@ onBeforeUnmount(() => {
 .summary-grid small { display: block; opacity: .65; font-size: 11px; }
 .summary-grid b { display: block; margin-top: 4px; font-size: 16px; }
 .t-strategy-placeholder { padding: 12px; border: 1px dashed rgba(128, 128, 128, .35); border-radius: 8px; background: rgba(128, 128, 128, .04); }
+.t-signal-list { display: flex; flex-direction: column; gap: 10px; }
+.t-signal-row { padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(128, 128, 128, .2); background: rgba(128, 128, 128, .04); }
+.t-reason-list { margin: 8px 0 0; padding-left: 18px; font-size: 12px; opacity: .9; }
 .intraday-chart { width: 100%; min-height: 220px; overflow: visible; }
 .chart-axis { stroke: rgba(128, 128, 128, .35); stroke-width: 1; }
 .chart-line { fill: none; stroke: #2080f0; stroke-width: 2; vector-effect: non-scaling-stroke; }

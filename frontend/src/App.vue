@@ -160,6 +160,7 @@ watch(
     const directKeys = new Set([
       'investmentHome',
       'portfolioDashboard',
+      'holdingT',
       'stockScreen',
       'watchedOpportunities',
       'tradePlanUpcoming',

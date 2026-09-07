@@ -761,6 +761,19 @@ export type HoldingHealthScore = {
   dataSourceNote?: string
 }
 
+/** Phase17.1 做 T suitability (operability only; not a trade signal). */
+export type HoldingTSuitability = {
+  stockCode: string
+  level: string
+  reasons: string[]
+  canSell: boolean
+  freshness: string
+  volatilityStatus: string
+  healthGrade: string
+  evaluatedAt?: string
+  dataSourceNote?: string
+}
+
 export type ExitEvaluationStockRow = {
   stockCode: string
   stockName: string
@@ -769,6 +782,7 @@ export type ExitEvaluationStockRow = {
   latestOutcome?: ExitReviewOutcomeSummary
   explanation?: PositionEvaluationExplanation
   healthScore?: HoldingHealthScore
+  tSuitability?: HoldingTSuitability
 }
 
 export type ExitEvaluationView = {
@@ -909,6 +923,28 @@ function mapHoldingHealthScore(raw: any): HoldingHealthScore | undefined {
   }
 }
 
+function mapHoldingTSuitability(raw: any): HoldingTSuitability | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const level = str(raw.level)
+  if (!level) return undefined
+  const reasons = raw.reasons
+  return {
+    stockCode: str(raw.stock_code ?? raw.stockCode),
+    level,
+    reasons: Array.isArray(reasons) ? reasons.map((x: any) => String(x)) : [],
+    canSell: !!(raw.can_sell ?? raw.canSell),
+    freshness: str(raw.freshness),
+    volatilityStatus: str(raw.volatility_status ?? raw.volatilityStatus),
+    healthGrade: str(raw.health_grade ?? raw.healthGrade),
+    evaluatedAt: raw.evaluated_at || raw.evaluatedAt
+      ? str(raw.evaluated_at ?? raw.evaluatedAt)
+      : undefined,
+    dataSourceNote: raw.data_source_note || raw.dataSourceNote
+      ? str(raw.data_source_note ?? raw.dataSourceNote)
+      : undefined,
+  }
+}
+
 function mapExitEvalStock(raw: any): ExitEvaluationStockRow {
   return {
     stockCode: str(raw?.stock_code ?? raw?.stockCode),
@@ -918,6 +954,7 @@ function mapExitEvalStock(raw: any): ExitEvaluationStockRow {
     latestOutcome: mapExitOutcomeSummary(raw?.latest_outcome ?? raw?.latestOutcome),
     explanation: mapPositionExplanation(raw?.explanation),
     healthScore: mapHoldingHealthScore(raw?.health_score ?? raw?.healthScore),
+    tSuitability: mapHoldingTSuitability(raw?.t_suitability ?? raw?.tSuitability),
   }
 }
 

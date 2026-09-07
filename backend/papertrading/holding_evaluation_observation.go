@@ -47,6 +47,8 @@ type HoldingEvalStockRow struct {
 	Explanation *PositionEvaluationExplanation `json:"explanation,omitempty"`
 	// HealthScore is Phase17-C3 position quality score (optional; not a sell signal).
 	HealthScore *HoldingHealthScore `json:"health_score,omitempty"`
+	// TSuitability is Phase17.1 做 T suitability (optional; not a trade signal).
+	TSuitability *HoldingTSuitability `json:"t_suitability,omitempty"`
 }
 
 // HoldingEvalLotRow is one attributed fill lot for Observation expand UI.

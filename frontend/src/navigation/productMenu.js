@@ -101,7 +101,24 @@ export function createProductMenuOptions(ctx) {
 
   return [
     routeLink('investmentHome', '投资驾驶舱', 'investmentHome', SparklesOutline),
-    routeLink('portfolioDashboard', '我的组合', 'portfolioDashboard', Wallet),
+    {
+      // Phase17 release：组合总览 + 持仓做T 观察台（适宜性评价仍在组合表内）
+      label: () =>
+        h(
+          RouterLink,
+          {
+            to: { name: 'portfolioDashboard' },
+            onClick: () => setKey('portfolioDashboard'),
+          },
+          { default: () => '我的组合' },
+        ),
+      key: 'portfolio',
+      icon: renderIcon(Wallet),
+      children: [
+        routeLink('portfolioDashboard', '组合总览', 'portfolioDashboard', Wallet),
+        routeLink('holdingT', '持仓做T', 'holdingT', Pulse),
+      ],
+    },
     {
       // Phase17.1：机会子菜单 — 机会列表 + 跟踪股票（原 settings 隐藏项恢复可见）
       label: () =>
@@ -205,7 +222,6 @@ export function createProductMenuOptions(ctx) {
         routeLink('paperObservation', '执行记录', 'paperObservation', AnalyticsOutline, {
           show: false,
         }),
-        routeLink('holdingT', '持仓做T', 'holdingT', Pulse, { show: false }),
         routeLink('quantTrading', '量化交易', 'quantTrading', AnalyticsOutline, { show: false }),
         routeLink('holdings', '持仓明细', 'holdings', Wallet, { show: false }),
         routeLink('market', '市场资讯', 'market', NewspaperOutline, { show: false }),

@@ -80,6 +80,8 @@ type ExitEvaluationStockRow struct {
 	Explanation *PositionEvaluationExplanation `json:"explanation,omitempty"`
 	// HealthScore is Phase17-C3 position quality (copied from HoldingEval; does not drive Exit state).
 	HealthScore *HoldingHealthScore `json:"health_score,omitempty"`
+	// TSuitability is Phase17.1 做 T suitability (copied from HoldingEval; does not drive Exit state).
+	TSuitability *HoldingTSuitability `json:"t_suitability,omitempty"`
 }
 
 // ExitEvaluationLotRow preserves attribution identity + optional ExitContext.
@@ -113,7 +115,8 @@ type ExitEvaluationBuildOptions struct {
 }
 
 // BuildExitEvaluation loads Holding Evaluation, attaches Item/Plan context, projects exit labels.
-// Pipeline: HoldingEval → Explanation → HoldingHealthScore → ExitEval (additive; Exit state unchanged by score).
+// Pipeline: HoldingEval → Explanation → HealthScore → TSuitability → ExitEval
+// (TSuitability / Health are additive; Exit state unchanged by them).
 func BuildExitEvaluation(opts ExitEvaluationBuildOptions) (*ExitEvaluationView, error) {
 	holding, err := BuildHoldingEvaluationObservation(HoldingEvaluationBuildOptions{
 		StockCode: opts.StockCode,
@@ -132,6 +135,7 @@ func BuildExitEvaluation(opts ExitEvaluationBuildOptions) (*ExitEvaluationView, 
 	hints := LoadExplanationSourceHints(holding)
 	EnrichHoldingWithExplanations(holding, hints, ExplanationOptions{AsOf: asOf})
 	EnrichHoldingWithHealthScores(holding)
+	EnrichHoldingWithTSuitability(holding, nil)
 	ctxByFill := LoadExitContextByFillID(holding)
 	out := ProjectExitEvaluationWithExitPolicy(holding, exitPol, ctxByFill)
 	return out, nil
@@ -196,6 +200,11 @@ func ProjectExitEvaluationWithExitPolicy(
 			hs := BuildHoldingHealthScore(*h.Explanation, &h)
 			h.HealthScore = &hs
 		}
+		if h.TSuitability == nil {
+			gate := HoldingTSuitabilityPositionGate{CanSell: true, AvailableQty: h.TotalVolume}
+			ts := BuildHoldingTSuitabilityFromStock(&h, gate, VolatilityUnknown, holding.AsOf)
+			h.TSuitability = &ts
+		}
 		row := evaluateExitStock(h, pol, ctxByFillID)
 		out.Holdings = append(out.Holdings, row)
 		out.Summary.ByEvaluationState[row.Evaluation.State]++
@@ -219,8 +228,9 @@ func evaluateExitStock(h HoldingEvalStockRow, pol ExitPolicy, ctxByFillID map[ui
 			State:       ExitEvalStateNormal,
 			ReasonCodes: []string{},
 		},
-		Explanation: h.Explanation,
-		HealthScore: h.HealthScore,
+		Explanation:  h.Explanation,
+		HealthScore:  h.HealthScore,
+		TSuitability: h.TSuitability,
 	}
 	reasonSet := map[string]bool{}
 	state := ExitEvalStateNormal
