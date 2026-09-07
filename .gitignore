@@ -148,3 +148,14 @@ build/bin/
 
 # frontend build
 frontend/dist/
+
+# Phase16.5 — tmp workspace probes & runtime artifacts (keep files locally; do not commit)
+tmp/*.log
+tmp/*.log.err
+tmp/*.db
+tmp/*.db-shm
+tmp/*.db-wal
+tmp/*.pid
+tmp/*_pid.txt
+tmp/*.tsv
+tmp/git_*.txt

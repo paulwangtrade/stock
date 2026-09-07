@@ -44,6 +44,24 @@ const txStockUrl = "http://qt.gtimg.cn/?_=%d&q=%s"
 
 const tushareApiUrl = "http://api.tushare.pro"
 
+// realtimeQuoteHTTPTimeout 实时行情 HTTP 超时：保证有上限，避免 CrawlTimeOut=0 或过大导致永久阻塞。
+const realtimeQuoteHTTPDefaultTimeout = 8 * time.Second
+const realtimeQuoteHTTPMaxTimeout = 15 * time.Second
+
+func realtimeQuoteHTTPTimeout(config *SettingConfig) time.Duration {
+	if config == nil || config.Settings == nil || config.CrawlTimeOut <= 0 {
+		return realtimeQuoteHTTPDefaultTimeout
+	}
+	t := time.Duration(config.CrawlTimeOut) * time.Second
+	if t > realtimeQuoteHTTPMaxTimeout {
+		return realtimeQuoteHTTPMaxTimeout
+	}
+	if t < time.Second {
+		return realtimeQuoteHTTPDefaultTimeout
+	}
+	return t
+}
+
 type StockDataApi struct {
 	client *resty.Client
 	config *SettingConfig
@@ -377,9 +395,70 @@ func (receiver StockDataApi) GetStockBaseInfo() {
 
 }
 
+const (
+	realtimeFetchChunkThreshold = 50
+	realtimeFetchChunkSize      = 30
+	realtimeFetchChunkGap       = 100 * time.Millisecond
+)
+
 func (receiver StockDataApi) GetStockCodeRealTimeData(StockCodes ...string) (*[]StockInfo, error) {
 	StockCodes = ConvertTushareCodeToStockCodes(StockCodes)
+	if len(StockCodes) == 0 {
+		logger.SugaredLogger.Warn(
+			"GetStockCodeRealTimeData empty stock codes",
+		)
+		return &[]StockInfo{}, nil
+	}
+	if len(StockCodes) > realtimeFetchChunkThreshold {
+		return receiver.getStockCodeRealTimeDataChunked(StockCodes)
+	}
+	return receiver.getStockCodeRealTimeDataOnce(StockCodes)
+}
 
+func splitRealtimeFetchChunks(codes []string, threshold, size int) [][]string {
+	if len(codes) <= threshold || size <= 0 {
+		return nil
+	}
+	out := make([][]string, 0, (len(codes)+size-1)/size)
+	for i := 0; i < len(codes); i += size {
+		end := i + size
+		if end > len(codes) {
+			end = len(codes)
+		}
+		out = append(out, codes[i:end])
+	}
+	return out
+}
+
+func (receiver StockDataApi) getStockCodeRealTimeDataChunked(codes []string) (*[]StockInfo, error) {
+	merged := make([]StockInfo, 0, len(codes))
+	var firstErr error
+	chunks := splitRealtimeFetchChunks(codes, realtimeFetchChunkThreshold, realtimeFetchChunkSize)
+	if len(chunks) == 0 {
+		return receiver.getStockCodeRealTimeDataOnce(codes)
+	}
+	for i, partCodes := range chunks {
+		part, err := receiver.getStockCodeRealTimeDataOnce(partCodes)
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+		if part != nil && len(*part) > 0 {
+			merged = append(merged, (*part)...)
+		}
+		if i+1 < len(chunks) {
+			time.Sleep(realtimeFetchChunkGap)
+		}
+	}
+	if len(merged) == 0 && firstErr != nil {
+		return &merged, firstErr
+	}
+	return &merged, nil
+}
+
+func (receiver StockDataApi) getStockCodeRealTimeDataOnce(StockCodes []string) (*[]StockInfo, error) {
+	if len(StockCodes) == 0 {
+		return &[]StockInfo{}, nil
+	}
 	stockInfos := make([]StockInfo, 0)
 
 	hkcodes := slice.Filter(StockCodes, func(i int, s string) bool {
@@ -395,7 +474,7 @@ func (receiver StockDataApi) GetStockCodeRealTimeData(StockCodes ...string) (*[]
 			}
 		})
 		url := fmt.Sprintf(txStockUrl, time.Now().Unix(), hkcodesStr)
-		resp, err := receiver.client.R().
+		resp, err := receiver.client.SetTimeout(realtimeQuoteHTTPTimeout(receiver.config)).R().
 			SetHeader("Host", "qt.gtimg.cn").
 			SetHeader("Referer", "https://gu.qq.com/").
 			SetHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0").
@@ -430,6 +509,10 @@ func (receiver StockDataApi) GetStockCodeRealTimeData(StockCodes ...string) (*[]
 	szzsusCodes := slice.Filter(StockCodes, func(i int, s string) bool {
 		return !strutil.HasPrefixAny(s, []string{"hk", "HK", "sh", "sz"})
 	})
+	// A/港股已走腾讯；无美股等剩余代码时跳过新浪，避免 list= 空请求与 invalid data format
+	if len(szzsusCodes) == 0 {
+		return &stockInfos, nil
+	}
 
 	codes := slice.JoinFunc(szzsusCodes, ",", func(s string) string {
 		if strings.HasPrefix(s, "us") {
@@ -440,10 +523,13 @@ func (receiver StockDataApi) GetStockCodeRealTimeData(StockCodes ...string) (*[]
 		}
 		return strings.ToLower(s)
 	})
+	if codes == "" {
+		return &stockInfos, nil
+	}
 
 	url := fmt.Sprintf(sinaStockUrl, time.Now().Unix(), codes)
 	//logger.SugaredLogger.Infof("GetStockCodeRealTimeData %s", url)
-	resp, err := receiver.client.R().
+	resp, err := receiver.client.SetTimeout(realtimeQuoteHTTPTimeout(receiver.config)).R().
 		SetHeader("Host", "hq.sinajs.cn").
 		SetHeader("Referer", "https://finance.sina.com.cn/").
 		SetHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0").

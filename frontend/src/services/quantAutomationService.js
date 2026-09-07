@@ -18,12 +18,20 @@ import { upsertSellSignalDraft } from '../utils/sellRecordDraft'
 import { isSellSignalTag } from '../utils/icePointSignals'
 import { pushWatchlistActionAlerts } from '../utils/watchlistActionAlert'
 import { getLastMarketModeKey } from '../utils/marketStatusBar'
+import { assembleWatchlistDecision } from '../utils/quantDecisionAssemble'
+import {
+  buildPhase9C3ObservationCheckpoint,
+  PHASE9_C3_OBSERVATION_CHECKPOINT_EVENT,
+} from '../utils/riskintel/phase9C3ObservationBundle'
+import { persistPhase9C3ObservationSnapshot } from '../utils/riskintel/phase9C3ObservationPersistence'
 import {
   quantAutomationRunning,
   quantLastScanAt,
   setQuantEntry,
+  clearQuantAutomationCaches,
   quantEntriesByCode,
   quantChecklistFor,
+  quantDecisionFor,
   quantEntryFor,
   setWatchlistSignalSnapshot,
 } from '../utils/quantAutomationStore'
@@ -109,9 +117,18 @@ function dispatchNotify(payload) {
 export function dispatchWatchlistActionPush(byCode) {
   pushWatchlistActionAlerts(byCode, dispatchNotify, {
     settings: signalSettingsState.value,
+    quantDecisionFor,
     quantChecklistFor,
     quantEntryFor,
   })
+}
+
+function todayTradeDateLocal() {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 function enrichEntry(entry, livePrice, stockRow) {
@@ -141,6 +158,7 @@ function enrichEntry(entry, livePrice, stockRow) {
     automation,
   })
 
+  const marketModeKey = getLastMarketModeKey()
   const plan = calcBuyPositionPlan({
     summary: fullSummary,
     buyPriceRange: entry.buyPriceRange,
@@ -149,10 +167,21 @@ function enrichEntry(entry, livePrice, stockRow) {
     existingVolume,
     existingCostPrice,
     totalExposureValue,
-    marketModeKey: getLastMarketModeKey(),
+    marketModeKey,
   })
 
-  return { checklist, plan }
+  const decision = assembleWatchlistDecision({
+    entry,
+    checklist,
+    plan,
+    marketModeKey,
+    existingVolume,
+    purpose: 'watchlist',
+    tradeDate: todayTradeDateLocal(),
+    asOf: new Date().toISOString(),
+  })
+
+  return { checklist, plan, decision }
 }
 
 async function performFollowListSignalScan() {
@@ -168,7 +197,7 @@ async function performFollowListSignalScan() {
   try {
     const targets = await buildScanTargets()
     if (!targets.length) {
-      if (automation.enabled) quantEntriesByCode.value = {}
+      if (automation.enabled) clearQuantAutomationCaches()
       setWatchlistSignalSnapshot({})
       return
     }
@@ -187,8 +216,8 @@ async function performFollowListSignalScan() {
       for (const [code, entry] of Object.entries(byCode || {})) {
         if (!entry?.ok) continue
         const enriched = { ...entry, code }
-        const { checklist, plan } = enrichEntry(enriched, null, null)
-        setQuantEntry(code, enriched, plan, checklist)
+        const { checklist, plan, decision } = enrichEntry(enriched, null, null)
+        setQuantEntry(code, enriched, plan, checklist, decision)
         quantAlertEngine.processScanEntry(code, enriched, plan, checklist, automation, dispatchNotify)
 
         if (
@@ -221,6 +250,29 @@ async function performFollowListSignalScan() {
 
     quantLastScanAt.value = Date.now()
     EventsEmit('quantScanDone', { count: scannedCount })
+
+    // Phase9-C.3: observation-only checkpoint after successful scan.
+    // Must never affect scan return / decision / execution.
+    try {
+      const checkpoint = buildPhase9C3ObservationCheckpoint({
+        meta: { scannedCount, trigger: 'scan_success', sameProcessScan: true },
+      })
+      try {
+        EventsEmit(PHASE9_C3_OBSERVATION_CHECKPOINT_EVENT, checkpoint)
+      } catch (_) {
+        /* EventsEmit optional */
+      }
+      // Persistence writer: JSON truth + derived MD. Fire-and-forget; never blocks scan.
+      try {
+        void persistPhase9C3ObservationSnapshot(checkpoint).catch((err) => {
+          console.warn('[phase9-c3-persistence]', err)
+        })
+      } catch (_) {
+        /* persist mount isolated */
+      }
+    } catch (_) {
+      /* checkpoint failure isolated */
+    }
   } catch (e) {
     console.error('[quantAutomation]', e)
   } finally {
@@ -277,11 +329,11 @@ function onStockPrice(data) {
   quantAlertEngine.processPriceTick(code, price, entry, automation, dispatchNotify)
 
   const follow = matchFollowRow(code)
-  const { checklist, plan } = enrichEntry(entry, price, {
+  const { checklist, plan, decision } = enrichEntry(entry, price, {
     costVolume: follow?.Volume,
     costPrice: follow?.CostPrice,
   })
-  setQuantEntry(code, entry, plan, checklist)
+  setQuantEntry(code, entry, plan, checklist, decision)
 }
 
 export function startQuantAutomation() {

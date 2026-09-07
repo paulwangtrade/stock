@@ -24,6 +24,11 @@ const (
 	PeriodQuarter  = "104" // 季 K
 	PeriodHalfYear = "105" // 半年 K
 	PeriodYear     = "106" // 年 K
+
+	// Secondary daily aliases: Composite routes these to SecondaryKlines (fq feed).
+	// Not provider names — App uses them only to preserve historical endpoint parity.
+	PeriodDailyFQ = "daily_fq"
+	PeriodDailyHK = "daily_hk"
 )
 
 // 复权方式，取值与旧实现 getAdjustType 接受的 adjustFlag 一致。

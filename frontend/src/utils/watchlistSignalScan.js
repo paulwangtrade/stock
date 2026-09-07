@@ -14,6 +14,10 @@ import {
   resolveEffectiveStockMarketMode,
   resolveStockMarketSegment,
 } from './stockMarketSegment'
+import { buildScanRiskAdviceShadow } from './riskintel/scanRiskAdviceShadow'
+import { observeLegacyRiskAdvicePair } from './riskintel/scanRiskAdviceShadowEvaluation'
+import { buildRiskAdviceProjection } from './riskintel/riskAdviceProjection'
+import { getHoldingDecision } from './riskintel/holdingDecisionAdapter'
 
 let indexMa20ByDayCache = null
 let indexMa20FetchPromise = null
@@ -266,6 +270,10 @@ export async function scanWatchlistSignals(stocks, options = {}) {
       { ...signalOptions, signalLastIndex: lastIdx },
     )
     const positionCtx = options.positionsByCode?.[code]
+    let riskContext
+    let riskAdvice
+    let riskAdviceProjection
+    let holdingDecision
     if (hasPositionContext(positionCtx)) {
       const marketSegment = resolveStockMarketSegment(code)
       const globalMarketMode = marketSnapshot?.mode
@@ -291,6 +299,46 @@ export async function scanWatchlistSignals(stocks, options = {}) {
         sectorFlow,
         profitPct: positionCtx.profitPct,
       })
+      // Phase8-0 Step3-A: RiskAdvice shadow dual-write (does not alter legacy holdingAdvice)
+      const shadow = buildScanRiskAdviceShadow({
+        stockCode: code,
+        marketModeKey: effectiveMarketMode.key,
+        effectiveMarketMode,
+        globalMarketMode,
+        segmentMarketMode,
+        marketSegment,
+        sectorFlow,
+        bars,
+        lastIdx: summary.recentSignalBar ?? lastIdx,
+        asOf: new Date().toISOString(),
+      })
+      if (shadow.riskAdvice) {
+        riskContext = shadow.riskContext
+        riskAdvice = shadow.riskAdvice
+      }
+      observeLegacyRiskAdvicePair(summary.holdingAdvice, riskAdvice ?? null, {
+        stockCode: code,
+        shadowFailure: shadow.failReason,
+      })
+      // Phase8.6: read-only RiskAdvice projection (does not overwrite holdingAdvice)
+      if (riskAdvice) {
+        const projected = buildRiskAdviceProjection(riskAdvice, {
+          symbol: code,
+          position: positionCtx,
+          riskContext,
+          meta: { stockCode: code, asOf: riskAdvice.asOf },
+        })
+        if (projected.projection) riskAdviceProjection = projected.projection
+      } else {
+        buildRiskAdviceProjection(null, { symbol: code, position: positionCtx })
+      }
+      // Phase9-A: unified adapter (source locked to legacy; does not change trading)
+      holdingDecision = getHoldingDecision({
+        holdingAdvice: summary.holdingAdvice,
+        riskAdviceProjection,
+        symbol: code,
+        shadowFailure: shadow.failReason,
+      })
     }
     return {
       code,
@@ -306,6 +354,15 @@ export async function scanWatchlistSignals(stocks, options = {}) {
       costPrice: summary.costPrice,
       sellVolume: summary.sellVolume,
       holdingAdvice: summary.holdingAdvice,
+      ...(riskAdvice
+        ? { riskContext, riskAdvice }
+        : {}),
+      ...(riskAdviceProjection
+        ? { riskAdviceProjection }
+        : {}),
+      ...(holdingDecision
+        ? { holdingDecision }
+        : {}),
       sortRank: summary.sortRank,
       daysAgo: summary.recentSignalDaysAgo,
       effectiveSignalDayKey: summary.effectiveSignalDayKey || '',

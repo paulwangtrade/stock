@@ -1,12 +1,12 @@
 <template>
   <div v-if="vipGateLoading" class="vip-gate">
     <NSpin size="large" />
-    <div class="vip-gate-text">正在校验赞助身份…</div>
+    <div class="vip-gate-text">正在校验功能授权…</div>
   </div>
   <div v-else-if="!vipGateOk" class="vip-gate vip-gate-denied">
-    <div class="vip-gate-title">需要 VIP2 及以上</div>
+    <div class="vip-gate-title">需要 Pro 功能授权</div>
     <p class="vip-gate-desc">{{ vipGateMessage }}</p>
-    <p class="vip-gate-hint">请使用已在「关于」页填写赞助码的 go-stock，并确保 Web 服务读取同一套 data 配置（默认工作目录下的 data 目录）。</p>
+    <p class="vip-gate-hint">请使用已在 go-stock 桌面端完成授权的同一套 data 配置启动 Web 服务（默认工作目录下的 data 目录）。</p>
   </div>
   <div v-else class="page">
         <div class="header">
@@ -201,7 +201,7 @@ const saveImageLoading = ref<number | null>(null);
 const vipGateLoading = ref(true);
 const vipGateOk = ref(false);
 const vipGateMessage = ref(
-  "go-stock AI 助手（Web）仅对 VIP2 及以上有效赞助用户开放。请在 go-stock 桌面客户端「关于」页面填写赞助码。"
+  "go-stock AI 助手（Web）需要 Pro 功能授权。请在 go-stock 桌面端完成授权后重试。"
 );
 
 const aiConfigId = ref<number | null>(null);

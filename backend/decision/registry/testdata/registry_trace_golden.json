@@ -1,0 +1,163 @@
+{
+  "count": 2,
+  "harness": "quant-decision-registry",
+  "ids": [
+    "qd1:js_legacy:sz000001:2026-07-21T00:00:00Z:ENTER:可买",
+    "qd1:js_legacy:sz000002:2026-07-21T00:00:00Z:WATCH:历史参考"
+  ],
+  "phase": "Phase3-B",
+  "summary": {
+    "ok": 2,
+    "stale": 1,
+    "unbound": 1
+  },
+  "traces": [
+    {
+      "code": "sz000001",
+      "rank": 1,
+      "score": 0.91,
+      "trace": {
+        "decisionId": "qd1:js_legacy:sz000001:2026-07-21T00:00:00Z:ENTER:可买",
+        "bound": true,
+        "found": true,
+        "stale": false,
+        "itemCode": "sz000001",
+        "itemTradeDate": "2026-07-21",
+        "itemRank": 1,
+        "itemScore": 0.91,
+        "decision": {
+          "id": "qd1:js_legacy:sz000001:2026-07-21T00:00:00Z:ENTER:可买",
+          "asOf": "0001-01-01T00:00:00Z",
+          "tradeDate": "2026-07-21",
+          "purpose": "",
+          "instrument": {
+            "stockCode": "sz000001"
+          },
+          "regime": {
+            "level": 0,
+            "exposureCap": 0
+          },
+          "signal": {
+            "tagKind": "",
+            "daysAgo": 0,
+            "score": 0
+          },
+          "gate": {
+            "score": 0,
+            "ready": false,
+            "requiredPassed": false,
+            "readyThreshold": 0
+          },
+          "risk": {
+            "passed": false,
+            "code": ""
+          },
+          "size": {
+            "ok": false
+          },
+          "action": {
+            "code": "ENTER",
+            "label": "可买",
+            "allowDraft": false,
+            "side": ""
+          },
+          "meta": {
+            "schemaVersion": 1,
+            "producer": "js_legacy"
+          }
+        },
+        "summary": "OK: traced to decision"
+      }
+    },
+    {
+      "code": "sz000002",
+      "rank": 2,
+      "score": 0.75,
+      "trace": {
+        "decisionId": "qd1:js_legacy:sz000002:2026-07-21T00:00:00Z:WATCH:历史参考",
+        "bound": true,
+        "found": true,
+        "stale": false,
+        "itemCode": "sz000002",
+        "itemTradeDate": "2026-07-21",
+        "itemRank": 2,
+        "itemScore": 0.75,
+        "decision": {
+          "id": "qd1:js_legacy:sz000002:2026-07-21T00:00:00Z:WATCH:历史参考",
+          "asOf": "0001-01-01T00:00:00Z",
+          "tradeDate": "2026-07-21",
+          "purpose": "",
+          "instrument": {
+            "stockCode": "sz000002"
+          },
+          "regime": {
+            "level": 0,
+            "exposureCap": 0
+          },
+          "signal": {
+            "tagKind": "",
+            "daysAgo": 0,
+            "score": 0
+          },
+          "gate": {
+            "score": 0,
+            "ready": false,
+            "requiredPassed": false,
+            "readyThreshold": 0
+          },
+          "risk": {
+            "passed": false,
+            "code": ""
+          },
+          "size": {
+            "ok": false
+          },
+          "action": {
+            "code": "WATCH",
+            "label": "历史参考",
+            "allowDraft": false,
+            "side": ""
+          },
+          "meta": {
+            "schemaVersion": 1,
+            "producer": "js_legacy"
+          }
+        },
+        "summary": "OK: traced to decision"
+      }
+    },
+    {
+      "code": "sz000003",
+      "rank": 3,
+      "score": 0.6,
+      "trace": {
+        "decisionId": "qd1:js_legacy:sz000003:missing:ENTER:_",
+        "bound": true,
+        "found": false,
+        "stale": true,
+        "staleReason": "missing_from_registry",
+        "itemCode": "sz000003",
+        "itemTradeDate": "2026-07-21",
+        "itemRank": 3,
+        "itemScore": 0.6,
+        "summary": "STALE: decisionId missing from registry"
+      }
+    },
+    {
+      "code": "sz000004",
+      "rank": 4,
+      "score": 0.5,
+      "trace": {
+        "decisionId": "",
+        "bound": false,
+        "found": false,
+        "stale": false,
+        "itemCode": "sz000004",
+        "itemTradeDate": "2026-07-21",
+        "itemRank": 4,
+        "itemScore": 0.5,
+        "summary": "UNBOUND: empty decisionId"
+      }
+    }
+  ]
+}

@@ -9,7 +9,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "test:position-model": "node scripts/verify-position-model.mjs",
-    "test:quant": "node scripts/verify-position-model.mjs && node scripts/verify-backtest-engine.mjs && node scripts/verify-paper-trading.mjs && node scripts/verify-trading-stream.mjs && node scripts/verify-intraday-t.mjs && node scripts/verify-margin-risk-model.mjs && node scripts/verify-frontend-performance.mjs"
+    "test:tradeplan-presentation": "node scripts/verify-tradeplan-presentation.mjs",
+    "test:first-launch": "node scripts/verify-first-launch.mjs",
+    "test:quant": "node scripts/verify-position-model.mjs && node scripts/verify-backtest-engine.mjs && node scripts/verify-paper-trading.mjs && node scripts/verify-trading-stream.mjs && node scripts/verify-intraday-t.mjs && node scripts/verify-margin-risk-model.mjs && node scripts/verify-frontend-performance.mjs && node scripts/verify-watchlist-swr.mjs && node scripts/verify-watchlist-quote-client-cache.mjs && node scripts/verify-watchlist-follow-list-cache.mjs && node scripts/verify-watchlist-virtual-scroll.mjs && node scripts/verify-tradeplan-presentation.mjs"
   },
   "dependencies": {
     "@tdesign-vue-next/chat": "^0.4.5",

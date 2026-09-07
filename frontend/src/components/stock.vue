@@ -73,13 +73,18 @@ import {keys, padStart} from "lodash";
 import {useRoute, useRouter} from 'vue-router'
 import MoneyTrend from "./moneyTrend.vue";
 import StockKlineModal from "./StockKlineModal.vue";
-import WatchlistStockCard from "./WatchlistStockCard.vue";
+import WatchlistStockGrid from "./WatchlistStockGrid.vue";
+import WatchlistModelObservation from "./WatchlistModelObservation.vue";
+import ObservationMessageCenter from "./ObservationMessageCenter.vue";
+import { modelObservationCodeSet } from '../utils/watchlistModelObservation.js'
 import {
   quantPlanFor,
   quantChecklistFor,
+  quantDecisionFor,
   quantEntryFor,
   watchlistSignalsByCode,
 } from '../utils/quantAutomationStore'
+import { projectWatchlistCard } from '../utils/quantWatchlistProjection'
 import { triggerQuantScanNow } from '../services/quantAutomationService'
 import { upsertBuySignalDraft } from '../utils/buyRecordDraft'
 import { upsertSellSignalDraft } from '../utils/sellRecordDraft'
@@ -92,7 +97,24 @@ import {
   formatFollowGroupMessage,
   refreshWatchlistGroups,
   runDateGroupMaintenance,
+  isAutoManagedGroupName,
+  isDateGroupName,
+  isMonthArchiveGroupName,
 } from '../utils/followDateGroup'
+import {
+  buildWatchlistPlaceholders,
+  clearQuoteFlags,
+  markPendingQuotesFailed,
+  normalizeFollowCode,
+} from '../utils/watchlistSWR'
+import { getFollowRealtimeCached } from '../utils/watchlistQuoteClientCache'
+import { measurePerformance } from '../services/performanceMetrics'
+import {
+  getFollowListCached,
+  invalidateFollowListCache,
+  isFollowListCacheFresh,
+  peekFollowListCache,
+} from '../utils/watchlistFollowListCache'
 
 const route = useRoute()
 const router = useRouter()
@@ -124,6 +146,9 @@ const results = ref({})
 const stockList = ref([])
 const followList = ref([])
 const groupList = ref([])
+/** 今日模型观察代码集合（小写），仅用于标签展示 */
+const modelObsCodes = ref(new Set())
+const tradePlanCodes = ref(new Set())
 const options = ref([])
 const modalShow = ref(false)
 const modalShow2 = ref(false)
@@ -143,13 +168,14 @@ const lwKlineSignalAsOfDay = ref('')
 /** 自选买卖点提示 */
 const watchlistSignalByCode = watchlistSignalsByCode
 const watchlistRefreshing = ref(false)
+const watchlistQuoteLoading = ref(false)
+let watchlistQuoteSeq = 0
 const WATCHLIST_COLS_KEY = 'watchlistGridCols'
 /** 自选网格列数：2 / 3 / 4，默认 4 列 */
 const watchlistGridCols = ref(4)
 /**
  * 迷你分时「完整渲染」窗口行数（×列数）。
- * 未接入 n-virtual-list 时保留 content-visibility，并用窗口限制可挂载 sparkline 的卡片数量；
- * 具体 API 仍由卡片 IntersectionObserver / hover 触发。
+ * 虚拟滚动开启后仅挂载可视行；未开启时仍用窗口限制 sparkline 数量。
  */
 const WATCHLIST_SPARK_ROWS = 6
 /** 自选筛选 */
@@ -172,7 +198,7 @@ const currentStockTradingPrice = ref({
   takeProfitPrice: 0,
   stopLossPrice: 0,
 })
-/** 用于功能权限：仅在赞助有效期内为解密等级，否则为 0（与 EffectiveSponsorVipLevel 一致） */
+/** 用于功能权限：仅在授权有效期内为解密等级，否则为 0（与 EffectiveSponsorVipLevel 一致） */
 const vipLevel = ref(0)
 const klineAutoCloseTimer = ref(null)
 const addBTN = ref(true)
@@ -229,7 +255,7 @@ const danmakuColor = computed(() => {
   return data.darkTheme ? 'color:#fff' : 'color:#000'
 })
 
-const icon = ref('https://raw.githubusercontent.com/ArvinLovegood/go-stock/master/build/appicon.png');
+const icon = ref('');
 
 const sortedResults = computed(() => {
   const sortedKeys = keys(results.value).sort();
@@ -736,19 +762,8 @@ onMounted(() => {
   });
 
   message.loading("Loading...")
-  GetFollowList(currentGroupId.value).then(async result => {
-    followList.value = result || []
-    for (const followedStock of followList.value) {
-      if (followedStock.StockCode.startsWith("us")) {
-        followedStock.StockCode = "gb_" + followedStock.StockCode.replace("us", "").toLowerCase()
-      }
-      if (!stocks.value.includes(followedStock.StockCode)) {
-        stocks.value.push(followedStock.StockCode)
-      }
-    }
-    const realtime = await GetFollowRealtimeList(currentGroupId.value)
-    updateDataBatch(realtime)
-    //monitor()
+  // SWR：先闪缓存/DB 列表，再后台补行情
+  loadFollowListForGroup(currentGroupId.value).finally(() => {
     message.destroyAll()
   })
 
@@ -914,10 +929,8 @@ function AddStock() {
         stocks.value.push(data.code)
         message.success(formatFollowGroupMessage(followResult, groupInfo))
         loadGroupList()
-        GetFollowList(currentGroupId.value).then(result => {
-          followList.value = result
-        })
-        monitor();
+        invalidateFollowListCache()
+        loadFollowListForGroup(currentGroupId.value, { force: true })
       } else {
         message.error(followResult)
       }
@@ -939,6 +952,7 @@ function removeMonitor(code, name, key) {
 
   UnFollow(code).then(result => {
     message.success(result)
+    invalidateFollowListCache()
     runDateGroupMaintenance().then((groups) => {
       if (groups?.length) groupList.value = groups
     })
@@ -1045,6 +1059,23 @@ function watchlistTodaySignalFor(code) {
 
 function watchlistBuyPriceFor(code) {
   return quantEntryFor(code)?.buyPriceRange ?? watchlistSignalFor(code)?.buyPriceRange ?? null
+}
+
+function watchlistEntryTagFor(code) {
+  return quantEntryFor(code)?.tag || ''
+}
+
+/** Phase1-A：卡片量化 UI 唯一投影入口 */
+function watchlistProjectionFor(code, result) {
+  return projectWatchlistCard({
+    result: result || { '股票代码': code },
+    signal: watchlistTodaySignalFor(code),
+    buyPriceRange: watchlistBuyPriceFor(code),
+    entryTag: watchlistEntryTagFor(code),
+    quantPlan: quantPlanFor(code),
+    quantChecklist: quantChecklistFor(code),
+    decision: quantDecisionFor(code),
+  })
 }
 
 function onCardUnfollow(result) {
@@ -1158,7 +1189,7 @@ async function updateData(result) {
       ));
 
   result.key = GetSortKey(result.sort, result["股票代码"])
-  results.value[result.key] = result
+  results.value[result.key] = clearQuoteFlags(result)
   if (!stocks.value.includes(result["股票代码"])) {
     delete results.value[result.key]
   }
@@ -1196,7 +1227,7 @@ function normalizeWatchlistResult(result) {
     checkPriceLineAlerts(result)
   }
   result.key = GetSortKey(result.sort, result["股票代码"])
-  return result
+  return clearQuoteFlags(result)
 }
 
 function updateDataBatch(list) {
@@ -1214,13 +1245,51 @@ function updateDataBatch(list) {
   results.value = next
 }
 
+/** 阶段一：用 DB 自选立即占位渲染（可含旧价），不阻塞 UI */
+function applyFollowListStale(list) {
+  const follows = Array.isArray(list) ? list : []
+  followList.value = follows.map((f) => {
+    const copy = { ...f }
+    copy.StockCode = normalizeFollowCode(copy.StockCode)
+    return copy
+  })
+  const { codes, rowsByKey } = buildWatchlistPlaceholders(followList.value)
+  stocks.value = codes
+  results.value = rowsByKey
+  if (codes.length === 0) showPopover.value = true
+}
+
+/** 阶段二：后台补实时行情；失败保留列表并标 -- */
+async function revalidateWatchlistQuotes(groupId = currentGroupId.value, { force = false } = {}) {
+  const seq = ++watchlistQuoteSeq
+  watchlistQuoteLoading.value = true
+  try {
+    const realtime = await getFollowRealtimeCached(
+      groupId,
+      (id) => GetFollowRealtimeList(id),
+      { force },
+    )
+    if (seq !== watchlistQuoteSeq || groupId !== currentGroupId.value) return
+    if (Array.isArray(realtime) && realtime.length > 0) {
+      updateDataBatch(realtime)
+      results.value = markPendingQuotesFailed(results.value)
+    } else {
+      results.value = markPendingQuotesFailed(results.value)
+    }
+  } catch (e) {
+    console.error('[revalidateWatchlistQuotes]', e)
+    if (seq !== watchlistQuoteSeq || groupId !== currentGroupId.value) return
+    results.value = markPendingQuotesFailed(results.value)
+  } finally {
+    if (seq === watchlistQuoteSeq) watchlistQuoteLoading.value = false
+  }
+}
 
 async function monitor() {
   if (stocks.value && stocks.value.length === 0) {
     showPopover.value = true
   }
-  const realtime = await GetFollowRealtimeList(currentGroupId.value)
-  updateDataBatch(realtime)
+  await revalidateWatchlistQuotes(currentGroupId.value)
 }
 
 
@@ -2067,7 +2136,7 @@ async function openLightweightKlineModal(code, name, {
     : 'std'
 
   try {
-    const list = await GetFollowList(currentGroupId.value)
+    const list = await getFollowListCached(currentGroupId.value, (id) => GetFollowList(id))
     followList.value = list || []
   } catch (e) {
     console.error('[openLightweightKlineModal] 刷新自选列表失败:', e)
@@ -2182,17 +2251,8 @@ function updateCostPriceAndVolumeNew(code, price, volume, alarm, formModel) {
   SetCostPriceAndVolume(code, price, volume).then(result => {
     modalShow.value = false
     message.success(result)
-    GetFollowList(currentGroupId.value).then(result => {
-      followList.value = result
-      stocks.value = []
-      for (const followedStock of result) {
-        if (!stocks.value.includes(followedStock.StockCode)) {
-          stocks.value.push(followedStock.StockCode)
-        }
-      }
-      monitor()
-      message.destroyAll()
-    })
+    invalidateFollowListCache()
+    loadFollowListForGroup(currentGroupId.value, { force: true })
   })
 }
 
@@ -2503,11 +2563,10 @@ async function saveAsWord() {
          ${tipsHtml}
           </div>
 <br>
-本报告由go-stock项目生成：
+本报告由 go-stock 官方桌面版生成：
 <p>
-<a href="https://github.com/ArvinLovegood/go-stock">
-AI赋能股票分析：自选股行情获取，成本盈亏展示，涨跌报警推送，市场整体/个股情绪分析，K线技术指标分析等。数据全部保留在本地。支持DeepSeek，OpenAI， Ollama，LMStudio，AnythingLLM，硅基流动，火山方舟，阿里云百炼等平台或模型。
-</a></p>
+go-stock：AI 赋能股票分析；自选股行情、成本盈亏、涨跌提醒、市场情绪与 K 线技术指标分析等。数据全部保留在本地。支持 DeepSeek、OpenAI、Ollama、LMStudio、AnythingLLM、硅基流动、火山方舟、阿里云百炼等平台或模型。
+</p>
 `
   // landscape就是横着的，portrait是竖着的，默认是竖屏portrait。
   const blob = await asBlob(value, {orientation: 'portrait'})
@@ -2581,6 +2640,7 @@ function AddStockGroupInfo(groupId, code, name) {
   }
   AddStockGroup(groupId, code).then(result => {
     message.info(result)
+    invalidateFollowListCache()
     loadGroupList()
   })
 
@@ -2590,28 +2650,51 @@ function updateTab(name) {
   loadFollowListForGroup(Number(name))
 }
 
-async function loadFollowListForGroup(tabId, { notifySuccess = false } = {}) {
+async function loadFollowListForGroup(tabId, { notifySuccess = false, force = false } = {}) {
   if (notifySuccess && watchlistRefreshing.value) return
   if (notifySuccess) watchlistRefreshing.value = true
   currentGroupId.value = tabId
-  stocks.value = []
+  const forceFetch = force || notifySuccess
+  const finishFirstPaint = measurePerformance('watchlist.first_paint', { groupId: tabId })
+  const finishTotal = measurePerformance('watchlist.load_total', { groupId: tabId, force: forceFetch })
   try {
-    const result = await GetFollowList(tabId)
-    followList.value = result || []
-    for (const followedStock of followList.value) {
-      let code = followedStock.StockCode
-      if (code.startsWith('us')) {
-        code = 'gb_' + code.replace('us', '').toLowerCase()
-        followedStock.StockCode = code
-      }
-      stocks.value.push(code)
+    // 切换分组：先闪旧缓存，感知更快
+    const stale = peekFollowListCache(tabId, { allowStale: true })
+    if (stale) {
+      applyFollowListStale(stale)
+      finishFirstPaint()
     }
-    const realtime = await GetFollowRealtimeList(tabId)
-    updateDataBatch(realtime)
-    if (notifySuccess) message.success('自选已刷新')
+
+    const freshHit = !forceFetch && isFollowListCacheFresh(tabId)
+    if (freshHit) {
+      if (!stale) {
+        applyFollowListStale(peekFollowListCache(tabId) || [])
+        finishFirstPaint()
+      }
+      if (notifySuccess) {
+        watchlistRefreshing.value = false
+        message.success('自选已刷新')
+      }
+      message.destroyAll()
+      await revalidateWatchlistQuotes(tabId, { force: false })
+      finishTotal()
+      return
+    }
+
+    const result = await getFollowListCached(tabId, (id) => GetFollowList(id), { force: forceFetch })
+    applyFollowListStale(result)
+    finishFirstPaint()
+    if (notifySuccess) {
+      watchlistRefreshing.value = false
+      message.success('自选已刷新')
+    }
+    message.destroyAll()
+    await revalidateWatchlistQuotes(tabId, { force: forceFetch })
+    finishTotal()
   } catch (e) {
     console.error('[loadFollowListForGroup]', e)
     if (notifySuccess) message.error('刷新失败')
+    finishTotal()
   } finally {
     if (notifySuccess) watchlistRefreshing.value = false
     message.destroyAll()
@@ -2619,9 +2702,43 @@ async function loadFollowListForGroup(tabId, { notifySuccess = false } = {}) {
 }
 
 function refreshWatchlist() {
-  loadFollowListForGroup(currentGroupId.value, { notifySuccess: true })
+  loadFollowListForGroup(currentGroupId.value, { notifySuccess: true, force: true })
   triggerQuantScanNow()
 }
+
+function onModelObservationLoaded(payload) {
+  const codes = modelObservationCodeSet(payload?.rows || [])
+  modelObsCodes.value = codes
+  // TradePlan origin rows also get 交易计划 tag
+  const planCodes = new Set()
+  for (const row of payload?.rows || []) {
+    if (row.origin === 'trade_plan' && row.stockCode) {
+      planCodes.add(String(row.stockCode).trim().toLowerCase())
+    }
+  }
+  tradePlanCodes.value = planCodes
+}
+
+function observationTagsFor(code) {
+  const c = String(code || '').trim().toLowerCase()
+  const tags = ['用户关注']
+  if (c && modelObsCodes.value.has(c)) tags.push('模型发现')
+  if (c && tradePlanCodes.value.has(c)) tags.push('交易计划')
+  return tags
+}
+
+function groupTabLabel(group) {
+  const name = String(group?.name || '').trim() || '分组'
+  if (isDateGroupName(name) || isMonthArchiveGroupName(name)) {
+    return `${name} · 历史`
+  }
+  if (isAutoManagedGroupName(name)) return `${name} · 历史`
+  return name
+}
+
+const historyGroupCount = computed(() =>
+  (groupList.value || []).filter((g) => isAutoManagedGroupName(g?.name)).length,
+)
 
 function delTab(groupId) {
   let infos = groupList.value = groupList.value.filter(item => item.ID === Number(groupId))
@@ -2642,6 +2759,7 @@ function delTab(groupId) {
 
 function delStockGroup(code, name, groupId) {
   RemoveStockGroup(code, name, groupId).then(result => {
+    invalidateFollowListCache()
     updateTab(groupId)
     message.info(result)
     runDateGroupMaintenance().then((groups) => {
@@ -2722,8 +2840,8 @@ watch(watchlistGridCols, (v) => {
           :options="changeFilterOptions"
           style="width: 88px"
         />
-        <n-button size="tiny" secondary type="info" @click="router.push({ name: 'holdings' })">
-          前往持仓股
+        <n-button size="tiny" secondary type="info" @click="router.push({ name: 'portfolioDashboard' })">
+          前往我的组合
         </n-button>
         <n-divider vertical style="height: 20px" />
         <n-text depth="3" style="font-size: 12px">布局</n-text>
@@ -2744,11 +2862,25 @@ watch(watchlistGridCols, (v) => {
         >
           刷新
         </n-button>
+        <ObservationMessageCenter />
         <n-text depth="3" class="watchlist-filter-count">
           显示 {{ watchlistDisplayCount }} / {{ watchlistTotalCount }} 只
         </n-text>
       </n-flex>
     </n-card>
+
+    <WatchlistModelObservation @loaded="onModelObservationLoaded" />
+
+    <n-card size="small" class="watchlist-section-head" :bordered="false" content-style="padding: 4px 8px 0">
+      <n-space align="center" :size="8" :wrap="true">
+        <n-text strong>我的关注</n-text>
+        <n-tag size="tiny" :bordered="false" type="success">用户手动添加</n-tag>
+        <n-text depth="3" style="font-size: 12px">
+          历史关注：日期/月份分组共 {{ historyGroupCount }} 个（标签带「历史」）
+        </n-text>
+      </n-space>
+    </n-card>
+
   <n-tabs type="card" style="--wails-draggable:no-drag" animated addable :data-currentGroupId="currentGroupId"
           :value="String(currentGroupId)" @add="addTab" @update:value="updateTab" placement="top" @close="(key)=>{delTab(key)}">
 
@@ -2759,117 +2891,85 @@ watch(watchlistGridCols, (v) => {
         size="small"
         style="padding: 48px 0"
       />
-      <n-grid
+      <watchlist-stock-grid
         v-else
-        class="watchlist-grid"
-        :class="'watchlist-grid--cols-' + watchlistGridCols"
-        :x-gap="10"
+        :items="filteredAllResults"
         :cols="watchlistGridCols"
-        :y-gap="10"
-      >
-        <n-gi
-          :id="result['股票代码']+'_gi'"
-          v-for="(result, cardIndex) in filteredAllResults"
-          :key="result['股票代码']"
-          class="watchlist-card-draggable"
-          :class="{
-            'watchlist-card-dragging': watchlistCardDragCode === result['股票代码'],
-            'watchlist-card-drag-over': watchlistCardDragOverCode === result['股票代码'],
-          }"
-          :draggable="!hasActiveWatchlistFilter"
-          @dragstart="handleWatchlistCardDragStart($event, result)"
-          @dragover="handleWatchlistCardDragOver($event, result)"
-          @dragleave="handleWatchlistCardDragLeave(result)"
-          @drop="handleWatchlistCardDrop($event, result)"
-          @dragend="handleWatchlistCardDragEnd"
-        >
-          <watchlist-stock-card
-            :result="result"
-            :signal="watchlistTodaySignalFor(result['股票代码'])"
-            :buy-price-range="watchlistBuyPriceFor(result['股票代码'])"
-            :entry-tag="quantEntryFor(result['股票代码'])?.tag || ''"
-            :quant-plan="quantPlanFor(result['股票代码'])"
-            :quant-checklist="quantChecklistFor(result['股票代码'])"
-            :show-sparkline="watchlistGridCols < 4"
-            :sparkline-eligible="isWatchlistSparklineEligible(cardIndex)"
-            :compact="watchlistGridCols >= 4"
-            :open-ai-enable="data.openAiEnable"
-            :group-list="groupList"
-            @unfollow="onCardUnfollow"
-            @signal-click="gotoWatchlistSignalStock"
-            @ai="(r) => aiCheckStock(r['股票名称'], r['股票代码'])"
-            @cost="(r) => setStock(r['股票代码'], r['股票名称'], r)"
-            @lw-kline="onCardLwKline"
-            @money="(r) => showMoney(r['股票代码'], r['股票名称'])"
-            @detail="(r) => search(r['股票代码'], r['股票名称'])"
-            @notice="(r) => searchNotice(r['股票代码'])"
-            @report="(r) => searchStockReport(r['股票代码'])"
-            @set-group="onCardSetGroup"
-            @create-draft="onCardCreateDraft"
-          />
-        </n-gi>
-      </n-grid>
+        :open-ai-enable="data.openAiEnable"
+        :group-list="groupList"
+        :draggable="!hasActiveWatchlistFilter"
+        :drag-code="watchlistCardDragCode"
+        :drag-over-code="watchlistCardDragOverCode"
+        :signal-for="watchlistTodaySignalFor"
+        :buy-price-for="watchlistBuyPriceFor"
+        :entry-tag-for="watchlistEntryTagFor"
+        :quant-plan-for="quantPlanFor"
+        :quant-checklist-for="quantChecklistFor"
+        :projection-for="watchlistProjectionFor"
+        :sparkline-eligible="isWatchlistSparklineEligible"
+        :observation-tags-for="observationTagsFor"
+        @unfollow="onCardUnfollow"
+        @signal-click="gotoWatchlistSignalStock"
+        @ai="(r) => aiCheckStock(r['股票名称'], r['股票代码'])"
+        @cost="(r) => setStock(r['股票代码'], r['股票名称'], r)"
+        @lw-kline="onCardLwKline"
+        @money="(r) => showMoney(r['股票代码'], r['股票名称'])"
+        @detail="(r) => search(r['股票代码'], r['股票名称'])"
+        @notice="(r) => searchNotice(r['股票代码'])"
+        @report="(r) => searchStockReport(r['股票代码'])"
+        @set-group="onCardSetGroup"
+        @create-draft="onCardCreateDraft"
+        @dragstart="handleWatchlistCardDragStart"
+        @dragover="handleWatchlistCardDragOver"
+        @dragleave="handleWatchlistCardDragLeave"
+        @drop="handleWatchlistCardDrop"
+        @dragend="handleWatchlistCardDragEnd"
+      />
     </n-tab-pane>
-    <n-tab-pane closable v-for="group in groupList" :key="group.ID" :group-id="group.ID" :name="String(group.ID)" :tab="group.name">
+    <n-tab-pane closable v-for="group in groupList" :key="group.ID" :group-id="group.ID" :name="String(group.ID)" :tab="groupTabLabel(group)">
       <n-empty
         v-if="!filteredGroupResults.length"
         :description="hasActiveWatchlistFilter ? '该分组没有符合筛选条件的股票' : '该分组暂无股票'"
         size="small"
         style="padding: 48px 0"
       />
-      <n-grid
+      <watchlist-stock-grid
         v-else
-        class="watchlist-grid"
-        :class="'watchlist-grid--cols-' + watchlistGridCols"
-        :x-gap="10"
+        :items="filteredGroupResults"
         :cols="watchlistGridCols"
-        :y-gap="10"
-      >
-        <n-gi
-          :id="result['股票代码']+'_gi'"
-          v-for="(result, cardIndex) in filteredGroupResults"
-          :key="result['股票代码']"
-          class="watchlist-card-draggable"
-          :class="{
-            'watchlist-card-dragging': watchlistCardDragCode === result['股票代码'],
-            'watchlist-card-drag-over': watchlistCardDragOverCode === result['股票代码'],
-          }"
-          :draggable="!hasActiveWatchlistFilter"
-          @dragstart="handleWatchlistCardDragStart($event, result)"
-          @dragover="handleWatchlistCardDragOver($event, result)"
-          @dragleave="handleWatchlistCardDragLeave(result)"
-          @drop="handleWatchlistCardDrop($event, result)"
-          @dragend="handleWatchlistCardDragEnd"
-        >
-          <watchlist-stock-card
-            :result="result"
-            :signal="watchlistTodaySignalFor(result['股票代码'])"
-            :buy-price-range="watchlistBuyPriceFor(result['股票代码'])"
-            :entry-tag="quantEntryFor(result['股票代码'])?.tag || ''"
-            :quant-plan="quantPlanFor(result['股票代码'])"
-            :quant-checklist="quantChecklistFor(result['股票代码'])"
-            :show-sparkline="watchlistGridCols < 4"
-            :sparkline-eligible="isWatchlistSparklineEligible(cardIndex)"
-            :compact="watchlistGridCols >= 4"
-            :open-ai-enable="data.openAiEnable"
-            :group-list="groupList"
-            group-mode
-            :group-id="group.ID"
-            @unfollow="onCardUnfollow"
-            @signal-click="gotoWatchlistSignalStock"
-            @ai="(r) => aiCheckStock(r['股票名称'], r['股票代码'])"
-            @remove-group="onCardRemoveGroup"
-            @cost="(r) => setStock(r['股票代码'], r['股票名称'], r)"
-            @lw-kline="onCardLwKline"
-            @money="(r) => showMoney(r['股票代码'], r['股票名称'])"
-            @detail="(r) => search(r['股票代码'], r['股票名称'])"
-            @notice="(r) => searchNotice(r['股票代码'])"
-            @report="(r) => searchStockReport(r['股票代码'])"
-            @set-group="onCardSetGroup"
-            @create-draft="onCardCreateDraft"
-          />
-        </n-gi>
-      </n-grid>
+        :open-ai-enable="data.openAiEnable"
+        :group-list="groupList"
+        group-mode
+        :group-id="group.ID"
+        :draggable="!hasActiveWatchlistFilter"
+        :drag-code="watchlistCardDragCode"
+        :drag-over-code="watchlistCardDragOverCode"
+        :signal-for="watchlistTodaySignalFor"
+        :buy-price-for="watchlistBuyPriceFor"
+        :entry-tag-for="watchlistEntryTagFor"
+        :quant-plan-for="quantPlanFor"
+        :quant-checklist-for="quantChecklistFor"
+        :projection-for="watchlistProjectionFor"
+        :sparkline-eligible="isWatchlistSparklineEligible"
+        :observation-tags-for="observationTagsFor"
+        @unfollow="onCardUnfollow"
+        @signal-click="gotoWatchlistSignalStock"
+        @ai="(r) => aiCheckStock(r['股票名称'], r['股票代码'])"
+        @remove-group="onCardRemoveGroup"
+        @cost="(r) => setStock(r['股票代码'], r['股票名称'], r)"
+        @lw-kline="onCardLwKline"
+        @money="(r) => showMoney(r['股票代码'], r['股票名称'])"
+        @detail="(r) => search(r['股票代码'], r['股票名称'])"
+        @notice="(r) => searchNotice(r['股票代码'])"
+        @report="(r) => searchStockReport(r['股票代码'])"
+        @set-group="onCardSetGroup"
+        @create-draft="onCardCreateDraft"
+        @dragstart="handleWatchlistCardDragStart"
+        @dragover="handleWatchlistCardDragOver"
+        @dragleave="handleWatchlistCardDragLeave"
+        @drop="handleWatchlistCardDrop"
+        @dragend="handleWatchlistCardDragEnd"
+      />
     </n-tab-pane>
   </n-tabs>
   </n-flex>

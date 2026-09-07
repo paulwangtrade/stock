@@ -242,7 +242,7 @@ function mapHome(raw: any): InvestmentHomeView {
     opportunityCards: toOpportunityCards(
       ds && typeof ds === 'object' ? ds.opportunity_attention : null,
       collectOpportunityNameHints(raw),
-      3,
+      10,
     ),
     attentionItems: items.map((it: any) => ({
       kind: str(it?.kind),
@@ -411,14 +411,33 @@ export function planUserStatus(plan: PlanUserStatusInput): { key: PlanUserStatus
   return { key: 'pending_confirm', label: '待确认' }
 }
 
+/** Read Track-B enablePaperTrading via existing observation dashboard (read-only). */
+export async function fetchTrackBPaperTradingEnabled(): Promise<boolean> {
+  try {
+    const res = await fetch('/api/papertrading/dashboard/today')
+    if (!res.ok) return false
+    const body = await res.json()
+    return !!body?.today?.enabled
+  } catch {
+    return false
+  }
+}
+
 export function autoExecuteSentence(opts: {
-  enableOpenBuy: boolean
+  enablePaperTrading: boolean
   hasPlan: boolean
   isFrozen: boolean
   isTodayPlan: boolean
 }): string {
-  if (!opts.enableOpenBuy || !opts.hasPlan || !opts.isTodayPlan || !opts.isFrozen) {
-    return '今日不会自动买入，等待确认'
+  // Phase16.21-D: Beta-safe copy — closed paper mode is intentional, not a fault.
+  if (!opts.enablePaperTrading) {
+    return '模拟账户模式 · 当前仅观察，不会自动买卖（Beta 安全设计，不是故障）'
   }
-  return '计划已锁定，等待执行窗口'
+  if (!opts.hasPlan || !opts.isTodayPlan) {
+    return '今日暂无执行计划'
+  }
+  if (!opts.isFrozen) {
+    return '计划待确认：请前往交易计划完成批准并冻结'
+  }
+  return '计划已锁定，等待模拟执行'
 }

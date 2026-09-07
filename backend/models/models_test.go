@@ -28,6 +28,9 @@ type StockInfoData struct {
 }
 
 func TestStockInfoHK(t *testing.T) {
+	if os.Getenv("RUN_INTEGRATION_TEST") != "1" {
+		t.Skip("skip integration test requiring stock.db")
+	}
 	db.Init("../../data/stock.db")
 
 	db.Dao.AutoMigrate(&models.StockInfoHK{})

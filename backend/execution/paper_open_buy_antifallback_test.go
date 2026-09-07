@@ -80,6 +80,14 @@ func (r *recordingSubmitAPI) FillPaperOrder(orderID uint, fillPrice float64) err
 	return fmt.Errorf("FillPaperOrder must not be called")
 }
 
+func (r *recordingSubmitAPI) FillPaperOrderQty(orderID uint, fillPrice float64, fillQty int64) error {
+	return fmt.Errorf("FillPaperOrderQty must not be called")
+}
+
+func (r *recordingSubmitAPI) RejectPaperOrderSim(orderID uint, reason, message string) error {
+	return fmt.Errorf("RejectPaperOrderSim must not be called")
+}
+
 func (r *recordingSubmitAPI) CancelPaperOrder(orderID uint) error {
 	return fmt.Errorf("CancelPaperOrder must not be called")
 }
@@ -116,13 +124,18 @@ func TestRunPaperOpenBuyUsesExecutionPort(t *testing.T) {
 		EnableExecute:  true,
 		FreezeAt:       &now,
 		FreezeBy:       "antifallback",
+		ApprovedAt:     &now,
+		ApprovedBy:     "antifallback",
 	}
 	items := []models.TradePlanItem{{
-		StockCode: "sz000001",
-		StockName: "平安银行",
-		Side:      "buy",
-		Status:    models.TradePlanItemPending,
-		Priority:  1,
+		StockCode:    "sz000001",
+		StockName:    "平安银行",
+		Side:         "buy",
+		Status:       models.TradePlanItemPending,
+		Priority:     1,
+		LimitPrice:   10.0,
+		TargetVolume: 1000,
+		TargetAmount: 10_000,
 	}}
 	require.NoError(t, data.NewTradePlanRepo().CreatePlanWithItems(plan, items))
 
@@ -131,6 +144,8 @@ func TestRunPaperOpenBuyUsesExecutionPort(t *testing.T) {
 	require.Equal(t, 1, fakePort.submitCalls, "ExecutionPort.Submit must be called")
 	require.Equal(t, 0, recAPI.submitCalls, "SubmitPaperOrder must not be called on side path")
 	require.Equal(t, "sz000001", fakePort.lastIntent.StockCode)
+	require.Equal(t, 10.0, fakePort.lastIntent.Price, "must use Frozen limit_price, not live quote")
+	require.Equal(t, int64(1000), fakePort.lastIntent.Volume, "must use Frozen target_volume")
 	require.True(t, fakePort.lastIntent.AutoFill)
 	require.Len(t, res.Items, 1)
 	require.True(t, res.Items[0].OK)
@@ -152,6 +167,7 @@ func TestRunPaperOpenBuy_NoExecutorFailsWithoutSubmitFallback(t *testing.T) {
 	now := time.Now()
 	plan := &models.TradePlan{
 		TradeDate: tradeDate, Status: models.TradePlanStatusReady, Side: "buy", AmountPerStock: 10_000,
+		ApprovedAt: &now, ApprovedBy: "antifallback",
 		FreezeAt: &now, FreezeBy: "antifallback",
 	}
 	require.NoError(t, data.NewTradePlanRepo().CreatePlanWithItems(plan, []models.TradePlanItem{{

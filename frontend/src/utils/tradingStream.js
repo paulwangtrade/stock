@@ -13,10 +13,30 @@ function unwrapEvent(raw) {
     }
   }
   const envelope = raw || {}
-  const payload = pickField(envelope, 'data', 'Data', 'payload', 'Payload', 'event', 'Event')
-  return payload && typeof payload === 'object'
-    ? { ...envelope, ...payload }
+  const type = String(pickField(envelope, 'type', 'Type', 'eventType', 'EventType') || '').toLowerCase()
+
+  // EventHub TradingEvent：成交/委托字段在 fill / order 嵌套对象里
+  let nested = null
+  if (type === 'fill') {
+    nested = pickField(envelope, 'fill', 'Fill')
+  } else if (type === 'order_submitted' || type === 'order_updated' || type.includes('order')) {
+    nested = pickField(envelope, 'order', 'Order')
+  }
+  if (!nested) {
+    nested = pickField(envelope, 'fill', 'Fill')
+      || pickField(envelope, 'order', 'Order')
+      || pickField(envelope, 'data', 'Data', 'payload', 'Payload', 'event', 'Event')
+  }
+
+  return nested && typeof nested === 'object'
+    ? { ...envelope, ...nested }
     : envelope
+}
+
+/** 实时成交列表只展示委托/成交，跳过账户与持仓快照事件 */
+export function isTradeDisplayEvent(type) {
+  const t = String(type || '').toLowerCase()
+  return t !== 'position_changed' && t !== 'account_changed'
 }
 
 export function normalizeTradingEvent(raw, source = 'stream') {
@@ -25,6 +45,7 @@ export function normalizeTradingEvent(raw, source = 'stream') {
     event,
     'timestamp', 'Timestamp', 'time', 'Time', 'createdAt', 'CreatedAt',
     'updatedAt', 'UpdatedAt', 'tradingTime', 'TradingTime',
+    'filledAt', 'FilledAt', 'occurredAt', 'OccurredAt',
   ) || new Date().toISOString()
   const id = pickField(event, 'eventId', 'EventID', 'eventID', 'id', 'ID', 'orderId', 'OrderID')
   const type = String(pickField(event, 'type', 'Type', 'eventType', 'EventType') || '').toLowerCase()
@@ -37,7 +58,7 @@ export function normalizeTradingEvent(raw, source = 'stream') {
     source,
     timestamp,
     type: type || (source === 'snapshot' ? 'snapshot-order' : 'trade'),
-    venue: pickField(event, 'venue', 'Venue', 'market', 'Market', 'exchange', 'Exchange') || 'PAPER',
+    venue: pickField(event, 'venue', 'Venue', 'market', 'Market', 'exchange', 'Exchange', 'source', 'Source') || 'PAPER',
     stockCode: String(pickField(event, 'stockCode', 'StockCode', 'code', 'Code', 'symbol', 'Symbol') || ''),
     stockName: String(pickField(event, 'stockName', 'StockName', 'name', 'Name') || ''),
     side: pickField(event, 'side', 'Side', 'direction', 'Direction') || '',
@@ -56,8 +77,11 @@ export function normalizeTradingEvent(raw, source = 'stream') {
 
 function eventSignature(event) {
   const id = pickField(event, 'id', 'ID', 'orderId', 'OrderID')
-  if (id !== undefined) return `order:${id}`
+  if (id !== undefined && id !== null && id !== '') {
+    return `${event.type || 'event'}:${id}`
+  }
   return [
+    event.type,
     event.stockCode,
     event.orderType || event.side,
     event.status,
@@ -79,6 +103,9 @@ export function createTradingStream(limit = TRADING_STREAM_LIMIT) {
   return {
     push(raw) {
       const event = normalizeTradingEvent(raw)
+      if (!isTradeDisplayEvent(event.type)) {
+        return events
+      }
       events = [event, ...events]
       return trim()
     },

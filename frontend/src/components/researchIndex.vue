@@ -1,5 +1,5 @@
 <script setup>
-import { defineAsyncComponent, onBeforeMount, onBeforeUnmount, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeMount, onBeforeUnmount, ref, watch } from 'vue'
 import { EventsOff, EventsOn } from '../../wailsjs/runtime'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -11,11 +11,20 @@ const TradingRecordManager = defineAsyncComponent(() => import('./TradingRecordM
 const StockChangesMonitor = defineAsyncComponent(() => import('./stockChangesMonitor.vue'))
 const StockStrategyManager = defineAsyncComponent(() => import('./stockStrategyManager.vue'))
 const SignalBacktestPanel = defineAsyncComponent(() => import('./SignalBacktestPanel.vue'))
+const CandidatePool = defineAsyncComponent(() => import('./ResearchCandidatePool.vue'))
 const PaperTradingPanel = defineAsyncComponent(() => import('./PaperTradingPanel.vue'))
+const RealOrders = defineAsyncComponent(() => import('./RealOrders.vue'))
+
+/** Phase15-A: hide from ordinary nav; keep panes for hash debug `#/research?name=模拟盘`. */
+const LEGACY_PAPER_TAB = '模拟盘'
+const LEGACY_REALSTUB_TAB = '模拟券商(RealStub)'
 
 const nowTab = ref('AI分析报告')
 const route = useRoute()
 const router = useRouter()
+const paperPrefill = ref(null)
+const showLegacyPaperTab = computed(() => nowTab.value === LEGACY_PAPER_TAB)
+const showLegacyRealStubTab = computed(() => nowTab.value === LEGACY_REALSTUB_TAB)
 
 onBeforeMount(() => {
   const name = route.query.name
@@ -24,20 +33,55 @@ onBeforeMount(() => {
     return
   }
   if (name) {
-    nowTab.value = name
+    // Phase13-A5：旧 Tab「候选池」→「研究候选」
+    nowTab.value = name === '候选池' ? '研究候选' : name
+  }
+  if (route.query.code) {
+    paperPrefill.value = {
+      stockCode: String(route.query.code || ''),
+      stockName: String(route.query.stockName || ''),
+      price: Number(route.query.price) || 0,
+    }
   }
 })
 
 onBeforeUnmount(() => {
   EventsOff('changeResearchTab')
+  EventsOff('paperBuyPrefill')
 })
+
+watch(
+  () => route.query.name,
+  (name) => {
+    if (!name) return
+    nowTab.value = name === '候选池' ? '研究候选' : String(name)
+  },
+)
 
 EventsOn('changeResearchTab', async (msg) => {
   if (msg?.name === '股票信息筛选') {
     router.push({ name: 'stockScreen' })
     return
   }
-  updateTab(msg.name)
+  const tabName = msg?.name === '候选池' ? '研究候选' : msg.name
+  updateTab(tabName)
+  if (msg?.code) {
+    paperPrefill.value = {
+      stockCode: String(msg.code || ''),
+      stockName: String(msg.stockName || ''),
+      price: Number(msg.price) || 0,
+    }
+  }
+})
+
+EventsOn('paperBuyPrefill', (payload) => {
+  if (!payload) return
+  paperPrefill.value = {
+    stockCode: String(payload.stockCode || ''),
+    stockName: String(payload.stockName || ''),
+    price: Number(payload.price) || 0,
+  }
+  nowTab.value = '模拟盘'
 })
 
 function updateTab(name) {
@@ -75,8 +119,14 @@ function updateTab(name) {
       <n-tab-pane name="信号回测" display-directive="if">
         <SignalBacktestPanel />
       </n-tab-pane>
-      <n-tab-pane name="模拟盘" display-directive="if">
-        <PaperTradingPanel />
+      <n-tab-pane name="研究候选" display-directive="if">
+        <CandidatePool />
+      </n-tab-pane>
+      <n-tab-pane v-if="showLegacyPaperTab" :name="LEGACY_PAPER_TAB" display-directive="if">
+        <PaperTradingPanel :prefill="paperPrefill" />
+      </n-tab-pane>
+      <n-tab-pane v-if="showLegacyRealStubTab" :name="LEGACY_REALSTUB_TAB" display-directive="if">
+        <RealOrders />
       </n-tab-pane>
       <n-tab-pane name="定时任务" display-directive="if">
         <CronTaskManager />
@@ -90,10 +140,10 @@ function updateTab(name) {
 
 <style scoped>
 .research-shell {
-  /* 填满主滚动区内容高度（底栏留白由 App padding-bottom 负责，此处不再重复扣减） */
+  /* Phase16.21-C: 与视口对齐，让研究候选表可占满剩余高度 */
   height: 100%;
-  min-height: calc(92vh - 52px);
-  max-height: calc(92vh - 52px);
+  min-height: calc(100vh - 120px);
+  max-height: calc(100vh - 120px);
   overflow: hidden;
 }
 .research-shell :deep(.n-card__content) {

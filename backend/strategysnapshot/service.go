@@ -5,6 +5,8 @@ import (
 	"sync"
 
 	"go-stock/backend/models"
+
+	"gorm.io/gorm"
 )
 
 // Service is the read-only Strategy Snapshot application port.
@@ -105,6 +107,18 @@ func SetDefault(svc Service) {
 		return
 	}
 	defaultSvc = svc
+}
+
+// InitDefaultStore wires Default() to LayeredStore(SQLite, Memory).
+// Call after strategy snapshot tables exist. Pass nil to reset to memory-only.
+func InitDefaultStore(gdb *gorm.DB) {
+	defaultMu.Lock()
+	defer defaultMu.Unlock()
+	if gdb == nil {
+		defaultSvc = NewService(NewMemoryStore())
+		return
+	}
+	defaultSvc = NewService(NewLayeredStore(NewSQLiteStore(gdb), NewMemoryStore()))
 }
 
 // RecordAfterTradePlanCreate is a best-effort bypass hook.

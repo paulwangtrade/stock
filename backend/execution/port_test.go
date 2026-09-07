@@ -63,8 +63,8 @@ func TestExecutionService_ExecutePlanItem_MapsToSubmitIntent(t *testing.T) {
 	got, err := svc.ExecutePlanItem(context.Background(), item, ExecutePlanItemOpts{
 		AccountID:   1,
 		StockName:   "浦发银行-覆盖",
-		Price:       10.2,
-		Volume:      300,
+		Price:       9.5, // must match Frozen Spec
+		Volume:      200,
 		Reason:      "runtime-reason",
 		StrategyTag: models.PaperStrategyTagTradePlan,
 		AutoFill:    true,
@@ -75,12 +75,25 @@ func TestExecutionService_ExecutePlanItem_MapsToSubmitIntent(t *testing.T) {
 	require.Equal(t, "sh600000", port.lastIntent.StockCode)
 	require.Equal(t, "浦发银行-覆盖", port.lastIntent.StockName)
 	require.Equal(t, "buy", port.lastIntent.Side)
-	require.InDelta(t, 10.2, port.lastIntent.Price, 1e-9)
-	require.Equal(t, int64(300), port.lastIntent.Volume)
+	require.InDelta(t, 9.5, port.lastIntent.Price, 1e-9)
+	require.Equal(t, int64(200), port.lastIntent.Volume)
 	require.Equal(t, "runtime-reason", port.lastIntent.Reason)
 	require.Equal(t, models.PaperStrategyTagTradePlan, port.lastIntent.StrategyTag)
 	require.True(t, port.lastIntent.AutoFill)
 	require.Equal(t, uint(1), port.lastIntent.AccountID)
+}
+
+func TestExecutionService_ExecutePlanItem_BlocksRuntimeOverride(t *testing.T) {
+	port := &stubPort{order: &broker.TradeOrder{ID: "x"}}
+	svc := NewExecutionService(port).withSnapshotLoader(func(uint) (*preTradeAccountSnapshot, error) {
+		return &preTradeAccountSnapshot{Cash: 1_000_000, Positions: map[string]preTradePosition{}}, nil
+	})
+	_, err := svc.ExecutePlanItem(context.Background(), models.TradePlanItem{
+		StockCode: "sh600000", Side: "buy", LimitPrice: 9.5, TargetVolume: 200,
+	}, ExecutePlanItemOpts{Price: 10.2, Volume: 300, AutoFill: true})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "safetygate")
+	require.Equal(t, 0, port.calls)
 }
 
 func TestExecutionService_ExecutePlanItem_FallsBackToItemFields(t *testing.T) {
@@ -135,6 +148,18 @@ func (s *stubPaperAPI) FillPaperOrder(orderID uint, fillPrice float64) error {
 	s.fillID = orderID
 	s.fillPrice = fillPrice
 	return s.fillErr
+}
+
+func (s *stubPaperAPI) FillPaperOrderQty(orderID uint, fillPrice float64, fillQty int64) error {
+	_ = fillQty
+	return s.FillPaperOrder(orderID, fillPrice)
+}
+
+func (s *stubPaperAPI) RejectPaperOrderSim(orderID uint, reason, message string) error {
+	_ = orderID
+	_ = reason
+	_ = message
+	return nil
 }
 
 func (s *stubPaperAPI) CancelPaperOrder(orderID uint) error {

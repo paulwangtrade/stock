@@ -3,7 +3,7 @@
 import { DEFAULT_QUANT_AUTOMATION, mergeQuantAutomation } from './quantAutomationSettings'
 
 export const DEFAULT_SCREEN_STRATEGY_ID = 'default'
-export const DEFAULT_SCREEN_STRATEGY_NAME = '默认策略'
+export const DEFAULT_SCREEN_STRATEGY_NAME = '默认参数预设'
 
 export const DEFAULT_SIGNAL_SETTINGS = {
   automation: DEFAULT_QUANT_AUTOMATION,
@@ -497,6 +497,31 @@ function mergeSignalStrategySettings(raw) {
   return base
 }
 
+/** Phase17.4：语义别名 signalPresets ≡ screenStrategies（兼容旧配置） */
+function resolveRawPresetList(raw) {
+  if (!raw || typeof raw !== 'object') return []
+  if (Array.isArray(raw.signalPresets) && raw.signalPresets.length) return raw.signalPresets
+  if (Array.isArray(raw.screenStrategies) && raw.screenStrategies.length) return raw.screenStrategies
+  return []
+}
+
+function resolveRawActivePresetId(raw, fallback) {
+  if (!raw || typeof raw !== 'object') return fallback
+  const fromNew = String(raw.activeSignalPresetId || '').trim()
+  if (fromNew) return fromNew
+  const fromOld = String(raw.activeScreenStrategyId || '').trim()
+  if (fromOld) return fromOld
+  return fallback
+}
+
+/** 内存模型同时挂旧键与新别名，读路径统一走 screenStrategies 字段 */
+function mirrorSignalPresetAliases(base) {
+  if (!base || typeof base !== 'object') return base
+  base.signalPresets = base.screenStrategies
+  base.activeSignalPresetId = base.activeScreenStrategyId
+  return base
+}
+
 export function cloneDefaultSignalSettings() {
   const base = deepClone(DEFAULT_SIGNAL_SETTINGS)
   base.activeScreenStrategyId = DEFAULT_SCREEN_STRATEGY_ID
@@ -507,7 +532,7 @@ export function cloneDefaultSignalSettings() {
       settings: cloneDefaultSignalSettingsCore(),
     },
   ]
-  return base
+  return mirrorSignalPresetAliases(base)
 }
 
 export function cloneDefaultSignalStrategySettings() {
@@ -532,12 +557,15 @@ export function mergeSignalSettings(raw) {
     if (!raw[key] || typeof raw[key] !== 'object') continue
     base[key] = { ...base[key], ...raw[key] }
   }
-  base.activeScreenStrategyId = String(raw.activeScreenStrategyId || base.activeScreenStrategyId || DEFAULT_SCREEN_STRATEGY_ID)
-  const rawStrategies = Array.isArray(raw.screenStrategies) ? raw.screenStrategies : []
+  base.activeScreenStrategyId = resolveRawActivePresetId(
+    raw,
+    base.activeScreenStrategyId || DEFAULT_SCREEN_STRATEGY_ID,
+  )
+  const rawStrategies = resolveRawPresetList(raw)
   const strategies = rawStrategies
     .map((item, index) => {
       const id = String(item?.id || '').trim() || `strategy-${index + 1}`
-      const name = String(item?.name || '').trim() || `策略 ${index + 1}`
+      const name = String(item?.name || '').trim() || `参数预设 ${index + 1}`
       const settings = mergeSignalStrategySettings(item?.settings || {})
       return { id, name, settings }
     })
@@ -557,7 +585,7 @@ export function mergeSignalSettings(raw) {
     ]
     base.activeScreenStrategyId = DEFAULT_SCREEN_STRATEGY_ID
   }
-  return base
+  return mirrorSignalPresetAliases(base)
 }
 
 export function parseSignalParams(raw) {
@@ -571,7 +599,8 @@ export function parseSignalParams(raw) {
 }
 
 export function serializeSignalParams(settings) {
-  return JSON.stringify(mergeSignalSettings(settings))
+  // 双写 signalPresets + screenStrategies，旧端仍可读
+  return JSON.stringify(mirrorSignalPresetAliases(mergeSignalSettings(settings)))
 }
 
 export function extractSignalStrategySettings(settings) {
@@ -582,8 +611,17 @@ export function getScreenStrategies(settings) {
   return mergeSignalSettings(settings).screenStrategies
 }
 
+/** Phase17.4 语义别名：Signal 参数预设列表 */
+export function getSignalPresets(settings) {
+  return getScreenStrategies(settings)
+}
+
 export function getActiveScreenStrategyId(settings) {
   return mergeSignalSettings(settings).activeScreenStrategyId
+}
+
+export function getActiveSignalPresetId(settings) {
+  return getActiveScreenStrategyId(settings)
 }
 
 export function getActiveScreenStrategy(settings) {
@@ -609,7 +647,7 @@ export function setActiveScreenStrategy(settings, strategyId) {
   if (s.screenStrategies.some((item) => item.id === strategyId)) {
     s.activeScreenStrategyId = strategyId
   }
-  return s
+  return mirrorSignalPresetAliases(s)
 }
 
 /** 转为 computeFullSignals / summarizeBuySignal 的 options */

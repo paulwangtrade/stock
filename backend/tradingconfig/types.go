@@ -10,14 +10,19 @@ const (
 	SourceLegacyAfterClose   Source = "legacy_after_close"
 	SourceLegacyAutomation   Source = "legacy_automation"
 	SourceLegacyPaperMVP     Source = "legacy_paper_trading_mvp"
-	SourceTradingConfig      Source = "trading_config" // future; unused in Phase6.5-A/B
+	SourceTradingConfig      Source = "trading_config"  // future; unused in Phase6.5-A/B
+	SourceCompileDefault     Source = "compile_default" // hardcoded slice defaults (e.g. ProviderShadow)
 )
 
 const (
-	SizingMethodFixedAmount = "fixed_amount"
-	DefaultFixedAmount      = 100_000
-	DefaultPaperInitialCash = 1_000_000
-	DefaultFillMode         = "A"
+	SizingMethodFixedAmount         = "fixed_amount"
+	SizingMethodPortfolioAware      = "portfolio_aware"
+	PositionSizerModeFixedAmount    = SizingMethodFixedAmount
+	PositionSizerModePortfolioAware = SizingMethodPortfolioAware
+	DefaultFixedAmount              = 100_000
+	DefaultPaperInitialCash         = 1_000_000
+	DefaultFillMode                 = "A"
+	DefaultPositionSizerMode        = PositionSizerModeFixedAmount
 )
 
 // PositionView is the Position Sizing slice exposed to callers.
@@ -44,7 +49,20 @@ type PaperMVPView struct {
 	EnablePaperTrading bool    `json:"enable_paper_trading"`
 	InitialCash        float64 `json:"initial_cash"`
 	FillMode           string  `json:"fill_mode"`
-	Source             Source  `json:"source"`
+	// PositionSizerMode selects Draft buy sizing: fixed_amount (default) | portfolio_aware.
+	// Missing / unknown JSON values normalize to fixed_amount (existing production behavior).
+	PositionSizerMode string             `json:"position_sizer_mode,omitempty"`
+	PortfolioAware    PortfolioAwareView `json:"portfolio_aware,omitempty"`
+	Source            Source             `json:"source"`
+}
+
+// PortfolioAwareView is the Track-B nested policy for portfolio_aware sizing.
+// Zero values mean "use Sizer defaults"; ignored when mode is fixed_amount.
+type PortfolioAwareView struct {
+	MaxExposure             float64 `json:"max_exposure,omitempty"`
+	MaxSinglePositionWeight float64 `json:"max_single_position_weight,omitempty"`
+	ReserveCashRatio        float64 `json:"reserve_cash_ratio,omitempty"`
+	MinOrderAmount          float64 `json:"min_order_amount,omitempty"`
 }
 
 // AutomationView is a read-only observability snapshot of legacy UI automation.
@@ -72,12 +90,20 @@ type RiskView struct {
 	Source                   Source  `json:"source"`
 }
 
+// ProviderShadowView is the G.12 Portfolio Provider Shadow switch.
+// Production default is Enabled=false (compile-time; not loaded from trade JSON).
+type ProviderShadowView struct {
+	Enabled bool   `json:"enabled"`
+	Source  Source `json:"source"`
+}
+
 // Resolved is the compatibility-layer snapshot returned by the Provider.
 type Resolved struct {
-	Position   PositionView        `json:"position"`
-	Workflow   WorkflowView        `json:"workflow"`
-	Execution  ExecutionSwitchView `json:"execution"`
-	PaperMVP   PaperMVPView        `json:"paper_mvp"`
-	Risk       RiskView            `json:"risk"`
-	Automation AutomationView      `json:"automation"`
+	Position       PositionView        `json:"position"`
+	Workflow       WorkflowView        `json:"workflow"`
+	Execution      ExecutionSwitchView `json:"execution"`
+	PaperMVP       PaperMVPView        `json:"paper_mvp"`
+	Risk           RiskView            `json:"risk"`
+	Automation     AutomationView      `json:"automation"`
+	ProviderShadow ProviderShadowView  `json:"provider_shadow"`
 }

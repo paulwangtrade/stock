@@ -72,8 +72,8 @@ go install github.com/wailsapp/wails/v2/cmd/wails@latest
 ### 5. 构建应用
 
 ```bash
-# 克隆项目
-git clone https://github.com/ArvinLovegood/go-stock.git
+# 克隆项目（替换为实际仓库地址）
+git clone <your-go-stock-repo-url>
 cd go-stock
 
 # 运行构建脚本
@@ -221,7 +221,7 @@ mkdir -p go-stock/usr/share/icons/hicolor/256x256/apps
 echo 'Package: go-stock
 Version: 1.0.0
 Architecture: amd64
-Maintainer: sparkmemory
+Maintainer: go-stock <support@go-stock.app>
 Depends: libgtk-3-0, libwebkit2gtk-4.0-37
 Description: AI 赋能股票分析软件' > go-stock_DEBIAN/control
 
@@ -243,8 +243,8 @@ dpkg-deb --build go-stock go-stock.deb
 
 ## 技术支持
 
-如有问题，请提交 Issue 至：
-https://github.com/ArvinLovegood/go-stock/issues
+- 邮箱：support@go-stock.app
+- 安全报告：请参阅 SECURITY.md
 
 ## 许可证
 

@@ -1,0 +1,1138 @@
+{
+  "@babel/code-frame@7.26.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/babel/babel",
+    "publisher": "The Babel Team",
+    "url": "https://babel.dev/team",
+    "path": "D:\\stock\\frontend\\node_modules\\@babel\\code-frame",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@babel\\code-frame\\LICENSE"
+  },
+  "@babel/helper-string-parser@7.27.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/babel/babel",
+    "publisher": "The Babel Team",
+    "url": "https://babel.dev/team",
+    "path": "D:\\stock\\frontend\\node_modules\\@babel\\helper-string-parser",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@babel\\helper-string-parser\\LICENSE"
+  },
+  "@babel/helper-validator-identifier@7.27.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/babel/babel",
+    "publisher": "The Babel Team",
+    "url": "https://babel.dev/team",
+    "path": "D:\\stock\\frontend\\node_modules\\@babel\\helper-validator-identifier",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@babel\\helper-validator-identifier\\LICENSE"
+  },
+  "@babel/parser@7.28.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/babel/babel",
+    "publisher": "The Babel Team",
+    "url": "https://babel.dev/team",
+    "path": "D:\\stock\\frontend\\node_modules\\@babel\\parser",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@babel\\parser\\LICENSE"
+  },
+  "@babel/runtime@7.28.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/babel/babel",
+    "publisher": "The Babel Team",
+    "url": "https://babel.dev/team",
+    "path": "D:\\stock\\frontend\\node_modules\\@babel\\runtime",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@babel\\runtime\\LICENSE"
+  },
+  "@babel/types@7.28.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/babel/babel",
+    "publisher": "The Babel Team",
+    "url": "https://babel.dev/team",
+    "path": "D:\\stock\\frontend\\node_modules\\@babel\\types",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@babel\\types\\LICENSE"
+  },
+  "@codemirror/autocomplete@6.18.6": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/autocomplete",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\autocomplete",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\autocomplete\\LICENSE"
+  },
+  "@codemirror/commands@6.8.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/commands",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\commands",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\commands\\LICENSE"
+  },
+  "@codemirror/lang-angular@0.1.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/lang-angular",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-angular",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-angular\\LICENSE"
+  },
+  "@codemirror/lang-cpp@6.0.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/lang-cpp",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijnh@gmail.com",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-cpp",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-cpp\\LICENSE"
+  },
+  "@codemirror/lang-css@6.3.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/lang-css",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-css",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-css\\LICENSE"
+  },
+  "@codemirror/lang-go@6.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/lang-go",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-go",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-go\\LICENSE"
+  },
+  "@codemirror/lang-html@6.4.9": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/lang-html",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-html",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-html\\LICENSE"
+  },
+  "@codemirror/lang-java@6.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/lang-java",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijnh@gmail.com",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-java",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-java\\LICENSE"
+  },
+  "@codemirror/lang-javascript@6.2.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/lang-javascript",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-javascript",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-javascript\\LICENSE"
+  },
+  "@codemirror/lang-json@6.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/lang-json",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijnh@gmail.com",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-json",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-json\\LICENSE"
+  },
+  "@codemirror/lang-less@6.0.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/lang-less",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-less",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-less\\LICENSE"
+  },
+  "@codemirror/lang-liquid@6.2.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/lang-liquid",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-liquid",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-liquid\\LICENSE"
+  },
+  "@codemirror/lang-markdown@6.3.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/lang-markdown",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-markdown",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-markdown\\LICENSE"
+  },
+  "@codemirror/lang-php@6.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/lang-php",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijnh@gmail.com",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-php",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-php\\LICENSE"
+  },
+  "@codemirror/lang-python@6.1.7": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/lang-python",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-python",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-python\\LICENSE"
+  },
+  "@codemirror/lang-rust@6.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/lang-rust",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijnh@gmail.com",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-rust",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-rust\\LICENSE"
+  },
+  "@codemirror/lang-sass@6.0.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/lang-sass",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-sass",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-sass\\LICENSE"
+  },
+  "@codemirror/lang-sql@6.8.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/lang-sql",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-sql",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-sql\\LICENSE"
+  },
+  "@codemirror/lang-vue@0.1.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/lang-vue",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-vue",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-vue\\LICENSE"
+  },
+  "@codemirror/lang-wast@6.0.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/lang-wast",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-wast",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-wast\\LICENSE"
+  },
+  "@codemirror/lang-xml@6.1.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/lang-xml",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-xml",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-xml\\LICENSE"
+  },
+  "@codemirror/lang-yaml@6.1.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/lang-yaml",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-yaml",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\lang-yaml\\LICENSE"
+  },
+  "@codemirror/language-data@6.5.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/language-data",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\language-data",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\language-data\\LICENSE"
+  },
+  "@codemirror/language@6.10.8": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/language",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\language",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\language\\LICENSE"
+  },
+  "@codemirror/legacy-modes@6.4.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/legacy-modes",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\legacy-modes",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\legacy-modes\\LICENSE"
+  },
+  "@codemirror/lint@6.8.4": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/lint",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\lint",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\lint\\LICENSE"
+  },
+  "@codemirror/search@6.5.9": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/search",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\search",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\search\\LICENSE"
+  },
+  "@codemirror/state@6.5.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/state",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\state",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\state\\LICENSE"
+  },
+  "@codemirror/view@6.36.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/view",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@codemirror\\view",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@codemirror\\view\\LICENSE"
+  },
+  "@jridgewell/sourcemap-codec@1.5.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/jridgewell/sourcemap-codec",
+    "publisher": "Rich Harris",
+    "path": "D:\\stock\\frontend\\node_modules\\@jridgewell\\sourcemap-codec",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@jridgewell\\sourcemap-codec\\LICENSE"
+  },
+  "@lezer/common@1.2.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/lezer-parser/common",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "path": "D:\\stock\\frontend\\node_modules\\@lezer\\common",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@lezer\\common\\LICENSE"
+  },
+  "@lezer/cpp@1.1.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/lezer-parser/cpp",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "path": "D:\\stock\\frontend\\node_modules\\@lezer\\cpp",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@lezer\\cpp\\LICENSE"
+  },
+  "@lezer/css@1.1.10": {
+    "licenses": "MIT",
+    "repository": "https://github.com/lezer-parser/css",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "path": "D:\\stock\\frontend\\node_modules\\@lezer\\css",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@lezer\\css\\LICENSE"
+  },
+  "@lezer/go@1.0.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/lezer-parser/go",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "path": "D:\\stock\\frontend\\node_modules\\@lezer\\go",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@lezer\\go\\LICENSE"
+  },
+  "@lezer/highlight@1.2.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/lezer-parser/highlight",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "path": "D:\\stock\\frontend\\node_modules\\@lezer\\highlight",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@lezer\\highlight\\LICENSE"
+  },
+  "@lezer/html@1.3.10": {
+    "licenses": "MIT",
+    "repository": "https://github.com/lezer-parser/html",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "path": "D:\\stock\\frontend\\node_modules\\@lezer\\html",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@lezer\\html\\LICENSE"
+  },
+  "@lezer/java@1.1.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/lezer-parser/java",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "path": "D:\\stock\\frontend\\node_modules\\@lezer\\java",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@lezer\\java\\LICENSE"
+  },
+  "@lezer/javascript@1.4.21": {
+    "licenses": "MIT",
+    "repository": "https://github.com/lezer-parser/javascript",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "path": "D:\\stock\\frontend\\node_modules\\@lezer\\javascript",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@lezer\\javascript\\LICENSE"
+  },
+  "@lezer/json@1.0.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/lezer-parser/json",
+    "publisher": "Arun Srinivasan",
+    "email": "rulfzid@gmail.com",
+    "path": "D:\\stock\\frontend\\node_modules\\@lezer\\json",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@lezer\\json\\LICENSE"
+  },
+  "@lezer/lr@1.4.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/lezer-parser/lr",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "path": "D:\\stock\\frontend\\node_modules\\@lezer\\lr",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@lezer\\lr\\LICENSE"
+  },
+  "@lezer/markdown@1.4.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/lezer-parser/markdown",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "path": "D:\\stock\\frontend\\node_modules\\@lezer\\markdown",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@lezer\\markdown\\LICENSE"
+  },
+  "@lezer/php@1.0.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/lezer-parser/php",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "path": "D:\\stock\\frontend\\node_modules\\@lezer\\php",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@lezer\\php\\LICENSE"
+  },
+  "@lezer/python@1.1.15": {
+    "licenses": "MIT",
+    "repository": "https://github.com/lezer-parser/python",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "path": "D:\\stock\\frontend\\node_modules\\@lezer\\python",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@lezer\\python\\LICENSE"
+  },
+  "@lezer/rust@1.0.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/lezer-parser/rust",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "path": "D:\\stock\\frontend\\node_modules\\@lezer\\rust",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@lezer\\rust\\LICENSE"
+  },
+  "@lezer/sass@1.0.7": {
+    "licenses": "MIT",
+    "repository": "https://github.com/lezer-parser/sass",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "path": "D:\\stock\\frontend\\node_modules\\@lezer\\sass",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@lezer\\sass\\LICENSE"
+  },
+  "@lezer/xml@1.0.6": {
+    "licenses": "MIT",
+    "repository": "https://github.com/lezer-parser/xml",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "path": "D:\\stock\\frontend\\node_modules\\@lezer\\xml",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@lezer\\xml\\LICENSE"
+  },
+  "@lezer/yaml@1.0.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/lezer-parser/yaml",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijnh@gmail.com",
+    "path": "D:\\stock\\frontend\\node_modules\\@lezer\\yaml",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@lezer\\yaml\\LICENSE"
+  },
+  "@marijn/buildtool@0.1.6": {
+    "licenses": "MIT",
+    "repository": "https://github.com/marijnh/buildtool",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\@marijn\\buildtool",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@marijn\\buildtool\\LICENSE"
+  },
+  "@marijn/find-cluster-break@1.0.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/marijnh/find-cluster-break",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "path": "D:\\stock\\frontend\\node_modules\\@marijn\\find-cluster-break",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@marijn\\find-cluster-break\\LICENSE"
+  },
+  "@popperjs/core@2.11.8": {
+    "licenses": "MIT",
+    "repository": "https://github.com/popperjs/popper-core",
+    "publisher": "Federico Zivolo",
+    "email": "federico.zivolo@gmail.com",
+    "path": "D:\\stock\\frontend\\node_modules\\@popperjs\\core",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@popperjs\\core\\LICENSE.md"
+  },
+  "@tdesign-vue-next/chat@0.4.5": {
+    "licenses": "MIT",
+    "repository": "https://github.com/Tencent/tdesign-vue-next",
+    "publisher": "tdesign",
+    "path": "D:\\stock\\frontend\\node_modules\\@tdesign-vue-next\\chat",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@tdesign-vue-next\\chat\\LICENSE"
+  },
+  "@types/file-saver@2.0.7": {
+    "licenses": "MIT",
+    "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
+    "path": "D:\\stock\\frontend\\node_modules\\@types\\file-saver",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@types\\file-saver\\LICENSE"
+  },
+  "@types/linkify-it@5.0.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
+    "path": "D:\\stock\\frontend\\node_modules\\@types\\linkify-it",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@types\\linkify-it\\LICENSE"
+  },
+  "@types/lodash-es@4.17.12": {
+    "licenses": "MIT",
+    "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
+    "path": "D:\\stock\\frontend\\node_modules\\@types\\lodash-es",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@types\\lodash-es\\LICENSE"
+  },
+  "@types/lodash@4.17.21": {
+    "licenses": "MIT",
+    "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
+    "path": "D:\\stock\\frontend\\node_modules\\@types\\lodash",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@types\\lodash\\LICENSE"
+  },
+  "@types/markdown-it@14.1.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
+    "path": "D:\\stock\\frontend\\node_modules\\@types\\markdown-it",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@types\\markdown-it\\LICENSE"
+  },
+  "@types/mdurl@2.0.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
+    "path": "D:\\stock\\frontend\\node_modules\\@types\\mdurl",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@types\\mdurl\\LICENSE"
+  },
+  "@types/mocha@9.1.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
+    "path": "D:\\stock\\frontend\\node_modules\\@types\\mocha",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@types\\mocha\\LICENSE"
+  },
+  "@types/sortablejs@1.15.8": {
+    "licenses": "MIT",
+    "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
+    "path": "D:\\stock\\frontend\\node_modules\\@types\\sortablejs",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@types\\sortablejs\\LICENSE"
+  },
+  "@types/tinycolor2@1.4.6": {
+    "licenses": "MIT",
+    "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
+    "path": "D:\\stock\\frontend\\node_modules\\@types\\tinycolor2",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@types\\tinycolor2\\LICENSE"
+  },
+  "@types/validator@13.15.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
+    "path": "D:\\stock\\frontend\\node_modules\\@types\\validator",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@types\\validator\\LICENSE"
+  },
+  "@vavt/cm-extension@1.8.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/imzbf/md-editor-extension",
+    "path": "D:\\stock\\frontend\\node_modules\\@vavt\\cm-extension",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@vavt\\cm-extension\\LICENSE"
+  },
+  "@vavt/util@2.1.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/imzbf/vavt-util",
+    "path": "D:\\stock\\frontend\\node_modules\\@vavt\\util",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@vavt\\util\\README.md"
+  },
+  "@vavt/v3-extension@3.0.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/imzbf/md-editor-extension",
+    "path": "D:\\stock\\frontend\\node_modules\\@vavt\\v3-extension",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@vavt\\v3-extension\\README.md"
+  },
+  "@vue/compiler-core@3.5.17": {
+    "licenses": "MIT",
+    "repository": "https://github.com/vuejs/core",
+    "publisher": "Evan You",
+    "path": "D:\\stock\\frontend\\node_modules\\@vue\\compiler-core",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@vue\\compiler-core\\LICENSE"
+  },
+  "@vue/compiler-dom@3.5.17": {
+    "licenses": "MIT",
+    "repository": "https://github.com/vuejs/core",
+    "publisher": "Evan You",
+    "path": "D:\\stock\\frontend\\node_modules\\@vue\\compiler-dom",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@vue\\compiler-dom\\LICENSE"
+  },
+  "@vue/compiler-sfc@3.5.17": {
+    "licenses": "MIT",
+    "repository": "https://github.com/vuejs/core",
+    "publisher": "Evan You",
+    "path": "D:\\stock\\frontend\\node_modules\\@vue\\compiler-sfc",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@vue\\compiler-sfc\\LICENSE"
+  },
+  "@vue/compiler-ssr@3.5.17": {
+    "licenses": "MIT",
+    "repository": "https://github.com/vuejs/core",
+    "publisher": "Evan You",
+    "path": "D:\\stock\\frontend\\node_modules\\@vue\\compiler-ssr",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@vue\\compiler-ssr\\LICENSE"
+  },
+  "@vue/devtools-api@6.6.4": {
+    "licenses": "MIT",
+    "repository": "https://github.com/vuejs/vue-devtools",
+    "publisher": "Guillaume Chau",
+    "path": "D:\\stock\\frontend\\node_modules\\@vue\\devtools-api"
+  },
+  "@vue/reactivity@3.5.17": {
+    "licenses": "MIT",
+    "repository": "https://github.com/vuejs/core",
+    "publisher": "Evan You",
+    "path": "D:\\stock\\frontend\\node_modules\\@vue\\reactivity",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@vue\\reactivity\\LICENSE"
+  },
+  "@vue/runtime-core@3.5.17": {
+    "licenses": "MIT",
+    "repository": "https://github.com/vuejs/core",
+    "publisher": "Evan You",
+    "path": "D:\\stock\\frontend\\node_modules\\@vue\\runtime-core",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@vue\\runtime-core\\LICENSE"
+  },
+  "@vue/runtime-dom@3.5.17": {
+    "licenses": "MIT",
+    "repository": "https://github.com/vuejs/core",
+    "publisher": "Evan You",
+    "path": "D:\\stock\\frontend\\node_modules\\@vue\\runtime-dom",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@vue\\runtime-dom\\LICENSE"
+  },
+  "@vue/server-renderer@3.5.17": {
+    "licenses": "MIT",
+    "repository": "https://github.com/vuejs/core",
+    "publisher": "Evan You",
+    "path": "D:\\stock\\frontend\\node_modules\\@vue\\server-renderer",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@vue\\server-renderer\\LICENSE"
+  },
+  "@vue/shared@3.5.17": {
+    "licenses": "MIT",
+    "repository": "https://github.com/vuejs/core",
+    "publisher": "Evan You",
+    "path": "D:\\stock\\frontend\\node_modules\\@vue\\shared",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\@vue\\shared\\LICENSE"
+  },
+  "acorn-walk@8.3.4": {
+    "licenses": "MIT",
+    "repository": "https://github.com/acornjs/acorn",
+    "path": "D:\\stock\\frontend\\node_modules\\acorn-walk",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\acorn-walk\\LICENSE"
+  },
+  "acorn@8.15.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/acornjs/acorn",
+    "path": "D:\\stock\\frontend\\node_modules\\acorn",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\acorn\\LICENSE"
+  },
+  "argparse@2.0.1": {
+    "licenses": "Python-2.0",
+    "repository": "https://github.com/nodeca/argparse",
+    "path": "D:\\stock\\frontend\\node_modules\\argparse",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\argparse\\LICENSE"
+  },
+  "base64-arraybuffer@1.0.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/niklasvh/base64-arraybuffer",
+    "publisher": "Niklas von Hertzen",
+    "email": "niklasvh@gmail.com",
+    "url": "https://hertzen.com",
+    "path": "D:\\stock\\frontend\\node_modules\\base64-arraybuffer",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\base64-arraybuffer\\LICENSE"
+  },
+  "clipboard@2.0.11": {
+    "licenses": "MIT",
+    "repository": "https://github.com/zenorocha/clipboard.js",
+    "path": "D:\\stock\\frontend\\node_modules\\clipboard",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\clipboard\\LICENSE"
+  },
+  "codemirror@6.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/codemirror/basic-setup",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijnh@gmail.com",
+    "url": "http://marijnhaverbeke.nl",
+    "path": "D:\\stock\\frontend\\node_modules\\codemirror",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\codemirror\\LICENSE"
+  },
+  "commander@2.20.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/tj/commander.js",
+    "publisher": "TJ Holowaychuk",
+    "email": "tj@vision-media.ca",
+    "path": "D:\\stock\\frontend\\node_modules\\commander",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\commander\\LICENSE"
+  },
+  "copy-to-clipboard@3.3.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/sudodoki/copy-to-clipboard",
+    "publisher": "sudodoki",
+    "email": "smd.deluzion@gmail.com",
+    "path": "D:\\stock\\frontend\\node_modules\\copy-to-clipboard",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\copy-to-clipboard\\LICENSE"
+  },
+  "crelt@1.0.6": {
+    "licenses": "MIT",
+    "repository": "https://github.com/marijnh/crelt",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "path": "D:\\stock\\frontend\\node_modules\\crelt",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\crelt\\LICENSE"
+  },
+  "css-line-break@2.1.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/niklasvh/css-line-break",
+    "publisher": "Niklas von Hertzen",
+    "email": "niklasvh@gmail.com",
+    "url": "https://hertzen.com",
+    "path": "D:\\stock\\frontend\\node_modules\\css-line-break",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\css-line-break\\LICENSE"
+  },
+  "cssfilter@0.0.10": {
+    "licenses": "MIT",
+    "repository": "https://github.com/leizongmin/js-css-filter",
+    "publisher": "Zongmin Lei",
+    "email": "leizongmin@gmail.com",
+    "path": "D:\\stock\\frontend\\node_modules\\cssfilter",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\cssfilter\\LICENSE"
+  },
+  "csstype@3.1.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/frenic/csstype",
+    "publisher": "Fredrik Nicol",
+    "email": "fredrik.nicol@gmail.com",
+    "path": "D:\\stock\\frontend\\node_modules\\csstype",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\csstype\\LICENSE"
+  },
+  "date-fns@4.1.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/date-fns/date-fns",
+    "path": "D:\\stock\\frontend\\node_modules\\date-fns",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\date-fns\\LICENSE.md"
+  },
+  "dayjs@1.11.13": {
+    "licenses": "MIT",
+    "repository": "https://github.com/iamkun/dayjs",
+    "publisher": "iamkun",
+    "path": "D:\\stock\\frontend\\node_modules\\dayjs",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\dayjs\\LICENSE"
+  },
+  "delegate@3.2.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/zenorocha/delegate",
+    "path": "D:\\stock\\frontend\\node_modules\\delegate",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\delegate\\readme.md"
+  },
+  "echarts@5.6.0": {
+    "licenses": "Apache-2.0",
+    "repository": "https://github.com/apache/echarts",
+    "path": "D:\\stock\\frontend\\node_modules\\echarts",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\echarts\\LICENSE",
+    "noticeFile": "D:\\stock\\frontend\\node_modules\\echarts\\NOTICE"
+  },
+  "entities@4.5.0": {
+    "licenses": "BSD-2-Clause",
+    "repository": "https://github.com/fb55/entities",
+    "publisher": "Felix Boehm",
+    "email": "me@feedic.com",
+    "path": "D:\\stock\\frontend\\node_modules\\entities",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\entities\\LICENSE"
+  },
+  "estree-walker@2.0.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/Rich-Harris/estree-walker",
+    "publisher": "Rich Harris",
+    "path": "D:\\stock\\frontend\\node_modules\\estree-walker",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\estree-walker\\LICENSE"
+  },
+  "fancy-canvas@2.1.0": {
+    "licenses": "MIT",
+    "publisher": "smakarov@tradingview.com",
+    "path": "D:\\stock\\frontend\\node_modules\\fancy-canvas"
+  },
+  "file-saver@2.0.5": {
+    "licenses": "MIT",
+    "repository": "https://github.com/eligrey/FileSaver.js",
+    "publisher": "Eli Grey",
+    "email": "me@eligrey.com",
+    "path": "D:\\stock\\frontend\\node_modules\\file-saver",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\file-saver\\LICENSE.md"
+  },
+  "go-stock@1.0.0": {
+    "licenses": "UNKNOWN",
+    "publisher": "spark",
+    "path": "D:\\stock\\frontend"
+  },
+  "good-listener@1.2.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/zenorocha/good-listener",
+    "path": "D:\\stock\\frontend\\node_modules\\good-listener",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\good-listener\\readme.md"
+  },
+  "highlight.js@11.11.1": {
+    "licenses": "BSD-3-Clause",
+    "repository": "https://github.com/highlightjs/highlight.js",
+    "publisher": "Josh Goebel",
+    "email": "hello@joshgoebel.com",
+    "path": "D:\\stock\\frontend\\node_modules\\highlight.js",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\highlight.js\\LICENSE"
+  },
+  "html2canvas@1.4.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/niklasvh/html2canvas",
+    "publisher": "Niklas von Hertzen",
+    "email": "niklasvh@gmail.com",
+    "url": "https://hertzen.com",
+    "path": "D:\\stock\\frontend\\node_modules\\html2canvas",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\html2canvas\\LICENSE"
+  },
+  "js-tokens@4.0.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/lydell/js-tokens",
+    "publisher": "Simon Lydell",
+    "path": "D:\\stock\\frontend\\node_modules\\js-tokens",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\js-tokens\\LICENSE"
+  },
+  "lightweight-charts@5.1.0": {
+    "licenses": "Apache-2.0",
+    "repository": "https://github.com/tradingview/lightweight-charts",
+    "publisher": "TradingView, Inc.",
+    "path": "D:\\stock\\frontend\\node_modules\\lightweight-charts",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\lightweight-charts\\LICENSE"
+  },
+  "linkify-it@5.0.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/markdown-it/linkify-it",
+    "path": "D:\\stock\\frontend\\node_modules\\linkify-it",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\linkify-it\\LICENSE"
+  },
+  "lodash-es@4.17.21": {
+    "licenses": "MIT",
+    "repository": "https://github.com/lodash/lodash",
+    "publisher": "John-David Dalton",
+    "email": "john.david.dalton@gmail.com",
+    "path": "D:\\stock\\frontend\\node_modules\\lodash-es",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\lodash-es\\LICENSE"
+  },
+  "lodash@4.17.21": {
+    "licenses": "MIT",
+    "repository": "https://github.com/lodash/lodash",
+    "publisher": "John-David Dalton",
+    "email": "john.david.dalton@gmail.com",
+    "path": "D:\\stock\\frontend\\node_modules\\lodash",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\lodash\\LICENSE"
+  },
+  "lru-cache@11.0.2": {
+    "licenses": "ISC",
+    "repository": "https://github.com/isaacs/node-lru-cache",
+    "publisher": "Isaac Z. Schlueter",
+    "email": "i@izs.me",
+    "path": "D:\\stock\\frontend\\node_modules\\lru-cache",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\lru-cache\\LICENSE"
+  },
+  "lucide-vue-next@0.453.0": {
+    "licenses": "ISC",
+    "repository": "https://github.com/lucide-icons/lucide",
+    "publisher": "Eric Fennis",
+    "path": "D:\\stock\\frontend\\node_modules\\lucide-vue-next",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\lucide-vue-next\\LICENSE"
+  },
+  "magic-string@0.30.17": {
+    "licenses": "MIT",
+    "repository": "https://github.com/rich-harris/magic-string",
+    "publisher": "Rich Harris",
+    "path": "D:\\stock\\frontend\\node_modules\\magic-string",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\magic-string\\LICENSE"
+  },
+  "markdown-it-image-figures@2.1.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/Antonio-Laguna/markdown-it-image-figures",
+    "publisher": "Antonio Laguna",
+    "email": "antonio@laguna.es",
+    "url": "https://antonio.laguna.es",
+    "path": "D:\\stock\\frontend\\node_modules\\markdown-it-image-figures",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\markdown-it-image-figures\\LICENSE"
+  },
+  "markdown-it-sub@2.0.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/markdown-it/markdown-it-sub",
+    "path": "D:\\stock\\frontend\\node_modules\\markdown-it-sub",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\markdown-it-sub\\LICENSE"
+  },
+  "markdown-it-sup@2.0.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/markdown-it/markdown-it-sup",
+    "path": "D:\\stock\\frontend\\node_modules\\markdown-it-sup",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\markdown-it-sup\\LICENSE"
+  },
+  "markdown-it@14.1.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/markdown-it/markdown-it",
+    "path": "D:\\stock\\frontend\\node_modules\\markdown-it",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\markdown-it\\LICENSE"
+  },
+  "marked-highlight@2.2.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/markedjs/marked-highlight",
+    "publisher": "Tony Brix",
+    "email": "Tony@Brix.ninja",
+    "url": "https://Tony.Brix.ninja",
+    "path": "D:\\stock\\frontend\\node_modules\\marked-highlight",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\marked-highlight\\LICENSE"
+  },
+  "marked@12.0.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/markedjs/marked",
+    "publisher": "Christopher Jeffrey",
+    "path": "D:\\stock\\frontend\\node_modules\\marked",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\marked\\LICENSE.md"
+  },
+  "md-editor-v3@5.2.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/imzbf/md-editor-v3",
+    "publisher": "zbf",
+    "url": "https://github.com/imzbf",
+    "path": "D:\\stock\\frontend\\node_modules\\md-editor-v3",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\md-editor-v3\\LICENSE"
+  },
+  "mdurl@2.0.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/markdown-it/mdurl",
+    "path": "D:\\stock\\frontend\\node_modules\\mdurl",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\mdurl\\LICENSE"
+  },
+  "medium-zoom@1.1.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/francoischalifour/medium-zoom",
+    "publisher": "Francois Chalifour",
+    "email": "francois.chalifour@gmail.com",
+    "url": "https://francoischalifour.com",
+    "path": "D:\\stock\\frontend\\node_modules\\medium-zoom",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\medium-zoom\\LICENSE"
+  },
+  "mitt@3.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/developit/mitt",
+    "path": "D:\\stock\\frontend\\node_modules\\mitt",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\mitt\\LICENSE"
+  },
+  "nanoid@3.3.11": {
+    "licenses": "MIT",
+    "repository": "https://github.com/ai/nanoid",
+    "publisher": "Andrey Sitnik",
+    "email": "andrey@sitnik.ru",
+    "path": "D:\\stock\\frontend\\node_modules\\nanoid",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\nanoid\\LICENSE"
+  },
+  "picocolors@1.1.1": {
+    "licenses": "ISC",
+    "repository": "https://github.com/alexeyraspopov/picocolors",
+    "publisher": "Alexey Raspopov",
+    "path": "D:\\stock\\frontend\\node_modules\\picocolors",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\picocolors\\LICENSE"
+  },
+  "postcss@8.5.6": {
+    "licenses": "MIT",
+    "repository": "https://github.com/postcss/postcss",
+    "publisher": "Andrey Sitnik",
+    "email": "andrey@sitnik.ru",
+    "path": "D:\\stock\\frontend\\node_modules\\postcss",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\postcss\\LICENSE"
+  },
+  "punycode.js@2.3.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/mathiasbynens/punycode.js",
+    "publisher": "Mathias Bynens",
+    "url": "https://mathiasbynens.be/",
+    "path": "D:\\stock\\frontend\\node_modules\\punycode.js",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\punycode.js\\LICENSE-MIT.txt"
+  },
+  "rollup-plugin-dts@5.3.1": {
+    "licenses": "LGPL-3.0",
+    "repository": "https://github.com/Swatinem/rollup-plugin-dts",
+    "publisher": "Arpad Borsos",
+    "email": "arpad.borsos@googlemail.com",
+    "path": "D:\\stock\\frontend\\node_modules\\rollup-plugin-dts",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\rollup-plugin-dts\\COPYING"
+  },
+  "rollup@3.29.5": {
+    "licenses": "MIT",
+    "repository": "https://github.com/rollup/rollup",
+    "publisher": "Rich Harris",
+    "path": "D:\\stock\\frontend\\node_modules\\rollup",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\rollup\\LICENSE.md"
+  },
+  "select@1.1.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/zenorocha/select",
+    "path": "D:\\stock\\frontend\\node_modules\\select",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\select\\readme.md"
+  },
+  "sortablejs@1.15.6": {
+    "licenses": "MIT",
+    "repository": "https://github.com/SortableJS/Sortable",
+    "path": "D:\\stock\\frontend\\node_modules\\sortablejs",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\sortablejs\\LICENSE"
+  },
+  "source-map-js@1.2.1": {
+    "licenses": "BSD-3-Clause",
+    "repository": "https://github.com/7rulnik/source-map-js",
+    "publisher": "Valentin 7rulnik Semirulnik",
+    "email": "v7rulnik@gmail.com",
+    "path": "D:\\stock\\frontend\\node_modules\\source-map-js",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\source-map-js\\LICENSE"
+  },
+  "style-mod@4.1.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/marijnh/style-mod",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "path": "D:\\stock\\frontend\\node_modules\\style-mod",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\style-mod\\LICENSE"
+  },
+  "tdesign-icons-vue-next@0.3.7": {
+    "licenses": "MIT",
+    "repository": "https://github.com/Tencent/tdesign-icons",
+    "path": "D:\\stock\\frontend\\node_modules\\tdesign-icons-vue-next",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\tdesign-icons-vue-next\\LICENSE"
+  },
+  "tdesign-vue-next@1.15.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/Tencent/tdesign-vue-next",
+    "publisher": "tdesign",
+    "path": "D:\\stock\\frontend\\node_modules\\tdesign-vue-next",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\tdesign-vue-next\\LICENSE"
+  },
+  "text-segmentation@1.0.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/niklasvh/text-segmentation",
+    "publisher": "Niklas von Hertzen",
+    "email": "niklasvh@gmail.com",
+    "url": "https://hertzen.com",
+    "path": "D:\\stock\\frontend\\node_modules\\text-segmentation",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\text-segmentation\\LICENSE"
+  },
+  "tiny-emitter@2.1.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/scottcorgan/tiny-emitter",
+    "publisher": "Scott Corgan",
+    "path": "D:\\stock\\frontend\\node_modules\\tiny-emitter",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\tiny-emitter\\LICENSE"
+  },
+  "tinycolor2@1.6.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/bgrins/TinyColor",
+    "publisher": "Brian Grinstead",
+    "email": "briangrinstead@gmail.com",
+    "url": "http://briangrinstead.com",
+    "path": "D:\\stock\\frontend\\node_modules\\tinycolor2",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\tinycolor2\\LICENSE"
+  },
+  "toggle-selection@1.0.6": {
+    "licenses": "MIT",
+    "repository": "https://github.com/sudodoki/toggle-selection",
+    "publisher": "sudodoki",
+    "email": "smd.deluzion@gmail.com",
+    "url": "sudodoki.name",
+    "path": "D:\\stock\\frontend\\node_modules\\toggle-selection",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\toggle-selection\\README.md"
+  },
+  "tslib@2.3.0": {
+    "licenses": "0BSD",
+    "repository": "https://github.com/Microsoft/tslib",
+    "publisher": "Microsoft Corp.",
+    "path": "D:\\stock\\frontend\\node_modules\\echarts\\node_modules\\tslib",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\echarts\\node_modules\\tslib\\LICENSE.txt"
+  },
+  "typescript@5.7.3": {
+    "licenses": "Apache-2.0",
+    "repository": "https://github.com/microsoft/TypeScript",
+    "publisher": "Microsoft Corp.",
+    "path": "D:\\stock\\frontend\\node_modules\\typescript",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\typescript\\LICENSE.txt"
+  },
+  "uc.micro@2.1.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/markdown-it/uc.micro",
+    "path": "D:\\stock\\frontend\\node_modules\\uc.micro",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\uc.micro\\LICENSE.txt"
+  },
+  "utrie@1.0.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/niklasvh/utrie",
+    "publisher": "Niklas von Hertzen",
+    "email": "niklasvh@gmail.com",
+    "url": "https://hertzen.com",
+    "path": "D:\\stock\\frontend\\node_modules\\utrie",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\utrie\\LICENSE"
+  },
+  "validator@13.15.15": {
+    "licenses": "MIT",
+    "repository": "https://github.com/validatorjs/validator.js",
+    "publisher": "Chris O'Hara",
+    "email": "cohara87@gmail.com",
+    "path": "D:\\stock\\frontend\\node_modules\\validator",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\validator\\LICENSE"
+  },
+  "vue-router@4.5.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/vuejs/router",
+    "publisher": "Eduardo San Martin Morote",
+    "email": "posva13@gmail.com",
+    "path": "D:\\stock\\frontend\\node_modules\\vue-router",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\vue-router\\LICENSE"
+  },
+  "vue3-danmaku@1.6.1": {
+    "licenses": "MIT",
+    "publisher": "hellodigua",
+    "path": "D:\\stock\\frontend\\node_modules\\vue3-danmaku",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\vue3-danmaku\\LICENSE"
+  },
+  "vue@3.5.17": {
+    "licenses": "MIT",
+    "repository": "https://github.com/vuejs/core",
+    "publisher": "Evan You",
+    "path": "D:\\stock\\frontend\\node_modules\\vue",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\vue\\LICENSE"
+  },
+  "w3c-keyname@2.2.8": {
+    "licenses": "MIT",
+    "repository": "https://github.com/marijnh/w3c-keyname",
+    "publisher": "Marijn Haverbeke",
+    "email": "marijn@haverbeke.berlin",
+    "path": "D:\\stock\\frontend\\node_modules\\w3c-keyname",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\w3c-keyname\\LICENSE"
+  },
+  "xss@1.0.15": {
+    "licenses": "MIT",
+    "repository": "https://github.com/leizongmin/js-xss",
+    "publisher": "Zongmin Lei",
+    "email": "leizongmin@gmail.com",
+    "url": "http://ucdok.com",
+    "path": "D:\\stock\\frontend\\node_modules\\xss",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\xss\\LICENSE"
+  },
+  "zrender@5.6.1": {
+    "licenses": "BSD-3-Clause",
+    "repository": "https://github.com/ecomfe/zrender",
+    "path": "D:\\stock\\frontend\\node_modules\\zrender",
+    "licenseFile": "D:\\stock\\frontend\\node_modules\\zrender\\LICENSE"
+  }
+}

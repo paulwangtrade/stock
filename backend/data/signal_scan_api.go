@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/duke-git/lancet/v2/convertor"
+	"gorm.io/gorm"
 )
 
 const (
@@ -447,12 +448,25 @@ func mapSliceToHits(items []map[string]any) []models.SignalScanHit {
 		if v, ok := m["rsi"]; ok {
 			h.RSI, _ = convertor.ToFloat(v)
 		}
+		mapSignalPriceFields(&h, m)
+		NormalizeSignalScanHit(&h)
 		out = append(out, h)
 	}
 	return out
 }
 
+func (a *SignalScanApi) ensureSnapshotTable() {
+	if db.Dao == nil {
+		return
+	}
+	if db.Dao.Migrator().HasTable(&models.SignalScanSnapshot{}) {
+		return
+	}
+	_ = db.Dao.AutoMigrate(&models.SignalScanSnapshot{})
+}
+
 func (a *SignalScanApi) GetLatestSnapshot(tradeDate, session string) (*models.SignalScanSnapshot, error) {
+	a.ensureSnapshotTable()
 	q := db.Dao.Model(&models.SignalScanSnapshot{}).Where("status = ?", "done")
 	if strings.TrimSpace(tradeDate) != "" {
 		q = q.Where("trade_date = ?", tradeDate)
@@ -468,6 +482,7 @@ func (a *SignalScanApi) GetLatestSnapshot(tradeDate, session string) (*models.Si
 }
 
 func (a *SignalScanApi) GetLatestSnapshotByStrategy(tradeDate, session string, strategyID string) (*models.SignalScanSnapshot, error) {
+	a.ensureSnapshotTable()
 	q := db.Dao.Model(&models.SignalScanSnapshot{}).Where("status = ?", "done")
 	if strings.TrimSpace(tradeDate) != "" {
 		q = q.Where("trade_date = ?", tradeDate)
@@ -489,7 +504,58 @@ func (a *SignalScanApi) GetLatestSnapshotByStrategy(tradeDate, session string, s
 	return &snap, nil
 }
 
+// latestSnapshotMetaQuery 构建只选元数据字段的查询（不含 result_json / signal_params_json）。
+func (a *SignalScanApi) latestSnapshotMetaQuery() *gorm.DB {
+	return db.Dao.Model(&models.SignalScanSnapshot{}).Select(
+		"id", "created_at", "trade_date", "session", "scope",
+		"strategy_id", "strategy_name", "scanned_total", "hit_total",
+		"status", "message", "duration_ms",
+	)
+}
+
+// GetLatestSnapshotMeta 最新快照元数据（列表/横幅场景；不含 ResultJSON）。
+func (a *SignalScanApi) GetLatestSnapshotMeta(tradeDate, session string) (*models.SignalScanSnapshot, error) {
+	a.ensureSnapshotTable()
+	q := a.latestSnapshotMetaQuery().Where("status = ?", "done")
+	if strings.TrimSpace(tradeDate) != "" {
+		q = q.Where("trade_date = ?", tradeDate)
+	}
+	if strings.TrimSpace(session) != "" {
+		q = q.Where("session = ?", session)
+	}
+	var snap models.SignalScanSnapshot
+	if err := q.Order("created_at desc").First(&snap).Error; err != nil {
+		return nil, err
+	}
+	return &snap, nil
+}
+
+// GetLatestSnapshotMetaByStrategy 按策略取最新快照元数据。
+func (a *SignalScanApi) GetLatestSnapshotMetaByStrategy(tradeDate, session string, strategyID string) (*models.SignalScanSnapshot, error) {
+	a.ensureSnapshotTable()
+	q := a.latestSnapshotMetaQuery().Where("status = ?", "done")
+	if strings.TrimSpace(tradeDate) != "" {
+		q = q.Where("trade_date = ?", tradeDate)
+	}
+	if strings.TrimSpace(session) != "" {
+		q = q.Where("session = ?", session)
+	}
+	if sid := strings.TrimSpace(strategyID); sid != "" {
+		if sid == signalScanDefaultStrategyID {
+			q = q.Where("(strategy_id = ? OR strategy_id = '' OR strategy_id IS NULL)", sid)
+		} else {
+			q = q.Where("strategy_id = ?", sid)
+		}
+	}
+	var snap models.SignalScanSnapshot
+	if err := q.Order("created_at desc").First(&snap).Error; err != nil {
+		return nil, err
+	}
+	return &snap, nil
+}
+
 func (a *SignalScanApi) ListSnapshots(q *models.SignalScanSnapshotQuery) *models.SignalScanSnapshotPageResp {
+	a.ensureSnapshotTable()
 	if q == nil {
 		q = &models.SignalScanSnapshotQuery{}
 	}
@@ -518,7 +584,13 @@ func (a *SignalScanApi) ListSnapshots(q *models.SignalScanSnapshotQuery) *models
 	var total int64
 	query.Count(&total)
 	var list []models.SignalScanSnapshot
-	query.Order("trade_date desc, session desc, created_at desc").
+	// 列表只返回元数据，不带 ResultJSON / SignalParamsJSON，避免数百 KB 拖慢下拉渲染
+	query.Select(
+		"id", "created_at", "trade_date", "session", "scope",
+		"strategy_id", "strategy_name", "scanned_total", "hit_total",
+		"status", "message", "duration_ms",
+	).
+		Order("trade_date desc, session desc, created_at desc").
 		Offset((page - 1) * pageSize).
 		Limit(pageSize).
 		Find(&list)

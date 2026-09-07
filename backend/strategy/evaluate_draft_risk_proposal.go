@@ -41,6 +41,10 @@ func EvaluateDraftTradePlanRisk(plan *models.TradePlan) (*RiskProposalResult, er
 		return nil, fmt.Errorf("trade plan %d has no items", plan.ID)
 	}
 
+	if IsPureSellPlan(plan) {
+		return evaluatePureSellDraftTradePlanRisk(plan)
+	}
+
 	amount := plan.AmountPerStock
 	if amount <= 0 {
 		amount = 100_000
@@ -77,6 +81,9 @@ func EvaluateDraftTradePlanRisk(plan *models.TradePlan) (*RiskProposalResult, er
 func tradePlanItemsToPlanCandidates(items []models.TradePlanItem, defaultAmount float64) []risk.PlanCandidate {
 	out := make([]risk.PlanCandidate, 0, len(items))
 	for _, it := range items {
+		if IsSellSide(it.Side) {
+			continue
+		}
 		amount := it.TargetAmount
 		if amount <= 0 {
 			amount = defaultAmount
@@ -93,6 +100,43 @@ func tradePlanItemsToPlanCandidates(items []models.TradePlanItem, defaultAmount 
 		})
 	}
 	return out
+}
+
+func evaluatePureSellDraftTradePlanRisk(plan *models.TradePlan) (*RiskProposalResult, error) {
+	checkedAt := time.Now()
+	reasons := make([]string, 0)
+	for _, it := range plan.Items {
+		if _, err := CheckSellPositionGate(it.StockCode, it.TargetVolume, plan.TradeDate, checkedAt); err != nil {
+			reasons = append(reasons, fmt.Sprintf("%s: %v", it.StockCode, err))
+		}
+	}
+	passed := len(reasons) == 0
+	status := risk.PlanRiskStatusBypassed
+	if !passed {
+		status = risk.PlanRiskStatusBlocked
+	}
+	filtered := &risk.PlanFilterResult{
+		RiskStatus: status,
+		RiskSummary: func() string {
+			if passed {
+				return "sell plan: position availability check passed"
+			}
+			return "sell plan: position availability check failed"
+		}(),
+	}
+	result := &RiskProposalResult{
+		TradePlanID:      plan.ID,
+		TradePlanVersion: plan.PlanVersion,
+		Passed:           passed,
+		PlanFilterResult: filtered,
+		RiskReasons:      reasons,
+		CheckedAt:        checkedAt,
+	}
+	logger.SugaredLogger.Infof(
+		"EvaluateDraftTradePlanRisk sell planId=%d version=%d passed=%v reasons=%d",
+		plan.ID, plan.PlanVersion, passed, len(reasons),
+	)
+	return result, nil
 }
 
 func riskProposalPassed(filtered *risk.PlanFilterResult) bool {

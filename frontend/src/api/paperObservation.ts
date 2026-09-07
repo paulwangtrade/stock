@@ -395,7 +395,124 @@ export async function getPaperObservationMetrics(tradeDate?: string): Promise<Ob
   return mapObservationMetrics(raw)
 }
 
-// --- Holding Evaluation (C.5-B.1 quote overlay on GET-time mark-to-market) ---
+/** Position Attribution (Phase10) — read-only lot projection */
+
+export type AttributionLot = {
+  planId: number
+  planItemId: number
+  orderId: number
+  fillId: number
+  fillPrice: number
+  volume: number
+  costAmount: number
+  tradeDate?: string
+  strategyName?: string
+}
+
+export type AttributionReconcile = {
+  positionVolume: number
+  attributedVolume: number
+  unattributedVolume: number
+  surplusFillVolume?: number
+  status: string
+}
+
+export type AttributionUnattributed = {
+  volume: number
+  reasonCode: string
+  message: string
+}
+
+export type AttributionPositionRow = {
+  stockCode: string
+  stockName: string
+  totalVolume: number
+  currentPrice: number
+  pnl: number
+  lots: AttributionLot[]
+  reconcile: AttributionReconcile
+  unattributed?: AttributionUnattributed
+  sourceSummary?: string
+  planIds?: number[]
+}
+
+export type PositionAttributionView = {
+  enabled: boolean
+  accountId?: number
+  asOf?: string
+  reconcileAllMatched: boolean
+  positions: AttributionPositionRow[]
+  dataSourceNote: string
+}
+
+function mapAttributionLot(raw: any): AttributionLot {
+  return {
+    planId: num(raw?.plan_id ?? raw?.planId),
+    planItemId: num(raw?.plan_item_id ?? raw?.planItemId),
+    orderId: num(raw?.order_id ?? raw?.orderId),
+    fillId: num(raw?.fill_id ?? raw?.fillId),
+    fillPrice: num(raw?.fill_price ?? raw?.fillPrice),
+    volume: num(raw?.volume),
+    costAmount: num(raw?.cost_amount ?? raw?.costAmount),
+    tradeDate: raw?.trade_date || raw?.tradeDate ? str(raw?.trade_date ?? raw?.tradeDate) : undefined,
+    strategyName: raw?.strategy_name || raw?.strategyName ? str(raw?.strategy_name ?? raw?.strategyName) : undefined,
+  }
+}
+
+function mapAttributionRow(raw: any): AttributionPositionRow {
+  const un = raw?.unattributed
+  return {
+    stockCode: str(raw?.stock_code ?? raw?.stockCode),
+    stockName: str(raw?.stock_name ?? raw?.stockName),
+    totalVolume: num(raw?.total_volume ?? raw?.totalVolume),
+    currentPrice: num(raw?.current_price ?? raw?.currentPrice),
+    pnl: num(raw?.pnl),
+    lots: Array.isArray(raw?.lots) ? raw.lots.map(mapAttributionLot) : [],
+    reconcile: {
+      positionVolume: num(raw?.reconcile?.position_volume ?? raw?.reconcile?.positionVolume),
+      attributedVolume: num(raw?.reconcile?.attributed_volume ?? raw?.reconcile?.attributedVolume),
+      unattributedVolume: num(raw?.reconcile?.unattributed_volume ?? raw?.reconcile?.unattributedVolume),
+      surplusFillVolume:
+        raw?.reconcile?.surplus_fill_volume != null || raw?.reconcile?.surplusFillVolume != null
+          ? num(raw?.reconcile?.surplus_fill_volume ?? raw?.reconcile?.surplusFillVolume)
+          : undefined,
+      status: str(raw?.reconcile?.status, 'matched'),
+    },
+    unattributed: un
+      ? {
+          volume: num(un.volume),
+          reasonCode: str(un.reason_code ?? un.reasonCode),
+          message: str(un.message),
+        }
+      : undefined,
+    sourceSummary: raw?.source_summary || raw?.sourceSummary ? str(raw?.source_summary ?? raw?.sourceSummary) : undefined,
+    planIds: Array.isArray(raw?.plan_ids)
+      ? raw.plan_ids.map((x: unknown) => num(x))
+      : Array.isArray(raw?.planIds)
+        ? raw.planIds.map((x: unknown) => num(x))
+        : undefined,
+  }
+}
+
+/** GET /api/papertrading/observation/positions/attribution */
+export async function getPaperPositionAttribution(stockCode?: string): Promise<PositionAttributionView> {
+  const q = stockCode?.trim() ? `?stock_code=${encodeURIComponent(stockCode.trim())}` : ''
+  const res = await fetch(`/api/papertrading/observation/positions/attribution${q}`)
+  if (!res.ok) throw new Error(`持仓归因请求失败: HTTP ${res.status}`)
+  const body = await res.json()
+  if (!body?.ok) throw new Error(body?.message || '持仓归因响应无效')
+  const raw = body.attribution || {}
+  return {
+    enabled: !!raw.enabled,
+    accountId: raw.account_id || raw.accountId ? num(raw.account_id ?? raw.accountId) : undefined,
+    asOf: raw.as_of || raw.asOf ? str(raw.as_of ?? raw.asOf) : undefined,
+    reconcileAllMatched: !!(raw.reconcile_all_matched ?? raw.reconcileAllMatched),
+    positions: Array.isArray(raw.positions) ? raw.positions.map(mapAttributionRow) : [],
+    dataSourceNote: str(raw.data_source_note ?? raw.dataSourceNote),
+  }
+}
+
+// --- Holding Evaluation (D.1.3 Observation) ---
 
 export type HoldingEvalLot = {
   fillId: number
@@ -554,6 +671,412 @@ export async function getPaperHoldingsEvaluation(stockCode?: string): Promise<Ho
           message: u?.message ? str(u.message) : undefined,
         }))
       : [],
+    dataSourceNote: str(raw.data_source_note ?? raw.dataSourceNote),
+  }
+}
+
+// --- Exit Evaluation (D.2.1 Observation, read-only re-assessment) ---
+
+export type ExitEvaluationLabel = {
+  state: string
+  reasonCodes: string[]
+  summary?: string
+}
+
+export type ExitEntryContext = {
+  strategyName: string
+  entryReason: string
+  entryRule: string
+  intentStatus: string
+}
+
+export type ExitPlanContext = {
+  planId: number
+  tradeDate: string
+  planStatus: string
+}
+
+export type ExitContext = {
+  entry: ExitEntryContext
+  plan: ExitPlanContext
+}
+
+export type ExitEvaluationLot = {
+  fillId: number
+  planId: number
+  planItemId: number
+  holdingDays: number
+  unrealizedReturn: number | null
+  evaluation: ExitEvaluationLabel
+  context: ExitContext
+}
+
+export type ExitReviewOutcomeSummary = {
+  id: string
+  decision: string
+  reviewTime: string
+  reason?: string
+  createdBy: string
+  relatedTradePlanId?: number
+}
+
+/** Phase17-C2 explanation (observation only). */
+export type PositionEvaluationExplanation = {
+  stockCode: string
+  evaluationTime?: string
+  positionDays: number
+  costPrice: number | null
+  currentPrice: number | null
+  pnl: number | null
+  sourceType: string
+  signalContext: {
+    signalSnapshotId?: number
+    signalTime?: string
+    signalPrice?: number
+    signalTag?: string
+    present: boolean
+  }
+  holdReasons: string[]
+  riskHints: string[]
+  freshness?: {
+    priceStatus?: string
+    klineStatus?: string
+    status?: string
+    priceAge?: string
+    klineAge?: string
+  }
+  dataSourceNote?: string
+}
+
+/** Phase17-C3 health score (quality only; not a sell signal). */
+export type HoldingHealthScore = {
+  stockCode: string
+  evaluationTime?: string
+  score: number
+  grade: string
+  gradeLabel: string
+  supportingFactors: string[]
+  riskFactors: string[]
+  explanation?: PositionEvaluationExplanation
+  dataSourceNote?: string
+}
+
+export type ExitEvaluationStockRow = {
+  stockCode: string
+  stockName: string
+  evaluation: ExitEvaluationLabel
+  lots: ExitEvaluationLot[]
+  latestOutcome?: ExitReviewOutcomeSummary
+  explanation?: PositionEvaluationExplanation
+  healthScore?: HoldingHealthScore
+}
+
+export type ExitEvaluationView = {
+  enabled: boolean
+  accountId?: number
+  asOf?: string
+  holdings: ExitEvaluationStockRow[]
+  dataSourceNote: string
+  policyNote?: string
+  policy?: {
+    policyId: string
+    version: number
+    maxHoldingDays: number
+    lossWatchThreshold: number
+    lossReviewThreshold: number
+  }
+}
+
+function mapExitEvalLabel(raw: any): ExitEvaluationLabel {
+  const codes = raw?.reason_codes ?? raw?.reasonCodes
+  return {
+    state: str(raw?.state, 'NORMAL'),
+    reasonCodes: Array.isArray(codes) ? codes.map((c: unknown) => str(c)) : [],
+    summary: raw?.summary ? str(raw.summary) : undefined,
+  }
+}
+
+function mapExitContext(raw: any): ExitContext {
+  const entry = raw?.entry || {}
+  const plan = raw?.plan || {}
+  return {
+    entry: {
+      strategyName: str(entry?.strategy_name ?? entry?.strategyName),
+      entryReason: str(entry?.entry_reason ?? entry?.entryReason),
+      entryRule: str(entry?.entry_rule ?? entry?.entryRule),
+      intentStatus: str(entry?.intent_status ?? entry?.intentStatus),
+    },
+    plan: {
+      planId: num(plan?.plan_id ?? plan?.planId),
+      tradeDate: str(plan?.trade_date ?? plan?.tradeDate),
+      planStatus: str(plan?.plan_status ?? plan?.planStatus),
+    },
+  }
+}
+
+function mapExitEvalLot(raw: any): ExitEvaluationLot {
+  return {
+    fillId: num(raw?.fill_id ?? raw?.fillId),
+    planId: num(raw?.plan_id ?? raw?.planId),
+    planItemId: num(raw?.plan_item_id ?? raw?.planItemId),
+    holdingDays: num(raw?.holding_days ?? raw?.holdingDays),
+    unrealizedReturn: nullableNum(raw?.unrealized_return ?? raw?.unrealizedReturn),
+    evaluation: mapExitEvalLabel(raw?.evaluation),
+    context: mapExitContext(raw?.context),
+  }
+}
+
+function mapExitOutcomeSummary(raw: any): ExitReviewOutcomeSummary | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const id = str(raw?.id)
+  if (!id) return undefined
+  return {
+    id,
+    decision: str(raw?.decision),
+    reviewTime: str(raw?.review_time ?? raw?.reviewTime),
+    reason: raw?.reason ? str(raw.reason) : undefined,
+    createdBy: str(raw?.created_by ?? raw?.createdBy, 'ui:exit-review'),
+    relatedTradePlanId:
+      raw?.related_trade_plan_id != null || raw?.relatedTradePlanId != null
+        ? num(raw?.related_trade_plan_id ?? raw?.relatedTradePlanId)
+        : undefined,
+  }
+}
+
+function mapPositionExplanation(raw: any): PositionEvaluationExplanation | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const sig = raw.signal_context ?? raw.signalContext ?? {}
+  const fresh = raw.freshness ?? {}
+  return {
+    stockCode: str(raw.stock_code ?? raw.stockCode),
+    evaluationTime: raw.evaluation_time || raw.evaluationTime
+      ? str(raw.evaluation_time ?? raw.evaluationTime)
+      : undefined,
+    positionDays: num(raw.position_days ?? raw.positionDays),
+    costPrice: nullableNum(raw.cost_price ?? raw.costPrice),
+    currentPrice: nullableNum(raw.current_price ?? raw.currentPrice),
+    pnl: nullableNum(raw.pnl),
+    sourceType: str(raw.source_type ?? raw.sourceType, 'Unknown'),
+    signalContext: {
+      signalSnapshotId:
+        raw.signal_snapshot_id != null || sig.signal_snapshot_id != null || sig.signalSnapshotId != null
+          ? num(raw.signal_snapshot_id ?? sig.signal_snapshot_id ?? sig.signalSnapshotId)
+          : undefined,
+      signalTime: str(sig.signal_time ?? sig.signalTime ?? raw.signal_time ?? ''),
+      signalPrice: nullableNum(sig.signal_price ?? sig.signalPrice) ?? undefined,
+      signalTag: str(sig.signal_tag ?? sig.signalTag ?? ''),
+      present: !!(sig.present ?? raw.signal_present),
+    },
+    holdReasons: Array.isArray(raw.hold_reasons ?? raw.holdReasons)
+      ? (raw.hold_reasons ?? raw.holdReasons).map((x: any) => String(x))
+      : [],
+    riskHints: Array.isArray(raw.risk_hints ?? raw.riskHints)
+      ? (raw.risk_hints ?? raw.riskHints).map((x: any) => String(x))
+      : [],
+    freshness: {
+      priceStatus: str(fresh.price_status ?? fresh.priceStatus),
+      klineStatus: str(fresh.kline_status ?? fresh.klineStatus),
+      status: str(fresh.status),
+      priceAge: str(fresh.price_age ?? fresh.priceAge),
+      klineAge: str(fresh.kline_age ?? fresh.klineAge),
+    },
+    dataSourceNote: raw.data_source_note || raw.dataSourceNote
+      ? str(raw.data_source_note ?? raw.dataSourceNote)
+      : undefined,
+  }
+}
+
+function mapHoldingHealthScore(raw: any): HoldingHealthScore | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const grade = str(raw.grade)
+  if (!grade && raw.score == null) return undefined
+  const support = raw.supporting_factors ?? raw.supportingFactors ?? raw.factors
+  const risks = raw.risk_factors ?? raw.riskFactors
+  return {
+    stockCode: str(raw.stock_code ?? raw.stockCode),
+    evaluationTime: raw.evaluation_time || raw.evaluationTime
+      ? str(raw.evaluation_time ?? raw.evaluationTime)
+      : undefined,
+    score: num(raw.score),
+    grade,
+    gradeLabel: str(raw.grade_label ?? raw.gradeLabel),
+    supportingFactors: Array.isArray(support) ? support.map((x: any) => String(x)) : [],
+    riskFactors: Array.isArray(risks) ? risks.map((x: any) => String(x)) : [],
+    explanation: mapPositionExplanation(raw.explanation),
+    dataSourceNote: raw.data_source_note || raw.dataSourceNote
+      ? str(raw.data_source_note ?? raw.dataSourceNote)
+      : undefined,
+  }
+}
+
+function mapExitEvalStock(raw: any): ExitEvaluationStockRow {
+  return {
+    stockCode: str(raw?.stock_code ?? raw?.stockCode),
+    stockName: str(raw?.stock_name ?? raw?.stockName),
+    evaluation: mapExitEvalLabel(raw?.evaluation),
+    lots: Array.isArray(raw?.lots) ? raw.lots.map(mapExitEvalLot) : [],
+    latestOutcome: mapExitOutcomeSummary(raw?.latest_outcome ?? raw?.latestOutcome),
+    explanation: mapPositionExplanation(raw?.explanation),
+    healthScore: mapHoldingHealthScore(raw?.health_score ?? raw?.healthScore),
+  }
+}
+
+/** GET /api/papertrading/observation/holdings/exit-evaluation */
+export async function getPaperExitEvaluation(stockCode?: string): Promise<ExitEvaluationView> {
+  const q = stockCode?.trim() ? `?stock_code=${encodeURIComponent(stockCode.trim())}` : ''
+  const res = await fetch(`/api/papertrading/observation/holdings/exit-evaluation${q}`)
+  if (!res.ok) throw new Error(`退出评估请求失败: HTTP ${res.status}`)
+  const body = await res.json()
+  if (!body?.ok) throw new Error(body?.message || '退出评估响应无效')
+  const raw = body.exit_evaluation || body.exitEvaluation || {}
+  const pol = raw.policy || {}
+  return {
+    enabled: !!raw.enabled,
+    accountId: raw.account_id || raw.accountId ? num(raw.account_id ?? raw.accountId) : undefined,
+    asOf: raw.as_of || raw.asOf ? str(raw.as_of ?? raw.asOf) : undefined,
+    holdings: Array.isArray(raw.holdings) ? raw.holdings.map(mapExitEvalStock) : [],
+    dataSourceNote: str(raw.data_source_note ?? raw.dataSourceNote),
+    policyNote: raw.policy_note || raw.policyNote ? str(raw.policy_note ?? raw.policyNote) : undefined,
+    policy: raw.policy
+      ? {
+          policyId: str(pol.policy_id ?? pol.policyId),
+          version: num(pol.version),
+          maxHoldingDays: num(pol.max_holding_days ?? pol.maxHoldingDays),
+          lossWatchThreshold: num(pol.loss_watch_threshold ?? pol.lossWatchThreshold),
+          lossReviewThreshold: num(pol.loss_review_threshold ?? pol.lossReviewThreshold),
+        }
+      : undefined,
+  }
+}
+
+export type SaveExitReviewOutcomeRequest = {
+  stockCode: string
+  decision: 'HOLD' | 'WATCH' | 'CREATE_SELL_PLAN'
+  reason?: string
+  reviewTime?: string
+  createdBy?: string
+  exitStateSnapshot: string
+  reasonCodesSnapshot?: string[]
+  evaluationSummarySnapshot?: string
+  relatedTradePlanId?: number
+  accountId?: number
+}
+
+export type SaveExitReviewOutcomeResponse = {
+  id: string
+  decision: string
+  reviewTime: string
+  reason?: string
+  createdBy: string
+  relatedTradePlanId?: number
+}
+
+/** POST /api/exit-review/outcome */
+export async function postExitReviewOutcome(
+  req: SaveExitReviewOutcomeRequest,
+): Promise<SaveExitReviewOutcomeResponse> {
+  const res = await fetch('/api/exit-review/outcome', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      stock_code: req.stockCode,
+      decision: req.decision,
+      reason: req.reason || '',
+      review_time: req.reviewTime || new Date().toISOString(),
+      created_by: req.createdBy || 'ui:exit-review',
+      exit_state_snapshot: req.exitStateSnapshot,
+      reason_codes_snapshot: req.reasonCodesSnapshot || [],
+      evaluation_summary_snapshot: req.evaluationSummarySnapshot || '',
+      related_trade_plan_id: req.relatedTradePlanId ?? null,
+      account_id: req.accountId || 0,
+    }),
+  })
+  if (!res.ok) throw new Error(`保存复评结论失败: HTTP ${res.status}`)
+  const body = await res.json()
+  if (!body?.ok) throw new Error(body?.message || '保存复评结论响应无效')
+  const raw = body.outcome || {}
+  return {
+    id: str(raw?.id),
+    decision: str(raw?.decision),
+    reviewTime: str(raw?.review_time ?? raw?.reviewTime),
+    reason: raw?.reason ? str(raw.reason) : undefined,
+    createdBy: str(raw?.created_by ?? raw?.createdBy),
+    relatedTradePlanId:
+      raw?.related_trade_plan_id != null ? num(raw.related_trade_plan_id) : undefined,
+  }
+}
+
+
+/** GET /api/papertrading/observation/execution-summary */
+export type ExecutionSummaryView = {
+  enabled: boolean
+  tradeDate?: string
+  totalOrders: number
+  filledOrders: number
+  failedOrders: number
+  fillRate: number
+  avgSlippage: number | null
+  dataSourceNote: string
+}
+
+export async function getPaperExecutionSummary(tradeDate?: string): Promise<ExecutionSummaryView> {
+  const q = tradeDate?.trim() ? `?trade_date=${encodeURIComponent(tradeDate.trim())}` : ''
+  const res = await fetch(`/api/papertrading/observation/execution-summary${q}`)
+  if (!res.ok) throw new Error(`Execution Summary 请求失败: HTTP ${res.status}`)
+  const body = await res.json()
+  if (!body?.ok) throw new Error(body?.message || 'Execution Summary 无效')
+  const raw = body.execution_summary || body.executionSummary || {}
+  return {
+    enabled: !!raw.enabled,
+    tradeDate: raw.trade_date || raw.tradeDate ? str(raw.trade_date ?? raw.tradeDate) : undefined,
+    totalOrders: num(raw.total_orders ?? raw.totalOrders),
+    filledOrders: num(raw.filled_orders ?? raw.filledOrders),
+    failedOrders: num(raw.failed_orders ?? raw.failedOrders),
+    fillRate: num(raw.fill_rate ?? raw.fillRate),
+    avgSlippage: nullableNum(raw.avg_slippage ?? raw.avgSlippage),
+    dataSourceNote: str(raw.data_source_note ?? raw.dataSourceNote),
+  }
+}
+
+/** GET /api/papertrading/observation/risk */
+export type RiskObservationView = {
+  enabled: boolean
+  quality: string
+  totalAsset: number | null
+  cash: number | null
+  positionValue: number | null
+  positionRatio: number | null
+  concentration: number | null
+  positions: Array<{
+    stockCode: string
+    stockName: string
+    marketValue: number
+    singleStockWeight: number | null
+  }>
+  dataSourceNote: string
+}
+
+export async function getPaperRiskObservation(): Promise<RiskObservationView> {
+  const res = await fetch('/api/papertrading/observation/risk')
+  if (!res.ok) throw new Error(`Risk Observation 请求失败: HTTP ${res.status}`)
+  const body = await res.json()
+  if (!body?.ok) throw new Error(body?.message || 'Risk Observation 无效')
+  const raw = body.risk || {}
+  const positions = Array.isArray(raw.positions) ? raw.positions : []
+  return {
+    enabled: !!raw.enabled,
+    quality: str(raw.quality, 'UNKNOWN'),
+    totalAsset: nullableNum(raw.total_asset ?? raw.totalAsset),
+    cash: nullableNum(raw.cash),
+    positionValue: nullableNum(raw.position_value ?? raw.positionValue),
+    positionRatio: nullableNum(raw.position_ratio ?? raw.positionRatio),
+    concentration: nullableNum(raw.concentration),
+    positions: positions.map((p: any) => ({
+      stockCode: str(p?.stock_code ?? p?.stockCode),
+      stockName: str(p?.stock_name ?? p?.stockName),
+      marketValue: num(p?.market_value ?? p?.marketValue),
+      singleStockWeight: nullableNum(p?.single_stock_weight ?? p?.singleStockWeight),
+    })),
     dataSourceNote: str(raw.data_source_note ?? raw.dataSourceNote),
   }
 }

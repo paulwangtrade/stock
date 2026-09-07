@@ -16,7 +16,10 @@ type Provider interface {
 	PaperTradingEnabled() bool
 	PaperInitialCash() float64
 	FillMode() string
+	PositionSizerMode() string
 	Risk() RiskView
+	ProviderShadow() ProviderShadowView
+	ProviderShadowEnabled() bool
 	LogInitialized()
 	LogRiskInitialized()
 }
@@ -91,9 +94,25 @@ func (p *provider) FillMode() string {
 	return p.Resolve().PaperMVP.FillMode
 }
 
+// PositionSizerMode returns Draft buy sizing: fixed_amount (default) or portfolio_aware.
+func (p *provider) PositionSizerMode() string {
+	return NormalizePositionSizerMode(p.Resolve().PaperMVP.PositionSizerMode)
+}
+
 // Risk returns Plan Risk thresholds (Phase6.5-B: legacy_paper_config).
 func (p *provider) Risk() RiskView {
 	return p.Resolve().Risk
+}
+
+// ProviderShadow returns the G.12 sidecar switch. Default Enabled=false.
+func (p *provider) ProviderShadow() ProviderShadowView {
+	return p.Resolve().ProviderShadow
+}
+
+// ProviderShadowEnabled reports whether Portfolio Provider Shadow may run.
+// Compile-time default is false; it does not take over the write chain.
+func (p *provider) ProviderShadowEnabled() bool {
+	return p.ProviderShadow().Enabled
 }
 
 // LogInitialized emits a one-shot observability log of resolved sources.
@@ -153,4 +172,9 @@ func LogInitialized() {
 // LogRiskInitialized ensures the default provider emits its Risk init log.
 func LogRiskInitialized() {
 	Default().LogRiskInitialized()
+}
+
+// ProviderShadowEnabled reports the compile-time G.12 switch (default false).
+func ProviderShadowEnabled() bool {
+	return Default().ProviderShadowEnabled()
 }

@@ -1,0 +1,13 @@
+{
+  "enablePaperOpenBuy": false,
+  "paperOpenBuyCodes": null,
+  "openBuyAmountPerStock": 100000,
+  "allowWhitelistFallback": false,
+  "enableRiskFilter": false,
+  "planMarketLevel": 0,
+  "blockNewEntriesOnDefense": false,
+  "maxGrossExposurePct": 0,
+  "maxSingleNamePct": 0,
+  "maxDailyLossPct": 0,
+  "currentDailyPnlPct": 0
+}

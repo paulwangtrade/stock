@@ -2,6 +2,7 @@
  * 全市场信号批量扫描（stdin/stdout JSON），与前端 icePointSignals 同源。
  * 构建：npx esbuild scripts/scansignals/scan-batch.ts --bundle --platform=neutral --format=iife --global-name=SignalScanBatch --outfile=backend/data/signal_scan_bundle.js
  */
+import { calcBuyPriceRange } from '../../frontend/src/utils/buyPriceRange'
 import {
   buildIndexMa20ByDay,
   summarizeBuySignal,
@@ -71,6 +72,18 @@ export function runSignalScanBatch(input: ScanInput) {
     const summary = summarizeBuySignal(bars, { ...options, signalLastIndex: lastIdx })
     if (!summary?.tag || !SCREEN_SNAPSHOT_SIGNAL_TAG_SET.has(summary.tag)) continue
     const row = s.row || {}
+    const buyRange = calcBuyPriceRange(summary, bars, { ...options, signalLastIndex: lastIdx })
+    const tag = summary.tag
+    const isConfirmBar = tag === '强' || tag === '突'
+    const signalBarIndex =
+      buyRange?.instantBar ?? summary.recentSignalConfirmBar ?? summary.recentSignalBar ?? null
+    const signalDaysAgo = summary.recentSignalDaysAgo ?? buyRange?.daysAgo ?? 0
+    const signalTime =
+      signalBarIndex != null && s.dayKeys?.[signalBarIndex] ? s.dayKeys[signalBarIndex] : ''
+    const signalPrice =
+      buyRange?.instantPrice != null && Number.isFinite(buyRange.instantPrice) && buyRange.instantPrice > 0
+        ? buyRange.instantPrice
+        : null
     items.push({
       SECUCODE: row.SECUCODE || s.secucode || s.code,
       SECURITY_CODE: row.SECURITY_CODE || '',
@@ -92,6 +105,15 @@ export function runSignalScanBatch(input: ScanInput) {
       statusText: summary.statusText,
       sortRank: summary.sortRank,
       rsi: summary.latestStatus?.rsi ?? null,
+      schema_version: signalPrice != null ? 'signal_event.v1' : undefined,
+      signal_price: signalPrice,
+      signal_time: signalTime || undefined,
+      signal_price_source: signalPrice != null ? (isConfirmBar ? 'kline_close_confirm' : 'kline_close') : undefined,
+      signal_days_ago: signalDaysAgo,
+      signal_bar_role: signalPrice != null ? (isConfirmBar ? 'confirm' : 'signal') : undefined,
+      signal_bar_index: summary.recentSignalBar ?? signalBarIndex ?? undefined,
+      confirm_bar_index: isConfirmBar ? (summary.recentSignalConfirmBar ?? signalBarIndex ?? undefined) : undefined,
+      signal_price_status: signalPrice != null ? 'frozen' : undefined,
       ok: true,
     })
   }

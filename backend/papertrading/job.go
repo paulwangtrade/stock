@@ -9,6 +9,7 @@ import (
 	"go-stock/backend/data"
 	"go-stock/backend/db"
 	"go-stock/backend/logger"
+	"go-stock/backend/models"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -45,8 +46,17 @@ type JobResult struct {
 	Broker         *RunResult `json:"broker,omitempty"`
 }
 
+// beforeTryBeginForTest runs after run ledger create and before TryBeginExecute (tests only).
+var beforeTryBeginForTest func(planID uint)
+
+// SetBeforeTryBeginForTest installs a pre-Begin hook (nil clears). Tests only.
+func SetBeforeTryBeginForTest(fn func(planID uint)) {
+	beforeTryBeginForTest = fn
+}
+
 // paperTradingJob runs the Frozen Plan → PaperBroker pipeline with flag/day/idempotency guards.
-// It never touches Real Execution, trade_plan lifecycle writes, or production paper_* tables.
+// Phase10-C.7-A: owns TradePlan lifecycle Begin/Finish (TryBeginExecute / FinishPlanCAS).
+// It never touches Real Execution or production paper_* tables.
 //
 // Production / API / cron / UI MUST call RunExecution (Execution Gateway). Do not invoke
 // this function from outside the papertrading package.
@@ -99,11 +109,22 @@ func paperTradingJob(req JobRequest) (*JobResult, error) {
 		return nil, err
 	}
 
+	planRepo := data.NewTradePlanRepo()
 	planID := req.PlanID
+	var plan *models.TradePlan
 	if planID == 0 {
-		plan, err := data.NewTradePlanRepo().GetFrozenByTradeDate(tradeDate)
+		var err error
+		plan, err = planRepo.GetFrozenByTradeDate(tradeDate)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
+				// C.7: prior Track-B run may have moved plan off ready; soft-idempotent skip.
+				if pid, ok := successfulRunPlanID(tradeDate); ok {
+					out.PlanID = pid
+					out.Status = RunStatusSkippedAlreadyRun
+					out.Message = "already completed for trade_date+plan_id"
+					logger.SugaredLogger.Infof("PaperTradingJob skipped status=%s trade_date=%s plan_id=%d", out.Status, tradeDate, pid)
+					return out, nil
+				}
 				out.Status = RunStatusSkippedNoFrozenPlan
 				out.Message = "no frozen plan for trade date"
 				logger.SugaredLogger.Infof("PaperTradingJob skipped status=%s trade_date=%s", out.Status, tradeDate)
@@ -112,15 +133,26 @@ func paperTradingJob(req JobRequest) (*JobResult, error) {
 			return nil, fmt.Errorf("papertrading: load frozen plan: %w", err)
 		}
 		planID = plan.ID
+	} else {
+		var err error
+		plan, err = planRepo.GetByID(planID)
+		if err != nil {
+			return nil, fmt.Errorf("papertrading: load plan %d: %w", planID, err)
+		}
 	}
 	out.PlanID = planID
 
 	// Soft idempotency: successful run already recorded for this plan/day.
+	// Checked before RequireFrozenReady so C.7 terminal plans still soft-skip.
 	if hasSuccessfulRun(tradeDate, planID) {
 		out.Status = RunStatusSkippedAlreadyRun
 		out.Message = "already completed for trade_date+plan_id"
 		logger.SugaredLogger.Infof("PaperTradingJob skipped status=%s trade_date=%s plan_id=%d", out.Status, tradeDate, planID)
 		return out, nil
+	}
+
+	if guard := models.RequireFrozenReadyTradePlan(plan); !guard.Allowed {
+		return nil, fmt.Errorf("papertrading: execution blocked reason=%s %s", guard.Reason, guard.Message)
 	}
 
 	run := &PaperSimRun{
@@ -136,6 +168,42 @@ func paperTradingJob(req JobRequest) (*JobResult, error) {
 		return nil, fmt.Errorf("papertrading: create run ledger: %w", err)
 	}
 
+	if beforeTryBeginForTest != nil {
+		beforeTryBeginForTest(planID)
+	}
+
+	// Phase10-C.7-A: ready → executing before Broker.
+	okBegin, beginErr := planRepo.TryBeginExecute(planID)
+	if beginErr != nil {
+		now := time.Now()
+		run.Status = RunStatusFailed
+		run.Message = beginErr.Error()
+		run.FinishedAt = &now
+		_ = db.Dao.Model(run).Updates(map[string]any{
+			"status":      run.Status,
+			"message":     truncateMsg(run.Message, 500),
+			"finished_at": now,
+		}).Error
+		out.Status = RunStatusFailed
+		out.Message = beginErr.Error()
+		return out, beginErr
+	}
+	if !okBegin {
+		now := time.Now()
+		run.Status = RunStatusSkippedPlanLifecycle
+		run.Message = fmt.Sprintf("TryBeginExecute CAS miss planId=%d (not ready)", planID)
+		run.FinishedAt = &now
+		_ = db.Dao.Model(run).Updates(map[string]any{
+			"status":      run.Status,
+			"message":     truncateMsg(run.Message, 500),
+			"finished_at": now,
+		}).Error
+		out.Status = RunStatusSkippedPlanLifecycle
+		out.Message = run.Message
+		logger.SugaredLogger.Warnf("PaperTradingJob skipped status=%s plan_id=%d", out.Status, planID)
+		return out, nil
+	}
+
 	price := req.Price
 	if price == nil {
 		price = DefaultOpenPriceProvider()
@@ -146,6 +214,7 @@ func paperTradingJob(req JobRequest) (*JobResult, error) {
 	run.FinishedAt = &now
 
 	if err != nil {
+		finishTrackBPlanOnBrokerError(planRepo, planID, err)
 		run.Status = RunStatusFailed
 		run.Message = err.Error()
 		_ = db.Dao.Model(run).Updates(map[string]any{
@@ -158,6 +227,8 @@ func paperTradingJob(req JobRequest) (*JobResult, error) {
 		logger.SugaredLogger.Errorf("PaperTradingJob failed execution_id=%s plan_id=%d err=%v", execID, planID, err)
 		return out, err
 	}
+
+	finishTrackBPlanAfterBroker(planRepo, planID, brokerRes)
 
 	out.Broker = brokerRes
 	out.OrdersTotal = brokerRes.OrdersTotal
@@ -201,6 +272,79 @@ func paperTradingJob(req JobRequest) (*JobResult, error) {
 	return out, nil
 }
 
+func finishTrackBPlanOnBrokerError(repo *data.TradePlanRepo, planID uint, brokerErr error) {
+	msg := fmt.Sprintf("track-b broker error planId=%d: %v", planID, brokerErr)
+	ok, err := repo.FinishPlanCAS(planID, models.TradePlanStatusExecuting, models.TradePlanStatusFailed, msg)
+	if err != nil {
+		logger.SugaredLogger.Errorf("PaperTradingJob FinishPlanCAS failed plan_id=%d: %v", planID, err)
+		return
+	}
+	if !ok {
+		logger.SugaredLogger.Warnf("PaperTradingJob FinishPlanCAS miss plan_id=%d to=failed", planID)
+	}
+}
+
+func finishTrackBPlanAfterBroker(repo *data.TradePlanRepo, planID uint, brokerRes *RunResult) {
+	toStatus, msg := aggregateTrackBTerminalStatus(repo, planID, brokerRes)
+	ok, err := repo.FinishPlanCAS(planID, models.TradePlanStatusExecuting, toStatus, msg)
+	if err != nil {
+		logger.SugaredLogger.Errorf("PaperTradingJob FinishPlanCAS failed plan_id=%d to=%s: %v", planID, toStatus, err)
+		return
+	}
+	if !ok {
+		logger.SugaredLogger.Warnf("PaperTradingJob FinishPlanCAS miss plan_id=%d to=%s", planID, toStatus)
+	}
+}
+
+// aggregateTrackBTerminalStatus mirrors Track-A / C.7 design:
+// attempted = N - S (skipped excluded); F==0 → failed; F < attempted → partial; else done.
+func aggregateTrackBTerminalStatus(repo *data.TradePlanRepo, planID uint, brokerRes *RunResult) (string, string) {
+	plan, err := repo.GetByID(planID)
+	if err != nil || plan == nil {
+		filled := 0
+		if brokerRes != nil {
+			filled = brokerRes.FilledCount
+		}
+		if filled == 0 {
+			return models.TradePlanStatusFailed, fmt.Sprintf("track-b ok=0/? planId=%d (reload failed)", planID)
+		}
+		return models.TradePlanStatusPartial, fmt.Sprintf("track-b ok=%d/? planId=%d (reload failed)", filled, planID)
+	}
+
+	var filled, skipped, errored, pending int
+	for _, it := range plan.Items {
+		side := strings.ToLower(strings.TrimSpace(it.Side))
+		if side != "buy" && side != "sell" {
+			continue
+		}
+		switch it.Status {
+		case models.TradePlanItemFilled:
+			filled++
+		case models.TradePlanItemSkipped:
+			skipped++
+		case models.TradePlanItemError:
+			errored++
+		default:
+			pending++
+		}
+	}
+	attempted := filled + errored + pending // N - S
+	reject := 0
+	if brokerRes != nil {
+		reject = brokerRes.RejectCount
+	}
+	msg := fmt.Sprintf("track-b ok=%d/%d planId=%d filled=%d skipped=%d rejected=%d pending=%d",
+		filled, attempted, planID, filled, skipped, reject, pending)
+
+	if filled == 0 {
+		return models.TradePlanStatusFailed, msg
+	}
+	if filled < attempted {
+		return models.TradePlanStatusPartial, msg
+	}
+	return models.TradePlanStatusDone, msg
+}
+
 func hasSuccessfulRun(tradeDate string, planID uint) bool {
 	var n int64
 	err := db.Dao.Model(&PaperSimRun{}).
@@ -209,6 +353,21 @@ func hasSuccessfulRun(tradeDate string, planID uint) bool {
 			[]string{RunStatusCompleted, RunStatusCompletedWithRejects}).
 		Count(&n).Error
 	return err == nil && n > 0
+}
+
+// successfulRunPlanID returns a plan_id that already has a successful run for tradeDate.
+func successfulRunPlanID(tradeDate string) (uint, bool) {
+	var run PaperSimRun
+	err := db.Dao.Model(&PaperSimRun{}).
+		Where("trade_date = ? AND status IN ?",
+			tradeDate,
+			[]string{RunStatusCompleted, RunStatusCompletedWithRejects}).
+		Order("id DESC").
+		First(&run).Error
+	if err != nil || run.PlanID == 0 {
+		return 0, false
+	}
+	return run.PlanID, true
 }
 
 func truncateMsg(s string, n int) string {

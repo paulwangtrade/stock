@@ -3,8 +3,10 @@ package execution
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"go-stock/backend/broker"
+	"go-stock/backend/execution/safetygate"
 	"go-stock/backend/models"
 )
 
@@ -22,6 +24,9 @@ type SubmitIntent struct {
 	Reason      string
 	StrategyTag string
 	AutoFill    bool
+	// SpecHash optional Frozen Spec fingerprint for broker submit audit (no schema write).
+	// When empty, RealBroker derives a hash from symbol|side|price|volume.
+	SpecHash string
 }
 
 // ExecutionPort Paper/Real 统一执行端口（Phase2-A 只定义 + Paper 实现，不切流）。
@@ -40,12 +45,17 @@ type ExecutePlanItemOpts struct {
 	Reason      string
 	StrategyTag string
 	AutoFill    bool
+	// Plan enables Safety Gate freeze check (TradePlan open-buy path).
+	Plan *models.TradePlan
+	// SkipSafetyFrozen skips freeze check (Manual/Research / ad-hoc tests).
+	// Spec integrity + no runtime override still apply.
+	SkipSafetyFrozen bool
 }
 
-// ExecutionService 编排：TradePlanItem → PreTradeCheck → ExecutionPort → 订单结果。
+// ExecutionService 编排：TradePlanItem → SafetyGate → PreTradeCheck → ExecutionPort。
 type ExecutionService struct {
-	port       ExecutionPort
-	loadSnap   preTradeSnapshotLoader // 可测注入；nil 用默认 DB 快照
+	port     ExecutionPort
+	loadSnap preTradeSnapshotLoader // 可测注入；nil 用默认 DB 快照
 }
 
 func NewExecutionService(port ExecutionPort) *ExecutionService {
@@ -61,7 +71,8 @@ func (s *ExecutionService) withSnapshotLoader(load preTradeSnapshotLoader) *Exec
 	return s
 }
 
-// ExecutePlanItem 将计划项转为 SubmitIntent，经 PreTradeCheck 后调用 Port。
+// ExecutePlanItem 将计划项转为 SubmitIntent，经 Safety Gate + PreTradeCheck 后调用 Port。
+// Gate 失败不调用 Broker；不修改 Frozen Spec。
 func (s *ExecutionService) ExecutePlanItem(ctx context.Context, item models.TradePlanItem, opts ExecutePlanItemOpts) (*broker.TradeOrder, error) {
 	if s == nil || s.port == nil {
 		return nil, errors.New("execution: nil ExecutionService or port")
@@ -82,14 +93,40 @@ func (s *ExecutionService) ExecutePlanItem(ctx context.Context, item models.Trad
 	if tag == "" {
 		tag = item.StrategyName
 	}
-	price := opts.Price
+
+	// Proposed submit values: opts when set, else Spec.
+	// If Spec is valid and opts diverge, Gate blocks before Port.Submit.
+	gatePrice := item.LimitPrice
+	gateVol := item.TargetVolume
+	if opts.Price > 0 {
+		gatePrice = opts.Price
+	}
+	if opts.Volume > 0 {
+		gateVol = opts.Volume
+	}
+
+	spec := safetygate.SpecFromItem(item)
+	skipFrozen := opts.SkipSafetyFrozen || opts.Plan == nil
+	gate := safetygate.ValidateBrokerSubmit(spec, safetygate.Context{
+		Plan:            opts.Plan,
+		SubmitPrice:     gatePrice,
+		SubmitVolume:    gateVol,
+		SkipFrozenCheck: skipFrozen,
+	})
+	if !gate.Allowed {
+		return nil, fmt.Errorf("%w", gate.Error())
+	}
+
+	// Intent uses Frozen Spec when present (no silent runtime override).
+	price := item.LimitPrice
 	if price <= 0 {
-		price = item.LimitPrice
+		price = opts.Price
 	}
-	vol := opts.Volume
+	vol := item.TargetVolume
 	if vol <= 0 {
-		vol = item.TargetVolume
+		vol = opts.Volume
 	}
+
 	intent := SubmitIntent{
 		AccountID:   opts.AccountID,
 		StockCode:   item.StockCode,

@@ -70,7 +70,7 @@ func (s *service) Explain(ctx context.Context, req ExplainRequest) (*Explanation
 				PlanItemID:    req.PlanItemID,
 				GeneratedAt:   now,
 				Status:        StatusMissing,
-				Headline:      "未找到 StrategySnapshot，无法生成解释",
+				Headline:      "该计划创建时未保存策略快照，无法恢复完整解释",
 				Disclaimers:   defaultDisclaimers(),
 			}, nil
 		}

@@ -30,9 +30,29 @@ const (
 
 	PaperStrategyTagTradePlan = "trade_plan"
 
-	// SourceSession 取值（计划来源观测；A1 不强制写入）。
+	// SourceSession / SourceKind 取值（计划来源观测；A1 不强制写入）。
 	TradePlanSourceAfterClose     = "after_close"
 	TradePlanSourceMorningRebuild = "morning_rebuild"
+	// TradePlanSourceCashRescale marks a plan created by cash rescale (not morning rebuild).
+	TradePlanSourceCashRescale = "cash_rescale"
+	// TradePlanSourceTSell marks a T manual sell draft (Phase13-D2-W2).
+	TradePlanSourceTSell = "t_sell"
+	// TradePlanSourceExitReview marks a sell draft created from Exit Review UI (Phase14-M1).
+	TradePlanSourceExitReview = "exit_review"
+	// TradePlanSourceWatchlist marks a buy draft created from Watchlist UI (Phase16.26-C2.3.2-B1).
+	TradePlanSourceWatchlist = "watchlist"
+
+	// Provider metadata (G.13) — plan-header identity of who sized the draft.
+	// Empty strings mean "unrecorded / pre-metadata era"; do not backfill history.
+	TradePlanProviderModeOff           = "off"
+	TradePlanProviderModeShadow        = "shadow"
+	TradePlanProviderModeSimulation    = "simulation"
+	TradePlanProviderModeControlled    = "controlled"
+	TradePlanProviderModeOn            = "on"
+	TradePlanDecisionProviderFixed     = "fixed_amount"
+	TradePlanDecisionProviderPortfolio = "portfolio_allocation"
+	TradePlanDecisionVersionG21        = "decision_provider.g2-1"
+	TradePlanAllocationVersionF1Equal  = "allocation@f1-v1-equal"
 )
 
 // TradePlan 某交易日买入计划（同日可有历史版本；执行入口当前只认 status=ready）。
@@ -62,8 +82,28 @@ type TradePlan struct {
 	ApprovalReason string     `json:"approvalReason" gorm:"column:approval_reason;size:500"`
 	// ApprovedSource 审批渠道审计（Phase6.5.6.15 v5；如 system / http_api / wails）。
 	ApprovedSource string `json:"approvedSource" gorm:"column:approved_source;size:32"`
-	// SourceSession 如 after_close / morning_rebuild。
+	// SourceSession 如 after_close / morning_rebuild / cash_rescale。
 	SourceSession string `json:"sourceSession" gorm:"column:source_session;size:32"`
+
+	// --- Cash rescale audit (Phase11; append-only on v2+ plans; zero on normal plans) ---
+	// ParentPlanID is the source plan id when SourceKind=cash_rescale; 0 otherwise.
+	ParentPlanID uint `json:"parentPlanId" gorm:"column:parent_plan_id;index"`
+	// SourceKind structured origin; prefer over parsing Message (e.g. cash_rescale).
+	SourceKind string `json:"sourceKind" gorm:"column:source_kind;size:32"`
+	// RescaleMode: none | scale_down | trim_names (persisted only when SourceKind=cash_rescale).
+	RescaleMode        string  `json:"rescaleMode" gorm:"column:rescale_mode;size:16"`
+	AvailableCashUsed  float64 `json:"availableCashUsed" gorm:"column:available_cash_used"`
+	RequiredCashBefore float64 `json:"requiredCashBefore" gorm:"column:required_cash_before"`
+	RequiredCashAfter  float64 `json:"requiredCashAfter" gorm:"column:required_cash_after"`
+	// ScaleRatio = required_after / required_before when required_before > 0; else 0.
+	ScaleRatio float64 `json:"scaleRatio" gorm:"column:scale_ratio"`
+
+	// Provider metadata (G.13 / schema v10). Written only at CreatePlanWithItems INSERT.
+	// Freeze / Approve / Execute / materialization must never UPDATE these columns.
+	ProviderMode      string `json:"providerMode" gorm:"column:provider_mode;size:32"`
+	DecisionProvider  string `json:"decisionProvider" gorm:"column:decision_provider;size:64"`
+	DecisionVersion   string `json:"decisionVersion" gorm:"column:decision_version;size:64"`
+	AllocationVersion string `json:"allocationVersion" gorm:"column:allocation_version;size:64"`
 
 	// Execution Intent 默认（Phase6.5.6 schema v4；Writer 未接前保持零值）。
 	DefaultEntryRule     string   `json:"defaultEntryRule" gorm:"column:default_entry_rule;size:32"`
@@ -86,6 +126,36 @@ type TradePlan struct {
 }
 
 func (TradePlan) TableName() string { return "trade_plans" }
+
+// StampLegacyBuyDraftProviderMetadata stamps OFF=Legacy write-chain identity (G.13).
+// Call before CreatePlanWithItems; never UPDATE after persist.
+func StampLegacyBuyDraftProviderMetadata(p *TradePlan) {
+	if p == nil {
+		return
+	}
+	p.ProviderMode = TradePlanProviderModeOff
+	p.DecisionProvider = TradePlanDecisionProviderFixed
+	p.DecisionVersion = TradePlanDecisionVersionG21
+	p.AllocationVersion = ""
+}
+
+// StampControlledBuyDraftProviderMetadata stamps G.8 Controlled write-chain identity.
+// whitelistMatched=true → portfolio_allocation; false → fixed_amount (miss path).
+// Call before CreatePlanWithItems; never UPDATE after persist / Freeze.
+func StampControlledBuyDraftProviderMetadata(p *TradePlan, whitelistMatched bool) {
+	if p == nil {
+		return
+	}
+	p.ProviderMode = TradePlanProviderModeControlled
+	p.DecisionVersion = TradePlanDecisionVersionG21
+	if whitelistMatched {
+		p.DecisionProvider = TradePlanDecisionProviderPortfolio
+		p.AllocationVersion = TradePlanAllocationVersionF1Equal
+		return
+	}
+	p.DecisionProvider = TradePlanDecisionProviderFixed
+	p.AllocationVersion = ""
+}
 
 // IsDraft 是否草稿（不可执行）。
 func (p TradePlan) IsDraft() bool { return p.Status == TradePlanStatusDraft }
@@ -115,29 +185,33 @@ func (p TradePlan) IsTerminal() bool {
 
 // TradePlanItem 计划内单票意图与执行回写（含风控拒绝项 status=skipped）。
 type TradePlanItem struct {
-	ID              uint      `json:"id" gorm:"primaryKey"`
-	PlanID          uint      `json:"planId" gorm:"index;not null"`
-	TradeDate       string    `json:"tradeDate" gorm:"size:10;index"`
-	StockCode       string    `json:"stockCode" gorm:"size:16;index"`
-	StockName       string    `json:"stockName" gorm:"size:64"`
-	Side            string    `json:"side" gorm:"size:8"`
-	Priority        int       `json:"priority"`
-	TargetAmount    float64   `json:"targetAmount"`
-	TargetVolume    int64     `json:"targetVolume"`
-	LimitPrice      float64   `json:"limitPrice"`
-	Score           float64   `json:"score"`
-	Reason          string    `json:"reason" gorm:"size:255"`
-	StrategyName    string    `json:"strategyName" gorm:"size:120"`
-	StrategyVersion string    `json:"strategyVersion" gorm:"size:64"`
-	Status          string    `json:"status" gorm:"size:16;index"`
-	RiskCode        string    `json:"riskCode" gorm:"size:64"`
-	RiskMessage     string    `json:"riskMessage" gorm:"size:500"`
-	Error           string    `json:"error" gorm:"size:500"`
-	OrderID         uint      `json:"orderId" gorm:"index"`
-	FillID          uint      `json:"fillId" gorm:"index"`
-	FilledPrice     float64   `json:"filledPrice"`
-	FilledVolume    int64     `json:"filledVolume"`
-	FilledFee       float64   `json:"filledFee"`
+	ID              uint    `json:"id" gorm:"primaryKey"`
+	PlanID          uint    `json:"planId" gorm:"index;not null"`
+	TradeDate       string  `json:"tradeDate" gorm:"size:10;index"`
+	StockCode       string  `json:"stockCode" gorm:"size:16;index"`
+	StockName       string  `json:"stockName" gorm:"size:64"`
+	Side            string  `json:"side" gorm:"size:8"`
+	Priority        int     `json:"priority"`
+	TargetAmount    float64 `json:"targetAmount"`
+	TargetVolume    int64   `json:"targetVolume"`
+	LimitPrice      float64 `json:"limitPrice"`
+	Score           float64 `json:"score"`
+	Reason          string  `json:"reason" gorm:"size:255"`
+	StrategyName    string  `json:"strategyName" gorm:"size:120"`
+	StrategyVersion string  `json:"strategyVersion" gorm:"size:64"`
+	Status          string  `json:"status" gorm:"size:16;index"`
+	RiskCode        string  `json:"riskCode" gorm:"size:64"`
+	RiskMessage     string  `json:"riskMessage" gorm:"size:500"`
+	Error           string  `json:"error" gorm:"size:500"`
+	OrderID         uint    `json:"orderId" gorm:"index"`
+	FillID          uint    `json:"fillId" gorm:"index"`
+	FilledPrice     float64 `json:"filledPrice"`
+	FilledVolume    int64   `json:"filledVolume"`
+	FilledFee       float64 `json:"filledFee"`
+
+	// OriginalTargetAmount preserves pre-rescale target for trim audit rows
+	// (CASH_RESCALE_TRIMMED); zero when not applicable.
+	OriginalTargetAmount float64 `json:"originalTargetAmount" gorm:"column:original_target_amount"`
 
 	// Execution Intent（Phase6.5.6 schema v4；零值=legacy，不回填历史）。
 	RefPrice     float64    `json:"refPrice" gorm:"column:ref_price"`

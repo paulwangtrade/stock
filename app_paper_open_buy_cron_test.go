@@ -6,10 +6,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"go-stock/backend/db"
+	"go-stock/backend/marketstate"
 	"go-stock/backend/models"
 	"go-stock/backend/strategy"
+	"go-stock/backend/tradingcalendar"
 
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
@@ -87,7 +90,16 @@ func TestInitPaperOpenBuyJobs_DailyPlanCronSpec920(t *testing.T) {
 	require.NotContains(t, src, `strategy.RunDailyCandidateAndPlan("")`)
 }
 
+func withPaperCronMarketMondayPreOpen(t *testing.T) {
+	t.Helper()
+	loc := time.Local
+	mondayPreOpen := time.Date(2026, 8, 17, 9, 20, 0, 0, loc)
+	restore := marketstate.SwapDefaultForTest(marketstate.New(func() time.Time { return mondayPreOpen }, loc, tradingcalendar.Default))
+	t.Cleanup(restore)
+}
+
 func TestRunPaperDailyPlanCronJob_AdoptFrozenMode(t *testing.T) {
+	withPaperCronMarketMondayPreOpen(t)
 	prev := morningPlanPreparationFn
 	t.Cleanup(func() { morningPlanPreparationFn = prev })
 	morningPlanPreparationFn = func(string) (*models.CandidatePool, *models.TradePlan, string, error) {
@@ -99,6 +111,7 @@ func TestRunPaperDailyPlanCronJob_AdoptFrozenMode(t *testing.T) {
 }
 
 func TestRunPaperDailyPlanCronJob_BuildMorningMode(t *testing.T) {
+	withPaperCronMarketMondayPreOpen(t)
 	prev := morningPlanPreparationFn
 	t.Cleanup(func() { morningPlanPreparationFn = prev })
 	morningPlanPreparationFn = func(string) (*models.CandidatePool, *models.TradePlan, string, error) {

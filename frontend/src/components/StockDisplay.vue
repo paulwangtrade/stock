@@ -9,8 +9,12 @@ defineProps({
 
 <template>
   <span v-if="model" class="stock-display">
-    <span class="stock-display__name">{{ model.display_name }}</span>
-    <span class="stock-display__code">{{ model.display_code }}</span>
+    <!-- Phase16.14: single-line 名称(code) -->
+    <span v-if="model.displayText" class="stock-display__text">{{ model.displayText }}</span>
+    <template v-else>
+      <span class="stock-display__name">{{ model.display_name }}</span>
+      <span class="stock-display__code">{{ model.display_code }}</span>
+    </template>
   </span>
 </template>
 
@@ -22,6 +26,7 @@ defineProps({
   line-height: 1.4;
   max-width: 100%;
 }
+.stock-display__text,
 .stock-display__name {
   font-weight: 600;
   color: var(--n-text-color, inherit);

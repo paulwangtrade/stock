@@ -8,11 +8,12 @@ import (
 	"go-stock/backend/logger"
 	"go-stock/backend/models"
 	"go-stock/backend/util"
+	"os"
 	"strings"
 	"testing"
 	"time"
-	"os"
-	"github.com/go-resty/resty/v2"
+
+	"github.com/stretchr/testify/require"
 )
 
 
@@ -73,8 +74,6 @@ func TestCheckStockBaseInfo(t *testing.T) {
 
 func TestJson(t *testing.T) {
 
-	db.Init("./data/stock.db")
-
 	jsonStr := `{
 	"id":3334,
 	"code":"PUK.US",
@@ -100,48 +99,15 @@ func TestJson(t *testing.T) {
 		"v:%+v",
 		v,
 	)
-
-
-	db.Dao.Model(v).Updates(v)
-
 }
 
 
 
 func TestUpdateCheck(t *testing.T) {
-    if testing.Short() {
-        t.Skip("skip github api test")
-    }
-	skipIntegrationTest(t)
-
-	releaseVersion := &models.GitHubReleaseVersion{}
-
-
-	_, err := resty.New().
-		R().
-		SetResult(releaseVersion).
-		SetHeader(
-			"Accept",
-			"application/vnd.github+json",
-		).
-		Get(
-			"https://api.github.com/repos/ArvinLovegood/go-stock/releases/latest",
-		)
-
-
-	if err != nil {
-		logger.SugaredLogger.Errorf(
-			"get github release version error:%s",
-			err.Error(),
-		)
-		return
-	}
-
-
-	logger.SugaredLogger.Infof(
-		"releaseVersion:%+v",
-		releaseVersion,
-	)
+	t.Parallel()
+	b, err := os.ReadFile("app_update.go")
+	require.NoError(t, err)
+	require.NotContains(t, string(b), "api.github.com/repos/ArvinLovegood")
 }
 
 
@@ -168,14 +134,12 @@ func TestGetScreenResolution(t *testing.T) {
 
 
 
-func TestCheckUpdate(t *testing.T){
-
-	skipIntegrationTest(t)
-
-	db.Init("./data/stock.db")
-
-	NewApp().CheckUpdate(1)
-
+func TestCheckUpdate(t *testing.T) {
+	t.Parallel()
+	b, err := os.ReadFile("app_update.go")
+	require.NoError(t, err)
+	require.Contains(t, string(b), "version.CheckWithProviders")
+	require.NotContains(t, string(b), "ArvinLovegood")
 }
 
 
@@ -309,8 +273,6 @@ func TestSummaryStockNews(t *testing.T){
 
 
 func TestCalculateNextRunTime(t *testing.T){
-
-	db.Init("./data/stock.db")
 
 	t.Log(
 		NewApp().

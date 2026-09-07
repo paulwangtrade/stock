@@ -28,11 +28,16 @@ func isPaperObservationPath(path string) bool {
 		"/api/papertrading/dashboard/runs",
 		"/api/papertrading/reports/daily",
 		"/api/papertrading/observation/metrics",
+		"/api/papertrading/observation/positions/attribution",
 		"/api/papertrading/observation/holdings/evaluation",
 		"/api/papertrading/observation/holdings/summary",
+		"/api/papertrading/observation/holdings/exit-evaluation",
 		"/api/papertrading/observation/rebalance",
 		"/api/papertrading/observation/portfolio",
-		"/api/papertrading/observation/performance":
+		"/api/papertrading/observation/portfolio-v2",
+		"/api/papertrading/observation/performance",
+		"/api/papertrading/observation/execution-summary",
+		"/api/papertrading/observation/risk":
 		return true
 	default:
 		return false
@@ -53,6 +58,8 @@ func (h *PaperObservationHandler) ServeHTTP(w http.ResponseWriter, r *http.Reque
 		h.handleReportsDaily(w, r)
 	case "/api/papertrading/observation/metrics":
 		h.handleObservationMetrics(w, r)
+	case "/api/papertrading/observation/positions/attribution":
+		h.handlePositionAttribution(w, r)
 	case "/api/papertrading/observation/holdings/evaluation":
 		h.handleHoldingsEvaluation(w, r)
 	case "/api/papertrading/observation/holdings/summary":
@@ -61,8 +68,16 @@ func (h *PaperObservationHandler) ServeHTTP(w http.ResponseWriter, r *http.Reque
 		h.handleRebalanceObservation(w, r)
 	case "/api/papertrading/observation/portfolio":
 		h.handlePortfolioObservation(w, r)
+	case "/api/papertrading/observation/portfolio-v2":
+		h.handlePortfolioObservationV2(w, r)
 	case "/api/papertrading/observation/performance":
 		h.handleObservationPerformance(w, r)
+	case "/api/papertrading/observation/holdings/exit-evaluation":
+		h.handleExitEvaluation(w, r)
+	case "/api/papertrading/observation/execution-summary":
+		h.handleExecutionSummary(w, r)
+	case "/api/papertrading/observation/risk":
+		h.handleRiskObservation(w, r)
 	default:
 		http.NotFound(w, r)
 	}
@@ -217,11 +232,15 @@ func RegisterPaperObservationRoutes(mux *http.ServeMux) {
 	mux.Handle("/api/papertrading/dashboard/runs", h)
 	mux.Handle("/api/papertrading/reports/daily", h)
 	mux.Handle("/api/papertrading/observation/metrics", h)
+	mux.Handle("/api/papertrading/observation/positions/attribution", h)
 	mux.Handle("/api/papertrading/observation/holdings/evaluation", h)
 	mux.Handle("/api/papertrading/observation/holdings/summary", h)
 	mux.Handle("/api/papertrading/observation/rebalance", h)
 	mux.Handle("/api/papertrading/observation/portfolio", h)
 	mux.Handle("/api/papertrading/observation/performance", h)
+	mux.Handle("/api/papertrading/observation/holdings/exit-evaluation", h)
+	mux.Handle("/api/papertrading/observation/execution-summary", h)
+	mux.Handle("/api/papertrading/observation/risk", h)
 }
 
 // PaperObservationAssetMiddleware mounts only read-only /api/papertrading observation paths.

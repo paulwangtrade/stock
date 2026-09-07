@@ -17,99 +17,13 @@ var SignalScanBatch = (() => {
   };
   var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-  // ../scripts/scansignals/scan-batch.ts
+  // scripts/scansignals/scan-batch.ts
   var scan_batch_exports = {};
   __export(scan_batch_exports, {
     runSignalScanBatch: () => runSignalScanBatch
   });
 
-  // src/utils/sellPositionRatio.js
-  function clamp(n, min, max) {
-    return Math.max(min, Math.min(max, n));
-  }
-  function roundPct01(p) {
-    return Math.round(p * 20) / 20;
-  }
-  function volMa(volumes, period, i) {
-    if (!volumes?.length || i < period - 1) return null;
-    let s = 0;
-    for (let j = 0; j < period; j++) s += volumes[i - j] || 0;
-    return s / period;
-  }
-  function peakRsiBefore(rsi, endIdx, lookback = 5) {
-    let peak = rsi[endIdx];
-    if (peak == null) return 70;
-    const start = Math.max(0, endIdx - lookback + 1);
-    for (let j = start; j <= endIdx; j++) {
-      const v = rsi[j];
-      if (v != null && v > peak) peak = v;
-    }
-    return peak;
-  }
-  function calcTakeProfitPositionPct(sig, barIndex, bars, options = {}) {
-    const overbought = options.overbought ?? 70;
-    const rsi = sig?.rsi || [];
-    const closes = bars?.closes || [];
-    const ma20 = sig?.ma20 || [];
-    const i = barIndex;
-    if (i < 1 || rsi[i] == null || rsi[i - 1] == null) return 0.3;
-    const peak = peakRsiBefore(rsi, i - 1, 5);
-    const drop = rsi[i - 1] - rsi[i];
-    let pct = 0.22 + Math.min(0.33, Math.max(0, (peak - overbought) / 25) * 0.33);
-    pct += Math.min(0.12, Math.max(0, drop - 2) / 10 * 0.12);
-    const c = closes[i];
-    const m = ma20[i];
-    if (c != null && m != null && m > 0 && c < m) pct += 0.08;
-    return roundPct01(clamp(pct, 0.2, 0.65));
-  }
-  function calcReducePositionPct(sig, barIndex, bars, options = {}) {
-    const rsi = sig?.rsi || [];
-    const closes = bars?.closes || [];
-    const volumes = bars?.volumes || [];
-    const ma20 = sig?.ma20 || [];
-    const volPeriod = options.volPeriod ?? 5;
-    const i = barIndex;
-    if (i < 0 || !closes[i] || !ma20[i] || ma20[i] <= 0) return 0.4;
-    const breakPct = Math.max(0, (ma20[i] - closes[i]) / ma20[i]);
-    let pct = 0.32 + Math.min(0.38, breakPct / 0.07 * 0.38);
-    const vma = volMa(volumes, volPeriod, i);
-    if (vma != null && vma > 0 && volumes[i]) {
-      const vm = volumes[i] / vma;
-      if (vm >= 2) pct += 0.12;
-      else if (vm >= 1.4) pct += 0.07;
-    }
-    if (i >= 5 && ma20[i] != null && ma20[i - 5] != null && ma20[i] < ma20[i - 5]) {
-      pct += 0.08;
-    }
-    const r = rsi[i];
-    if (r != null) {
-      if (r < 35) pct += 0.1;
-      else if (r < 45) pct += 0.05;
-    }
-    return roundPct01(clamp(pct, 0.3, 0.85));
-  }
-  function calcSellPositionPct(tag, sig, barIndex, bars, options = {}) {
-    if (tag === "\u6B62") {
-      return calcTakeProfitPositionPct(sig, barIndex, bars, options);
-    }
-    if (tag === "\u51CF") {
-      return calcReducePositionPct(sig, barIndex, bars, options);
-    }
-    return null;
-  }
-  function formatSellPositionPct(pct) {
-    if (pct == null || !Number.isFinite(pct)) return "";
-    return `${Math.round(pct * 100)}%`;
-  }
-  function sellPositionHint(tag, pct) {
-    if (pct == null || !Number.isFinite(pct)) return "";
-    const s = formatSellPositionPct(pct);
-    if (tag === "\u6B62") return `\u5EFA\u8BAE\u6B62\u76C8 ${s}`;
-    if (tag === "\u51CF") return `\u5EFA\u8BAE\u51CF\u4ED3 ${s}`;
-    return "";
-  }
-
-  // src/utils/buyPriceRange.js
+  // frontend/src/utils/buyPriceRange.js
   var BUY_ENTRY_TAGS = /* @__PURE__ */ new Set(["\u5F3A", "\u8D8B", "\u8F6C", "\u7A81", "\u4E70", "\u5F39"]);
   var MAX_RANGE_PCT = 0.018;
   var DEFER_RANGE_PCT = 0.022;
@@ -252,7 +166,93 @@ var SignalScanBatch = (() => {
     };
   }
 
-  // src/utils/icePointSignals.js
+  // frontend/src/utils/sellPositionRatio.js
+  function clamp(n, min, max) {
+    return Math.max(min, Math.min(max, n));
+  }
+  function roundPct01(p) {
+    return Math.round(p * 20) / 20;
+  }
+  function volMa(volumes, period, i) {
+    if (!volumes?.length || i < period - 1) return null;
+    let s = 0;
+    for (let j = 0; j < period; j++) s += volumes[i - j] || 0;
+    return s / period;
+  }
+  function peakRsiBefore(rsi, endIdx, lookback = 5) {
+    let peak = rsi[endIdx];
+    if (peak == null) return 70;
+    const start = Math.max(0, endIdx - lookback + 1);
+    for (let j = start; j <= endIdx; j++) {
+      const v = rsi[j];
+      if (v != null && v > peak) peak = v;
+    }
+    return peak;
+  }
+  function calcTakeProfitPositionPct(sig, barIndex, bars, options = {}) {
+    const overbought = options.overbought ?? 70;
+    const rsi = sig?.rsi || [];
+    const closes = bars?.closes || [];
+    const ma20 = sig?.ma20 || [];
+    const i = barIndex;
+    if (i < 1 || rsi[i] == null || rsi[i - 1] == null) return 0.3;
+    const peak = peakRsiBefore(rsi, i - 1, 5);
+    const drop = rsi[i - 1] - rsi[i];
+    let pct = 0.22 + Math.min(0.33, Math.max(0, (peak - overbought) / 25) * 0.33);
+    pct += Math.min(0.12, Math.max(0, drop - 2) / 10 * 0.12);
+    const c = closes[i];
+    const m = ma20[i];
+    if (c != null && m != null && m > 0 && c < m) pct += 0.08;
+    return roundPct01(clamp(pct, 0.2, 0.65));
+  }
+  function calcReducePositionPct(sig, barIndex, bars, options = {}) {
+    const rsi = sig?.rsi || [];
+    const closes = bars?.closes || [];
+    const volumes = bars?.volumes || [];
+    const ma20 = sig?.ma20 || [];
+    const volPeriod = options.volPeriod ?? 5;
+    const i = barIndex;
+    if (i < 0 || !closes[i] || !ma20[i] || ma20[i] <= 0) return 0.4;
+    const breakPct = Math.max(0, (ma20[i] - closes[i]) / ma20[i]);
+    let pct = 0.32 + Math.min(0.38, breakPct / 0.07 * 0.38);
+    const vma = volMa(volumes, volPeriod, i);
+    if (vma != null && vma > 0 && volumes[i]) {
+      const vm = volumes[i] / vma;
+      if (vm >= 2) pct += 0.12;
+      else if (vm >= 1.4) pct += 0.07;
+    }
+    if (i >= 5 && ma20[i] != null && ma20[i - 5] != null && ma20[i] < ma20[i - 5]) {
+      pct += 0.08;
+    }
+    const r = rsi[i];
+    if (r != null) {
+      if (r < 35) pct += 0.1;
+      else if (r < 45) pct += 0.05;
+    }
+    return roundPct01(clamp(pct, 0.3, 0.85));
+  }
+  function calcSellPositionPct(tag, sig, barIndex, bars, options = {}) {
+    if (tag === "\u6B62") {
+      return calcTakeProfitPositionPct(sig, barIndex, bars, options);
+    }
+    if (tag === "\u51CF") {
+      return calcReducePositionPct(sig, barIndex, bars, options);
+    }
+    return null;
+  }
+  function formatSellPositionPct(pct) {
+    if (pct == null || !Number.isFinite(pct)) return "";
+    return `${Math.round(pct * 100)}%`;
+  }
+  function sellPositionHint(tag, pct) {
+    if (pct == null || !Number.isFinite(pct)) return "";
+    const s = formatSellPositionPct(pct);
+    if (tag === "\u6B62") return `\u5EFA\u8BAE\u6B62\u76C8 ${s}`;
+    if (tag === "\u51CF") return `\u5EFA\u8BAE\u51CF\u4ED3 ${s}`;
+    return "";
+  }
+
+  // frontend/src/utils/icePointSignals.js
   var SELL_TAG_TAKE_PROFIT = "\u6B62";
   var SELL_TAG_REDUCE = "\u51CF";
   var SIGNAL_TAG_PRIORITY = ["\u51CF", "\u6B62", "\u51B2", "\u52A0", "\u5F3A", "\u8D8B", "\u8F6C", "\u7A81", "\u5F39", "\u4E70", "\u51B0"];
@@ -1452,7 +1452,7 @@ var SignalScanBatch = (() => {
     return summary;
   }
 
-  // src/utils/quantAutomationSettings.js
+  // frontend/src/utils/quantAutomationSettings.js
   var DEFAULT_QUANT_AUTOMATION = {
     enabled: false,
     /** 账户总权益（元），用于仓位计算 */
@@ -1461,8 +1461,12 @@ var SignalScanBatch = (() => {
     riskPerTradePct: 0.01,
     /** 单票最大仓位占权益比例 */
     maxPositionPct: 0.15,
-    /** 组合最大总敞口占权益比例 */
+    /** 组合最大总敞口占权益比例（与 5 级模型取更严） */
     maxTotalExposurePct: 0.85,
+    /** 级别 ≤2 时禁止新开仓/确认买入草稿 */
+    blockNewEntriesOnDefense: true,
+    /** 确认买入草稿前要求清单就绪 */
+    requireChecklistForBuyConfirm: true,
     /** A 股最小交易单位 */
     minLotSize: 100,
     /** 信号置信度 → 仓位系数 */
@@ -1503,7 +1507,7 @@ var SignalScanBatch = (() => {
     return base;
   }
 
-  // src/utils/signalSettings.js
+  // frontend/src/utils/signalSettings.js
   var DEFAULT_SCREEN_STRATEGY_ID = "default";
   var DEFAULT_SCREEN_STRATEGY_NAME = "\u9ED8\u8BA4\u7B56\u7565";
   var DEFAULT_SIGNAL_SETTINGS = {
@@ -2042,11 +2046,11 @@ var SignalScanBatch = (() => {
     };
   }
 
-  // src/utils/signalTagConstants.js
+  // frontend/src/utils/signalTagConstants.js
   var SCREEN_SNAPSHOT_SIGNAL_TAGS = ["\u5F3A", "\u8D8B", "\u8F6C", "\u7A81", "\u5F39", "\u4E70"];
   var SCREEN_SNAPSHOT_SIGNAL_TAG_SET = new Set(SCREEN_SNAPSHOT_SIGNAL_TAGS);
 
-  // ../scripts/scansignals/scan-batch.ts
+  // scripts/scansignals/scan-batch.ts
   function runSignalScanBatch(input) {
     const stocks = input?.stocks || [];
     const indexMa20ByDay = buildIndexMa20ByDay(new Map(Object.entries(input?.indexClose || {})), 20);
@@ -2079,6 +2083,13 @@ var SignalScanBatch = (() => {
       const summary = summarizeBuySignal(bars, { ...options, signalLastIndex: lastIdx });
       if (!summary?.tag || !SCREEN_SNAPSHOT_SIGNAL_TAG_SET.has(summary.tag)) continue;
       const row = s.row || {};
+      const buyRange = calcBuyPriceRange(summary, bars, { ...options, signalLastIndex: lastIdx });
+      const tag = summary.tag;
+      const isConfirmBar = tag === "\u5F3A" || tag === "\u7A81";
+      const signalBarIndex = buyRange?.instantBar ?? summary.recentSignalConfirmBar ?? summary.recentSignalBar ?? null;
+      const signalDaysAgo = summary.recentSignalDaysAgo ?? buyRange?.daysAgo ?? 0;
+      const signalTime = signalBarIndex != null && s.dayKeys?.[signalBarIndex] ? s.dayKeys[signalBarIndex] : "";
+      const signalPrice = buyRange?.instantPrice != null && Number.isFinite(buyRange.instantPrice) && buyRange.instantPrice > 0 ? buyRange.instantPrice : null;
       items.push({
         SECUCODE: row.SECUCODE || s.secucode || s.code,
         SECURITY_CODE: row.SECURITY_CODE || "",
@@ -2100,6 +2111,15 @@ var SignalScanBatch = (() => {
         statusText: summary.statusText,
         sortRank: summary.sortRank,
         rsi: summary.latestStatus?.rsi ?? null,
+        schema_version: signalPrice != null ? "signal_event.v1" : void 0,
+        signal_price: signalPrice,
+        signal_time: signalTime || void 0,
+        signal_price_source: signalPrice != null ? isConfirmBar ? "kline_close_confirm" : "kline_close" : void 0,
+        signal_days_ago: signalDaysAgo,
+        signal_bar_role: signalPrice != null ? isConfirmBar ? "confirm" : "signal" : void 0,
+        signal_bar_index: summary.recentSignalBar ?? signalBarIndex ?? void 0,
+        confirm_bar_index: isConfirmBar ? summary.recentSignalConfirmBar ?? signalBarIndex ?? void 0 : void 0,
+        signal_price_status: signalPrice != null ? "frozen" : void 0,
         ok: true
       });
     }

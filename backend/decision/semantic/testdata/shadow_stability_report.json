@@ -1,0 +1,125 @@
+{
+  "phase": "Phase2-C",
+  "harness": "quant-decision-shadow-stability",
+  "generatedAt": "2026-07-29T17:52:26.191Z",
+  "totalPairs": 4,
+  "semanticEqualCount": 2,
+  "semanticMismatchCount": 2,
+  "displayOnlyDiffCount": 1,
+  "semanticEqualRate": 0.5,
+  "actionCode": {
+    "equalCount": 2,
+    "conflictCount": 2,
+    "equalRate": 0.5,
+    "conflictStats": [
+      {
+        "leftCode": "ENTER",
+        "rightCode": "WAIT_PULLBACK",
+        "count": 2
+      }
+    ],
+    "conflictPairs": [
+      {
+        "id": "conflict-code",
+        "code": "sz000003",
+        "leftCode": "ENTER",
+        "rightCode": "WAIT_PULLBACK"
+      },
+      {
+        "id": "conflict-code-2",
+        "code": "sz000004",
+        "leftCode": "ENTER",
+        "rightCode": "WAIT_PULLBACK"
+      }
+    ]
+  },
+  "mismatchBySlice": {
+    "signal": {
+      "mismatchPairCount": 0,
+      "pathCounts": {}
+    },
+    "entryZone": {
+      "mismatchPairCount": 1,
+      "pathCounts": {
+        "entryZone.mode": 1,
+        "entryZone.deferMode": 1
+      }
+    },
+    "gate": {
+      "mismatchPairCount": 0,
+      "pathCounts": {}
+    },
+    "risk": {
+      "mismatchPairCount": 0,
+      "pathCounts": {}
+    },
+    "size": {
+      "mismatchPairCount": 0,
+      "pathCounts": {}
+    },
+    "action": {
+      "mismatchPairCount": 2,
+      "pathCounts": {
+        "action.code": 2,
+        "action.allowDraft": 2,
+        "action.side": 2
+      }
+    }
+  },
+  "pairs": [
+    {
+      "id": "stable-1",
+      "code": "sz000001",
+      "semanticEqual": true,
+      "actionCodeEqual": true,
+      "leftActionCode": "ENTER",
+      "rightActionCode": "ENTER",
+      "displayDiffCount": 0,
+      "semanticDiffCount": 0,
+      "summary": "SEMANTIC_OK js_legacy ≡ go_engine",
+      "mismatchedSlices": []
+    },
+    {
+      "id": "stable-display",
+      "code": "sz000002",
+      "semanticEqual": true,
+      "actionCodeEqual": true,
+      "leftActionCode": "ENTER",
+      "rightActionCode": "ENTER",
+      "displayDiffCount": 1,
+      "semanticDiffCount": 0,
+      "summary": "SEMANTIC_OK_DISPLAY_DIFF js_legacy ≈ go_engine (label)",
+      "mismatchedSlices": []
+    },
+    {
+      "id": "conflict-code",
+      "code": "sz000003",
+      "semanticEqual": false,
+      "actionCodeEqual": false,
+      "leftActionCode": "ENTER",
+      "rightActionCode": "WAIT_PULLBACK",
+      "displayDiffCount": 1,
+      "semanticDiffCount": 5,
+      "summary": "SEMANTIC_FAIL action.code ENTER ≠ WAIT_PULLBACK",
+      "mismatchedSlices": [
+        "entryZone",
+        "action"
+      ]
+    },
+    {
+      "id": "conflict-code-2",
+      "code": "sz000004",
+      "semanticEqual": false,
+      "actionCodeEqual": false,
+      "leftActionCode": "ENTER",
+      "rightActionCode": "WAIT_PULLBACK",
+      "displayDiffCount": 1,
+      "semanticDiffCount": 3,
+      "summary": "SEMANTIC_FAIL action.code ENTER ≠ WAIT_PULLBACK",
+      "mismatchedSlices": [
+        "action"
+      ]
+    }
+  ],
+  "summary": "UNSTABLE: semanticFail=2/4; actionCodeConflicts=2"
+}

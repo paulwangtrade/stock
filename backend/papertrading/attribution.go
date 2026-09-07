@@ -55,15 +55,16 @@ type PositionAttributionRow struct {
 
 // PositionLotDTO is one buy-fill projected lot (never a forged fill).
 type PositionLotDTO struct {
-	PlanID     uint    `json:"plan_id"`
-	PlanItemID uint    `json:"plan_item_id"`
-	OrderID    uint    `json:"order_id"`
-	FillID     uint    `json:"fill_id"`
-	FillPrice  float64 `json:"fill_price"`
-	Volume     int64   `json:"volume"`
-	CostAmount float64 `json:"cost_amount"`
-	TradeDate  string  `json:"trade_date,omitempty"`
-	StrategyName string `json:"strategy_name,omitempty"`
+	PlanID       uint       `json:"plan_id"`
+	PlanItemID   uint       `json:"plan_item_id"`
+	OrderID      uint       `json:"order_id"`
+	FillID       uint       `json:"fill_id"`
+	FillPrice    float64    `json:"fill_price"`
+	Volume       int64      `json:"volume"`
+	CostAmount   float64    `json:"cost_amount"`
+	TradeDate    string     `json:"trade_date,omitempty"`
+	StrategyName string     `json:"strategy_name,omitempty"`
+	FilledAt     *time.Time `json:"filled_at,omitempty"`
 }
 
 // AttributionReconcile compares position qty vs attributed fill qty.
@@ -224,6 +225,7 @@ func projectAttributionRow(
 		}
 		attributed += vol
 		cost := f.Price * float64(vol)
+		filledAt := f.FilledAt
 		lot := PositionLotDTO{
 			PlanID:     f.PlanID,
 			PlanItemID: f.PlanItemID,
@@ -232,6 +234,7 @@ func projectAttributionRow(
 			FillPrice:  f.Price,
 			Volume:     vol,
 			CostAmount: cost,
+			FilledAt:   &filledAt,
 		}
 		if o, ok := ordersByID[f.OrderID]; ok {
 			lot.TradeDate = o.TradeDate

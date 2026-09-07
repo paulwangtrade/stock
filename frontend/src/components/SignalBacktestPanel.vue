@@ -38,7 +38,13 @@ async function run() {
   result.value = null
   compare.value = null
   try {
-    const raw = await GetStockEastMoneyKLine(stockCode.value.trim(), '101', String(limit.value), '', '1')
+    const barsLimit = Math.trunc(Number(limit.value))
+    const raw = await GetStockEastMoneyKLine(
+      stockCode.value.trim(),
+      '',
+      '101',
+      Number.isFinite(barsLimit) && barsLimit > 0 ? barsLimit : 250,
+    )
     const bars = eastMoneyKLinesToBars(raw)
     if (bars.length < 60) {
       message.warning('K 线不足，请换代码或加大条数')

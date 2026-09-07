@@ -60,10 +60,10 @@ export function opportunityCardUserLabel(userAction) {
   return '关注'
 }
 
-function toSide(code, score, nameByCode) {
+function toSide(code, score, nameByCode, explicitName = '') {
   const key = normalizeCode(code)
   if (!key) return null
-  const name = pickHintName(nameByCode?.[key])
+  const name = pickHintName(explicitName) || pickHintName(nameByCode?.[key])
   const display = toStockDisplay({ stock_code: key, stock_name: name })
   if (!display) return null
   return {
@@ -77,9 +77,9 @@ function toSide(code, score, nameByCode) {
 /**
  * @param {object|null} opp opportunity_attention JSON
  * @param {Record<string, string>} [nameByCode]
- * @param {number} [limit]
+ * @param {number} [limit] Phase16.19-B3 home Top N (default 10)
  */
-export function toOpportunityCards(opp, nameByCode = {}, limit = 3) {
+export function toOpportunityCards(opp, nameByCode = {}, limit = 10) {
   if (!opp || typeof opp !== 'object') return []
   const candidateScore = finiteScore(opp.candidate_score ?? opp.candidateScore)
   const candidateCode = trimStr(opp.candidate_code || opp.candidateCode)
@@ -88,6 +88,7 @@ export function toOpportunityCards(opp, nameByCode = {}, limit = 3) {
   const highlights = Array.isArray(opp.highlights) ? opp.highlights : []
   const max = Math.max(0, Number(limit) || 0)
   const label = opportunityCardUserLabel(opp.user_action || opp.userAction)
+  const candidateExplicitName = pickHintName(opp.candidate_name || opp.candidateName)
   const out = []
 
   for (const h of highlights) {
@@ -96,7 +97,7 @@ export function toOpportunityCards(opp, nameByCode = {}, limit = 3) {
     const holdingCode = trimStr(h?.holding_code || h?.holdingCode)
     if (!holdingCode || holdingScore == null) continue
 
-    const candidate_stock = toSide(candidateCode, candidateScore, nameByCode)
+    const candidate_stock = toSide(candidateCode, candidateScore, nameByCode, candidateExplicitName)
     const holding_stock = toSide(holdingCode, holdingScore, nameByCode)
     if (!candidate_stock || !holding_stock) continue
 

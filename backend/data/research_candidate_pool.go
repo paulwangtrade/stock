@@ -90,18 +90,20 @@ func normalizeFollowableCode(secucode, securityCode string) string {
 	return code
 }
 
+// researchCandidateSnapshotScopeClause 研究候选可用的 snapshot scope。
+// 允许：空/NULL（旧数据）、all、research_candidate；排除 universe 等非研究用途。
+// 不删除任何 snapshot 行。
+const (
+	researchCandidatePurposeScope = "research_candidate"
+	researchCandidateSnapshotScopeClause = "(scope IS NULL OR scope = '' OR scope = ? OR scope = ?)"
+)
+
 // ListResearchCandidatesFromLatestSnapshot 从最新 status=done 的信号快照提取候选。
 // 不落库、不改 BuildCandidatePool / 扫描逻辑。
 // minScore<=0 时使用配置 candidate_pool_score_threshold（默认 60）。
+// Phase16.15-E：仅选用研究用途快照（scope=all / research_candidate / 空），忽略 universe。
 func ListResearchCandidatesFromLatestSnapshot(minScore float64) *models.ResearchSnapshotCandidateList {
-	out := &models.ResearchSnapshotCandidateList{
-		MinScore: minScore,
-		Items:    []models.ResearchSnapshotCandidate{},
-	}
-	if minScore <= 0 {
-		minScore = GetCandidatePoolScoreThreshold()
-		out.MinScore = minScore
-	}
+	out := newResearchSnapshotCandidateList(minScore)
 	if db.Dao == nil {
 		out.Message = "数据库未初始化"
 		return out
@@ -113,13 +115,71 @@ func ListResearchCandidatesFromLatestSnapshot(minScore float64) *models.Research
 
 	var snap models.SignalScanSnapshot
 	err := db.Dao.Where("status = ?", "done").
+		Where(researchCandidateSnapshotScopeClause, models.SignalScanScopeAll, researchCandidatePurposeScope).
 		Order("created_at DESC").
 		First(&snap).Error
 	if err != nil || snap.ID == 0 {
-		out.Message = "暂无可用信号快照（status=done）"
+		out.Message = "暂无可用研究候选信号快照（status=done，已忽略 universe）"
+		return out
+	}
+	return fillResearchSnapshotCandidateList(out, &snap)
+}
+
+// ListResearchCandidatesForTradeDate 从指定交易日最新 status=done 快照提取候选（只读）。
+// 不落库、不改 BuildCandidatePool / 扫描逻辑。tradeDate 为空时等价于 FromLatestSnapshot。
+// Phase16.15-E：同 FromLatestSnapshot，按 scope 过滤，避免空 universe 覆盖全市场快照。
+func ListResearchCandidatesForTradeDate(tradeDate string, minScore float64) *models.ResearchSnapshotCandidateList {
+	tradeDate = strings.TrimSpace(tradeDate)
+	if tradeDate == "" {
+		return ListResearchCandidatesFromLatestSnapshot(minScore)
+	}
+	out := newResearchSnapshotCandidateList(minScore)
+	if db.Dao == nil {
+		out.Message = "数据库未初始化"
+		return out
+	}
+	if !db.Dao.Migrator().HasTable(&models.SignalScanSnapshot{}) {
+		out.Message = "尚无信号快照表，请先生成盘后快照"
 		return out
 	}
 
+	var snap models.SignalScanSnapshot
+	err := db.Dao.Where("status = ? AND trade_date = ?", "done", tradeDate).
+		Where(researchCandidateSnapshotScopeClause, models.SignalScanScopeAll, researchCandidatePurposeScope).
+		Order("created_at DESC").
+		First(&snap).Error
+	if err != nil || snap.ID == 0 {
+		out.TradeDate = tradeDate
+		out.Message = "指定交易日暂无可用研究候选信号快照（status=done，已忽略 universe）"
+		return out
+	}
+	return fillResearchSnapshotCandidateList(out, &snap)
+}
+
+func newResearchSnapshotCandidateList(minScore float64) *models.ResearchSnapshotCandidateList {
+	out := &models.ResearchSnapshotCandidateList{
+		MinScore: minScore,
+		Items:    []models.ResearchSnapshotCandidate{},
+	}
+	if minScore <= 0 {
+		out.MinScore = GetCandidatePoolScoreThreshold()
+	}
+	return out
+}
+
+func fillResearchSnapshotCandidateList(out *models.ResearchSnapshotCandidateList, snap *models.SignalScanSnapshot) *models.ResearchSnapshotCandidateList {
+	if out == nil {
+		out = newResearchSnapshotCandidateList(0)
+	}
+	minScore := out.MinScore
+	if minScore <= 0 {
+		minScore = GetCandidatePoolScoreThreshold()
+		out.MinScore = minScore
+	}
+	if snap == nil {
+		out.Message = "暂无可用信号快照（status=done）"
+		return out
+	}
 	out.SnapshotID = snap.ID
 	out.TradeDate = snap.TradeDate
 	out.Session = snap.Session
@@ -128,7 +188,6 @@ func ListResearchCandidatesFromLatestSnapshot(minScore float64) *models.Research
 	if !snap.CreatedAt.IsZero() {
 		out.SnapshotTime = snap.CreatedAt.UTC().Format(time.RFC3339)
 	}
-
 	items := buildCandidatesFromResultJSON(snap.ResultJSON, minScore)
 	out.Items = items
 	out.ItemCount = len(items)

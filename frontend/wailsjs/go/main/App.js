@@ -10,6 +10,14 @@ export function AbortSummaryStockNews() {
   return window['go']['main']['App']['AbortSummaryStockNews']();
 }
 
+export function AccruePaperMarginInterest(arg1, arg2) {
+  return window['go']['main']['App']['AccruePaperMarginInterest'](arg1, arg2);
+}
+
+export function ActivateStrategyRevision(arg1, arg2) {
+  return window['go']['main']['App']['ActivateStrategyRevision'](arg1, arg2);
+}
+
 export function AddAllStockInfo(arg1) {
   return window['go']['main']['App']['AddAllStockInfo'](arg1);
 }
@@ -38,10 +46,6 @@ export function AddTradingRecord(arg1) {
   return window['go']['main']['App']['AddTradingRecord'](arg1);
 }
 
-export function AccruePaperMarginInterest(arg1, arg2) {
-  return window['go']['main']['App']['AccruePaperMarginInterest'](arg1, arg2);
-}
-
 export function AnalyzeSentiment(arg1) {
   return window['go']['main']['App']['AnalyzeSentiment'](arg1);
 }
@@ -50,12 +54,28 @@ export function AnalyzeSentimentWithFreqWeight(arg1) {
   return window['go']['main']['App']['AnalyzeSentimentWithFreqWeight'](arg1);
 }
 
+export function ApproveStrategyIntent(arg1) {
+  return window['go']['main']['App']['ApproveStrategyIntent'](arg1);
+}
+
 export function BatchDeleteAIResponseResult(arg1) {
   return window['go']['main']['App']['BatchDeleteAIResponseResult'](arg1);
 }
 
 export function BatchDeleteAllStockInfo(arg1) {
   return window['go']['main']['App']['BatchDeleteAllStockInfo'](arg1);
+}
+
+export function BuildAdvancedRiskReport(arg1, arg2) {
+  return window['go']['main']['App']['BuildAdvancedRiskReport'](arg1, arg2);
+}
+
+export function BuildCandidatePool(arg1) {
+  return window['go']['main']['App']['BuildCandidatePool'](arg1);
+}
+
+export function BuildTradePlan(arg1) {
+  return window['go']['main']['App']['BuildTradePlan'](arg1);
 }
 
 export function CalculateNextRunTime(arg1) {
@@ -74,6 +94,10 @@ export function CheckFrequentTrading(arg1) {
   return window['go']['main']['App']['CheckFrequentTrading'](arg1);
 }
 
+export function CheckLocalUpdate() {
+  return window['go']['main']['App']['CheckLocalUpdate']();
+}
+
 export function CheckSponsorCode(arg1) {
   return window['go']['main']['App']['CheckSponsorCode'](arg1);
 }
@@ -90,6 +114,10 @@ export function ClsCalendar() {
   return window['go']['main']['App']['ClsCalendar']();
 }
 
+export function ConfigurePaperMarginAccount(arg1) {
+  return window['go']['main']['App']['ConfigurePaperMarginAccount'](arg1);
+}
+
 export function ConfirmBrokerOrderPlan(arg1, arg2, arg3, arg4, arg5, arg6) {
   return window['go']['main']['App']['ConfirmBrokerOrderPlan'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
@@ -98,16 +126,20 @@ export function ConfirmTradingRecordDraft(arg1) {
   return window['go']['main']['App']['ConfirmTradingRecordDraft'](arg1);
 }
 
-export function ConfigurePaperMarginAccount(arg1) {
-  return window['go']['main']['App']['ConfigurePaperMarginAccount'](arg1);
-}
-
 export function CreateCronTask(arg1) {
   return window['go']['main']['App']['CreateCronTask'](arg1);
 }
 
 export function CreateStockStrategy(arg1) {
   return window['go']['main']['App']['CreateStockStrategy'](arg1);
+}
+
+export function CreateStrategyIntentDraft(arg1) {
+  return window['go']['main']['App']['CreateStrategyIntentDraft'](arg1);
+}
+
+export function CreateStrategySchemaDraft(arg1) {
+  return window['go']['main']['App']['CreateStrategySchemaDraft'](arg1);
 }
 
 export function DelPrompt(arg1) {
@@ -146,6 +178,18 @@ export function DeleteTradingRecord(arg1) {
   return window['go']['main']['App']['DeleteTradingRecord'](arg1);
 }
 
+export function DevGetPaperSimAccount() {
+  return window['go']['main']['App']['DevGetPaperSimAccount']();
+}
+
+export function DevResetPaperSimAccount(arg1) {
+  return window['go']['main']['App']['DevResetPaperSimAccount'](arg1);
+}
+
+export function DevSetPaperSimCash(arg1) {
+  return window['go']['main']['App']['DevSetPaperSimCash'](arg1);
+}
+
 export function EMDictCode(arg1) {
   return window['go']['main']['App']['EMDictCode'](arg1);
 }
@@ -158,8 +202,44 @@ export function ExecuteCronTaskNow(arg1) {
   return window['go']['main']['App']['ExecuteCronTaskNow'](arg1);
 }
 
+export function ExplainStrategyPlanItem(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['ExplainStrategyPlanItem'](arg1, arg2, arg3, arg4);
+}
+
+export function ExplainStrategySnapshot(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ExplainStrategySnapshot'](arg1, arg2, arg3);
+}
+
 export function ExportConfig() {
   return window['go']['main']['App']['ExportConfig']();
+}
+
+export function ExportDailyPilotReport() {
+  return window['go']['main']['App']['ExportDailyPilotReport']();
+}
+
+export function ExportDiagnosticBundle() {
+  return window['go']['main']['App']['ExportDiagnosticBundle']();
+}
+
+export function ExportDiagnosticJSON() {
+  return window['go']['main']['App']['ExportDiagnosticJSON']();
+}
+
+export function FeatureGateAllow(arg1, arg2) {
+  return window['go']['main']['App']['FeatureGateAllow'](arg1, arg2);
+}
+
+export function FeatureGateCanAccess(arg1, arg2) {
+  return window['go']['main']['App']['FeatureGateCanAccess'](arg1, arg2);
+}
+
+export function FeatureGateEvaluateAll(arg1) {
+  return window['go']['main']['App']['FeatureGateEvaluateAll'](arg1);
+}
+
+export function FeatureGateKnownFeatures() {
+  return window['go']['main']['App']['FeatureGateKnownFeatures']();
 }
 
 export function FetchAiModels(arg1, arg2) {
@@ -242,6 +322,18 @@ export function GetCronTaskTypes() {
   return window['go']['main']['App']['GetCronTaskTypes']();
 }
 
+export function GetCurrentMarketState() {
+  return window['go']['main']['App']['GetCurrentMarketState']();
+}
+
+export function GetDailyTradingStatus() {
+  return window['go']['main']['App']['GetDailyTradingStatus']();
+}
+
+export function GetDiagnosticInfo() {
+  return window['go']['main']['App']['GetDiagnosticInfo']();
+}
+
 export function GetEffectiveSponsorVip() {
   return window['go']['main']['App']['GetEffectiveSponsorVip']();
 }
@@ -298,6 +390,14 @@ export function GetLatestSignalScanTask() {
   return window['go']['main']['App']['GetLatestSignalScanTask']();
 }
 
+export function GetLoadingProgress() {
+  return window['go']['main']['App']['GetLoadingProgress']();
+}
+
+export function GetMarketSessionSnapshot() {
+  return window['go']['main']['App']['GetMarketSessionSnapshot']();
+}
+
 export function GetMoneyRankSina(arg1) {
   return window['go']['main']['App']['GetMoneyRankSina'](arg1);
 }
@@ -310,12 +410,36 @@ export function GetPaperMarginSnapshot(arg1, arg2) {
   return window['go']['main']['App']['GetPaperMarginSnapshot'](arg1, arg2);
 }
 
+export function GetPaperOpenBuyConfig() {
+  return window['go']['main']['App']['GetPaperOpenBuyConfig']();
+}
+
+export function GetPaperOpenBuyStatus() {
+  return window['go']['main']['App']['GetPaperOpenBuyStatus']();
+}
+
+export function GetPaperOrderHealth(arg1) {
+  return window['go']['main']['App']['GetPaperOrderHealth'](arg1);
+}
+
 export function GetPromptTemplateList(arg1) {
   return window['go']['main']['App']['GetPromptTemplateList'](arg1);
 }
 
 export function GetPromptTemplates(arg1, arg2) {
   return window['go']['main']['App']['GetPromptTemplates'](arg1, arg2);
+}
+
+export function GetReleaseIdentity() {
+  return window['go']['main']['App']['GetReleaseIdentity']();
+}
+
+export function GetResearchCandidate(arg1) {
+  return window['go']['main']['App']['GetResearchCandidate'](arg1);
+}
+
+export function GetResearchExplain(arg1) {
+  return window['go']['main']['App']['GetResearchExplain'](arg1);
 }
 
 export function GetSignalScanSnapshotDetail(arg1) {
@@ -390,12 +514,40 @@ export function GetStockStrategySummary(arg1) {
   return window['go']['main']['App']['GetStockStrategySummary'](arg1);
 }
 
+export function GetStrategyIntent(arg1) {
+  return window['go']['main']['App']['GetStrategyIntent'](arg1);
+}
+
+export function GetStrategyPerformance() {
+  return window['go']['main']['App']['GetStrategyPerformance']();
+}
+
+export function GetStrategyRevision(arg1, arg2) {
+  return window['go']['main']['App']['GetStrategyRevision'](arg1, arg2);
+}
+
+export function GetStrategySchema(arg1) {
+  return window['go']['main']['App']['GetStrategySchema'](arg1);
+}
+
 export function GetTelegraphList(arg1) {
   return window['go']['main']['App']['GetTelegraphList'](arg1);
 }
 
 export function GetTimezone() {
   return window['go']['main']['App']['GetTimezone']();
+}
+
+export function GetTodayTradeAnalysis() {
+  return window['go']['main']['App']['GetTodayTradeAnalysis']();
+}
+
+export function GetTodayTradePlan() {
+  return window['go']['main']['App']['GetTodayTradePlan']();
+}
+
+export function GetTradePlanAnalysis(arg1) {
+  return window['go']['main']['App']['GetTradePlanAnalysis'](arg1);
 }
 
 export function GetTradingRecordById(arg1) {
@@ -446,12 +598,40 @@ export function IndustryResearchReport(arg1) {
   return window['go']['main']['App']['IndustryResearchReport'](arg1);
 }
 
+export function InitAfterClosePlanJobs() {
+  return window['go']['main']['App']['InitAfterClosePlanJobs']();
+}
+
 export function InitCronTasks() {
   return window['go']['main']['App']['InitCronTasks']();
 }
 
+export function InitJobRuntimeReliability() {
+  return window['go']['main']['App']['InitJobRuntimeReliability']();
+}
+
+export function InitMorningPreparationJobs() {
+  return window['go']['main']['App']['InitMorningPreparationJobs']();
+}
+
+export function InitPaperMarginDayJobs() {
+  return window['go']['main']['App']['InitPaperMarginDayJobs']();
+}
+
+export function InitPaperOpenBuyJobs() {
+  return window['go']['main']['App']['InitPaperOpenBuyJobs']();
+}
+
+export function InitPaperTradingJobs() {
+  return window['go']['main']['App']['InitPaperTradingJobs']();
+}
+
 export function InitStockStrategies() {
   return window['go']['main']['App']['InitStockStrategies']();
+}
+
+export function InitTradingAutomationJobs() {
+  return window['go']['main']['App']['InitTradingAutomationJobs']();
 }
 
 export function InitializeGroupSort() {
@@ -466,12 +646,56 @@ export function IsSignalScanRunning() {
   return window['go']['main']['App']['IsSignalScanRunning']();
 }
 
+export function IsWatchlistPricePollingPaused() {
+  return window['go']['main']['App']['IsWatchlistPricePollingPaused']();
+}
+
+export function JobRuntimeDetectMissed() {
+  return window['go']['main']['App']['JobRuntimeDetectMissed']();
+}
+
+export function JobRuntimeList() {
+  return window['go']['main']['App']['JobRuntimeList']();
+}
+
+export function JobRuntimeRecords(arg1, arg2) {
+  return window['go']['main']['App']['JobRuntimeRecords'](arg1, arg2);
+}
+
+export function ListResearchCandidates(arg1, arg2) {
+  return window['go']['main']['App']['ListResearchCandidates'](arg1, arg2);
+}
+
+export function ListResearchSnapshotCandidates(arg1) {
+  return window['go']['main']['App']['ListResearchSnapshotCandidates'](arg1);
+}
+
 export function ListSignalScanSnapshots(arg1) {
   return window['go']['main']['App']['ListSignalScanSnapshots'](arg1);
 }
 
+export function ListStrategyIntents() {
+  return window['go']['main']['App']['ListStrategyIntents']();
+}
+
+export function ListStrategyRevisions(arg1) {
+  return window['go']['main']['App']['ListStrategyRevisions'](arg1);
+}
+
+export function ListStrategySchemas() {
+  return window['go']['main']['App']['ListStrategySchemas']();
+}
+
 export function LongTigerRank(arg1) {
   return window['go']['main']['App']['LongTigerRank'](arg1);
+}
+
+export function MarketCanExecute() {
+  return window['go']['main']['App']['MarketCanExecute']();
+}
+
+export function MarketCanGeneratePlan() {
+  return window['go']['main']['App']['MarketCanGeneratePlan']();
 }
 
 export function NewChatStream(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
@@ -490,8 +714,16 @@ export function ParseSignalScanSnapshotPayload(arg1) {
   return window['go']['main']['App']['ParseSignalScanSnapshotPayload'](arg1);
 }
 
+export function PersistPhase9C3ObservationSnapshot(arg1, arg2, arg3) {
+  return window['go']['main']['App']['PersistPhase9C3ObservationSnapshot'](arg1, arg2, arg3);
+}
+
 export function ReFleshTelegraphList(arg1) {
   return window['go']['main']['App']['ReFleshTelegraphList'](arg1);
+}
+
+export function RefreshWatchlistPricesNow() {
+  return window['go']['main']['App']['RefreshWatchlistPricesNow']();
 }
 
 export function RemoveGroup(arg1) {
@@ -506,8 +738,20 @@ export function ResetPaperAccount(arg1) {
   return window['go']['main']['App']['ResetPaperAccount'](arg1);
 }
 
+export function RunDailyCandidateAndPlan(arg1) {
+  return window['go']['main']['App']['RunDailyCandidateAndPlan'](arg1);
+}
+
 export function RunPaperMarginRiskScan(arg1, arg2) {
   return window['go']['main']['App']['RunPaperMarginRiskScan'](arg1, arg2);
+}
+
+export function RunPaperOpenBuyOnce() {
+  return window['go']['main']['App']['RunPaperOpenBuyOnce']();
+}
+
+export function RunPaperOpenPrepare() {
+  return window['go']['main']['App']['RunPaperOpenPrepare']();
 }
 
 export function RunSignalScanSnapshot(arg1, arg2, arg3, arg4) {
@@ -542,6 +786,10 @@ export function SaveWordFile(arg1, arg2) {
   return window['go']['main']['App']['SaveWordFile'](arg1, arg2);
 }
 
+export function ScanPaperMarginRisk(arg1, arg2) {
+  return window['go']['main']['App']['ScanPaperMarginRisk'](arg1, arg2);
+}
+
 export function SearchCronTasks(arg1) {
   return window['go']['main']['App']['SearchCronTasks'](arg1);
 }
@@ -566,6 +814,14 @@ export function SetCostPriceAndVolume(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetCostPriceAndVolume'](arg1, arg2, arg3);
 }
 
+export function SetPaperMarkPrice(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SetPaperMarkPrice'](arg1, arg2, arg3);
+}
+
+export function SetPaperOpenBuyConfig(arg1) {
+  return window['go']['main']['App']['SetPaperOpenBuyConfig'](arg1);
+}
+
 export function SetStockAICron(arg1, arg2) {
   return window['go']['main']['App']['SetStockAICron'](arg1, arg2);
 }
@@ -578,12 +834,12 @@ export function SetTradingPrice(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['SetTradingPrice'](arg1, arg2, arg3, arg4, arg5);
 }
 
-export function SettlePaperSellable(arg1) {
-  return window['go']['main']['App']['SettlePaperSellable'](arg1);
+export function SetWatchlistPricePollingPaused(arg1) {
+  return window['go']['main']['App']['SetWatchlistPricePollingPaused'](arg1);
 }
 
-export function SetPaperMarkPrice(arg1, arg2, arg3) {
-  return window['go']['main']['App']['SetPaperMarkPrice'](arg1, arg2, arg3);
+export function SettlePaperSellable(arg1) {
+  return window['go']['main']['App']['SettlePaperSellable'](arg1);
 }
 
 export function ShareAnalysis(arg1, arg2) {
@@ -606,12 +862,20 @@ export function StockResearchReport(arg1) {
   return window['go']['main']['App']['StockResearchReport'](arg1);
 }
 
+export function SubmitPaperMarginOrder(arg1) {
+  return window['go']['main']['App']['SubmitPaperMarginOrder'](arg1);
+}
+
 export function SubmitPaperOrder(arg1) {
   return window['go']['main']['App']['SubmitPaperOrder'](arg1);
 }
 
-export function SubmitPaperMarginOrder(arg1) {
-  return window['go']['main']['App']['SubmitPaperMarginOrder'](arg1);
+export function SubmitStrategyIntent(arg1) {
+  return window['go']['main']['App']['SubmitStrategyIntent'](arg1);
+}
+
+export function SubmitStrategyRevision(arg1, arg2) {
+  return window['go']['main']['App']['SubmitStrategyRevision'](arg1, arg2);
 }
 
 export function SummaryStockNews(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
@@ -646,8 +910,24 @@ export function UpdatePromptTemplate(arg1) {
   return window['go']['main']['App']['UpdatePromptTemplate'](arg1);
 }
 
+export function UpdateResearchCandidate(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
+  return window['go']['main']['App']['UpdateResearchCandidate'](arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+}
+
+export function UpdateResearchExplain(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10) {
+  return window['go']['main']['App']['UpdateResearchExplain'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10);
+}
+
 export function UpdateStockStrategy(arg1) {
   return window['go']['main']['App']['UpdateStockStrategy'](arg1);
+}
+
+export function UpdateStrategyIntentDraft(arg1, arg2) {
+  return window['go']['main']['App']['UpdateStrategyIntentDraft'](arg1, arg2);
+}
+
+export function UpdateStrategySchemaDraft(arg1, arg2, arg3) {
+  return window['go']['main']['App']['UpdateStrategySchemaDraft'](arg1, arg2, arg3);
 }
 
 export function UpdateTradingRecord(arg1) {

@@ -8,6 +8,7 @@ import (
 	"go-stock/backend/logger"
 	"go-stock/backend/models"
 	"go-stock/backend/readiness"
+	"go-stock/backend/tradingrule"
 )
 
 // MorningIntentMaterializeOpts configures the Phase10-A.1 orchestrator.
@@ -213,11 +214,21 @@ func countFullyMaterializedItems(plan *models.TradePlan) int {
 			continue
 		}
 		if strings.TrimSpace(it.IntentStatus) == morningIntentStatusPriced &&
-			it.LimitPrice > 0 && it.TargetVolume >= morningLotSize {
+			it.LimitPrice > 0 && intentVolumeMeetsLot(it.StockCode, it.TargetVolume) {
 			n++
 		}
 	}
 	return n
+}
+
+// intentVolumeMeetsLot: Flag OFF → morningLotSize (100); Flag ON → QuantityPolicy Validate.
+// Does not change calcMorningLotVolume / materialize sizing.
+func intentVolumeMeetsLot(stockCode string, volume int64) bool {
+	if !tradingrule.EnableQuantityPolicy() {
+		return volume >= morningLotSize
+	}
+	meta := tradingrule.MetaFromStockCode(stockCode)
+	return tradingrule.ValidateBuyQuantity(meta, volume).Accepted
 }
 
 func priceCount(r *MorningPriceMaterializeResult) int {

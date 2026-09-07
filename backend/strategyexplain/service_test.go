@@ -128,7 +128,7 @@ func TestExplain_MissingSnapshot(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, strategyexplain.StatusMissing, out.Status)
-	require.Contains(t, out.Headline, "未找到")
+	require.Contains(t, out.Headline, "未保存策略快照")
 }
 
 func TestExplain_ByPlanItemReference(t *testing.T) {

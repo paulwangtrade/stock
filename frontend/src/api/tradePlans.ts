@@ -24,7 +24,40 @@ export type UpcomingTradePlanFreeze = {
   approved_by?: string
 }
 
+export type UpcomingTradePlanWindow = {
+  status?: string
+  reason?: string
+  reason_label?: string
+  open_window_start?: string
+  open_window_end?: string
+  freeze_deadline?: string
+}
+
+export type UpcomingTradePlanMorning = {
+  status?: string
+  materialization_status?: string
+  freeze_status?: string
+  deadline_status?: string
+  reason?: string
+  reason_label?: string
+}
+
+export type UpcomingTradePlanAutomation = {
+  mode?: string
+  materialization?: string
+  approval?: string
+  freeze?: string
+  materialization_reason?: string
+  approval_reason?: string
+  freeze_reason?: string
+  materialize_time?: string
+  approval_time?: string
+  freeze_time?: string
+  freeze_deadline?: string
+}
+
 export type UpcomingTradePlanItem = {
+  id?: number
   stock_code: string
   stock_name: string
   side: string
@@ -35,6 +68,18 @@ export type UpcomingTradePlanItem = {
   risk_code?: string
   risk_message?: string
   strategy_name?: string
+  /** Execution Preview（只读；AfterClose 时 limit/volume 可为 0） */
+  ref_price: number
+  limit_price: number
+  target_volume: number
+  entry_rule?: string
+  intent_status?: string
+  /** T-sell / exit_review sell intent reason (from trade_plan_items.reason). */
+  reason?: string
+  /** Execution write-back (when present on GET plan). */
+  filled_volume?: number
+  filled_price?: number
+  filled_at?: string
 }
 
 export type UpcomingTradePlan = {
@@ -47,6 +92,9 @@ export type UpcomingTradePlan = {
   pool_id: number
   risk: UpcomingTradePlanRisk
   freeze: UpcomingTradePlanFreeze
+  window?: UpcomingTradePlanWindow
+  morning?: UpcomingTradePlanMorning
+  automation?: UpcomingTradePlanAutomation
   items: UpcomingTradePlanItem[]
 }
 
@@ -258,12 +306,15 @@ function normalizeUpcomingPlanFromBody(planRaw: Record<string, unknown> | null |
   if (!planRaw || typeof planRaw !== 'object') return null
   const risk = planRaw.risk as Record<string, unknown> | undefined
   const freeze = planRaw.freeze as Record<string, unknown> | undefined
+  const windowRaw = planRaw.window as Record<string, unknown> | undefined
+  const morningRaw = planRaw.morning as Record<string, unknown> | undefined
+  const automationRaw = planRaw.automation as Record<string, unknown> | undefined
   return {
     id: Number(planRaw.id) || 0,
     trade_date: String(planRaw.trade_date || ''),
     plan_version: Number(planRaw.plan_version) || 0,
     status: String(planRaw.status || ''),
-    source_session: String(planRaw.source_session || ''),
+    source_session: String(planRaw.source_session || planRaw.sourceSession || ''),
     generated_at: planRaw.generated_at ? String(planRaw.generated_at) : '',
     pool_id: Number(planRaw.pool_id) || 0,
     risk: {
@@ -278,8 +329,48 @@ function normalizeUpcomingPlanFromBody(planRaw: Record<string, unknown> | null |
       approved_at: freeze?.approved_at ? String(freeze.approved_at) : '',
       approved_by: freeze?.approved_by ? String(freeze.approved_by) : '',
     },
+    window: windowRaw
+      ? {
+          status: windowRaw.status ? String(windowRaw.status) : '',
+          reason: windowRaw.reason ? String(windowRaw.reason) : '',
+          reason_label: windowRaw.reason_label ? String(windowRaw.reason_label) : '',
+          open_window_start: windowRaw.open_window_start ? String(windowRaw.open_window_start) : '',
+          open_window_end: windowRaw.open_window_end ? String(windowRaw.open_window_end) : '',
+          freeze_deadline: windowRaw.freeze_deadline ? String(windowRaw.freeze_deadline) : '',
+        }
+      : undefined,
+    morning: morningRaw
+      ? {
+          status: morningRaw.status ? String(morningRaw.status) : '',
+          materialization_status: morningRaw.materialization_status
+            ? String(morningRaw.materialization_status)
+            : '',
+          freeze_status: morningRaw.freeze_status ? String(morningRaw.freeze_status) : '',
+          deadline_status: morningRaw.deadline_status ? String(morningRaw.deadline_status) : '',
+          reason: morningRaw.reason ? String(morningRaw.reason) : '',
+          reason_label: morningRaw.reason_label ? String(morningRaw.reason_label) : '',
+        }
+      : undefined,
+    automation: automationRaw
+      ? {
+          mode: automationRaw.mode ? String(automationRaw.mode) : 'MANUAL',
+          materialization: automationRaw.materialization ? String(automationRaw.materialization) : '',
+          approval: automationRaw.approval ? String(automationRaw.approval) : '',
+          freeze: automationRaw.freeze ? String(automationRaw.freeze) : '',
+          materialization_reason: automationRaw.materialization_reason
+            ? String(automationRaw.materialization_reason)
+            : '',
+          approval_reason: automationRaw.approval_reason ? String(automationRaw.approval_reason) : '',
+          freeze_reason: automationRaw.freeze_reason ? String(automationRaw.freeze_reason) : '',
+          materialize_time: automationRaw.materialize_time ? String(automationRaw.materialize_time) : '',
+          approval_time: automationRaw.approval_time ? String(automationRaw.approval_time) : '',
+          freeze_time: automationRaw.freeze_time ? String(automationRaw.freeze_time) : '',
+          freeze_deadline: automationRaw.freeze_deadline ? String(automationRaw.freeze_deadline) : '',
+        }
+      : undefined,
     items: Array.isArray(planRaw.items)
       ? planRaw.items.map((it: Record<string, unknown>) => ({
+          id: Number(it.id) || 0,
           stock_code: String(it.stock_code || ''),
           stock_name: String(it.stock_name || ''),
           side: String(it.side || ''),
@@ -290,6 +381,15 @@ function normalizeUpcomingPlanFromBody(planRaw: Record<string, unknown> | null |
           risk_code: it.risk_code ? String(it.risk_code) : '',
           risk_message: it.risk_message ? String(it.risk_message) : '',
           strategy_name: it.strategy_name ? String(it.strategy_name) : '',
+          ref_price: Number(it.ref_price) || 0,
+          limit_price: Number(it.limit_price) || 0,
+          target_volume: Number(it.target_volume) || 0,
+          entry_rule: it.entry_rule ? String(it.entry_rule) : '',
+          intent_status: it.intent_status ? String(it.intent_status) : '',
+          reason: it.reason ? String(it.reason) : '',
+          filled_volume: Number(it.filled_volume ?? it.filledVolume) || 0,
+          filled_price: Number(it.filled_price ?? it.filledPrice) || 0,
+          filled_at: it.filled_at ?? it.filledAt ? String(it.filled_at ?? it.filledAt) : '',
         }))
       : [],
   }
@@ -402,6 +502,64 @@ export async function getTradePlanById(planId: number): Promise<UpcomingTradePla
   return normalizeUpcomingTradePlanResponse(body)
 }
 
+/** Same-day multi-origin candidate (Phase16.26-B1.2.1). */
+export type SameDayCandidate = {
+  id: number
+  trade_date: string
+  status: string
+  source: string
+  source_session: string
+  plan_version: number
+  side?: string
+  is_frozen?: boolean
+  created_at?: string
+}
+
+export type SameDayCandidatesResponse = {
+  code: number
+  ok: boolean
+  trade_date: string
+  count: number
+  candidates: SameDayCandidate[]
+  message?: string
+}
+
+/** GET /api/tradeplans/same-day-candidates?trade_date= — read-only list; does not change upcoming. */
+export async function getSameDayCandidates(tradeDate?: string): Promise<SameDayCandidatesResponse> {
+  const q =
+    tradeDate != null && String(tradeDate).trim() !== ''
+      ? `?trade_date=${encodeURIComponent(String(tradeDate).trim())}`
+      : ''
+  const res = await fetch(`/api/tradeplans/same-day-candidates${q}`)
+  if (!res.ok) {
+    throw new Error(`同日计划列表请求失败: HTTP ${res.status}`)
+  }
+  const body = (await res.json()) as Record<string, unknown>
+  const rawList = Array.isArray(body.candidates) ? body.candidates : []
+  const candidates: SameDayCandidate[] = rawList.map((row) => {
+    const r = (row || {}) as Record<string, unknown>
+    return {
+      id: Math.trunc(Number(r.id) || 0),
+      trade_date: String(r.trade_date || r.tradeDate || ''),
+      status: String(r.status || ''),
+      source: String(r.source || ''),
+      source_session: String(r.source_session || r.sourceSession || ''),
+      plan_version: Math.trunc(Number(r.plan_version ?? r.planVersion) || 0),
+      side: r.side ? String(r.side) : undefined,
+      is_frozen: Boolean(r.is_frozen ?? r.isFrozen),
+      created_at: r.created_at ? String(r.created_at) : r.createdAt ? String(r.createdAt) : undefined,
+    }
+  })
+  return {
+    code: Number(body.code ?? -1),
+    ok: !!body.ok,
+    trade_date: String(body.trade_date || body.tradeDate || ''),
+    count: Number(body.count ?? candidates.length) || candidates.length,
+    candidates,
+    message: body.message ? String(body.message) : undefined,
+  }
+}
+
 function mapReadinessFinding(raw: Record<string, unknown>): ReadinessFinding {
   return {
     rule_code: String(raw.rule_code || ''),
@@ -464,5 +622,206 @@ export async function getTradePlanReadiness(opts?: {
     plan_id: body?.plan_id != null ? Number(body.plan_id) || undefined : undefined,
     readiness,
     message: body?.message ? String(body.message) : '',
+  }
+}
+
+/** GET /api/tradeplans/{id}/lifecycle — read-only display timeline (does not mutate DB status). */
+export type TradePlanLifecycleView = {
+  planId: number
+  tradeDate: string
+  dbStatus: string
+  displayStatus: string
+  planCreatedAt: string | null
+  approvedAt: string | null
+  freezeAt: string | null
+  executionStartedAt: string | null
+  firstFillAt: string | null
+  dataSourceNote: string
+}
+
+export async function getTradePlanLifecycle(planId: number): Promise<{
+  code: number
+  ok: boolean
+  lifecycle: TradePlanLifecycleView | null
+  message?: string
+}> {
+  const id = Math.trunc(Number(planId) || 0)
+  const res = await fetch(`/api/tradeplans/${id}/lifecycle`)
+  if (!res.ok) throw new Error(`生命周期请求失败: HTTP ${res.status}`)
+  const body = await res.json()
+  const raw = body?.lifecycle || body?.Lifecycle || null
+  const ts = (v: unknown) => (v == null || v === '' ? null : String(v))
+  return {
+    code: Number(body?.code ?? -1),
+    ok: !!body?.ok,
+    message: body?.message ? String(body.message) : undefined,
+    lifecycle: raw
+      ? {
+          planId: Number(raw.plan_id ?? raw.planId) || id,
+          tradeDate: String((raw.trade_date ?? raw.tradeDate) || ''),
+          dbStatus: String((raw.db_status ?? raw.dbStatus) || ''),
+          displayStatus: String((raw.display_status ?? raw.displayStatus) || 'DRAFT'),
+          planCreatedAt: ts(raw.plan_created_at ?? raw.planCreatedAt),
+          approvedAt: ts(raw.approved_at ?? raw.approvedAt),
+          freezeAt: ts(raw.freeze_at ?? raw.freezeAt),
+          executionStartedAt: ts(raw.execution_started_at ?? raw.executionStartedAt),
+          firstFillAt: ts(raw.first_fill_at ?? raw.firstFillAt),
+          dataSourceNote: String((raw.data_source_note ?? raw.dataSourceNote) || ''),
+        }
+      : null,
+  }
+}
+
+/** GET /api/tradeplans/{id}/execution-readiness — E.5 账户语境执行准备观察（只读）. */
+export type ExecutionReadinessConflict = {
+  stockCode: string
+  stockName: string
+  side: string
+  quantity: number
+  message: string
+}
+
+export type ExecutionReadinessIssue = {
+  code: string
+  severity: string
+  message: string
+}
+
+export type ExecutionReadinessWeight = {
+  stockCode: string
+  stockName: string
+  requiredCash: number
+  projectedWeight: number
+  weightPct: number
+}
+
+export type TradePlanExecutionReadinessView = {
+  status: string
+  cashEnough: boolean
+  availableCash: number
+  requiredCash: number
+  totalEquity: number
+  concentration: string
+  conflicts: ExecutionReadinessConflict[]
+  issues: ExecutionReadinessIssue[]
+  afterExecution: ExecutionReadinessWeight[]
+}
+
+export type TradePlanExecutionReadinessResponse = {
+  code: number
+  ok: boolean
+  message?: string
+} & TradePlanExecutionReadinessView
+
+function mapExecutionReadinessConflict(raw: Record<string, unknown>): ExecutionReadinessConflict {
+  return {
+    stockCode: String(raw.stock_code ?? raw.stockCode ?? ''),
+    stockName: String(raw.stock_name ?? raw.stockName ?? ''),
+    side: String(raw.side ?? ''),
+    quantity: Number(raw.quantity ?? 0) || 0,
+    message: String(raw.message ?? ''),
+  }
+}
+
+function mapExecutionReadinessIssue(raw: Record<string, unknown>): ExecutionReadinessIssue {
+  return {
+    code: String(raw.code ?? ''),
+    severity: String(raw.severity ?? ''),
+    message: String(raw.message ?? ''),
+  }
+}
+
+function mapExecutionReadinessWeight(raw: Record<string, unknown>): ExecutionReadinessWeight {
+  return {
+    stockCode: String(raw.stock_code ?? raw.stockCode ?? ''),
+    stockName: String(raw.stock_name ?? raw.stockName ?? ''),
+    requiredCash: Number(raw.required_cash ?? raw.requiredCash ?? 0) || 0,
+    projectedWeight: Number(raw.projected_weight ?? raw.projectedWeight ?? 0) || 0,
+    weightPct: Number(raw.weight_pct ?? raw.weightPct ?? 0) || 0,
+  }
+}
+
+/** GET /api/tradeplans/{id}/origin — G2.1 read-only plan provenance (Phase14-G2.2 UI). */
+export type TradePlanOriginItem = {
+  stock_code: string
+  plan_id: string
+  signal_time: string
+  signal_price: string
+  signal_tag: string
+  source_reason: string
+  selection_reason: string
+  strategy_name: string
+  score: string
+}
+
+export type TradePlanOriginResponse = {
+  code: number
+  ok: boolean
+  plan_id?: number
+  items: TradePlanOriginItem[]
+  message?: string
+}
+
+function mapTradePlanOriginItem(raw: Record<string, unknown>): TradePlanOriginItem {
+  return {
+    stock_code: String(raw.stock_code ?? raw.stockCode ?? ''),
+    plan_id: String(raw.plan_id ?? raw.planId ?? ''),
+    signal_time: String(raw.signal_time ?? raw.signalTime ?? ''),
+    signal_price: String(raw.signal_price ?? raw.signalPrice ?? ''),
+    signal_tag: String(raw.signal_tag ?? raw.signalTag ?? ''),
+    source_reason: String(raw.source_reason ?? raw.sourceReason ?? ''),
+    selection_reason: String(raw.selection_reason ?? raw.selectionReason ?? ''),
+    strategy_name: String(raw.strategy_name ?? raw.strategyName ?? ''),
+    score: String(raw.score ?? ''),
+  }
+}
+
+export async function getTradePlanOrigin(planId: number): Promise<TradePlanOriginResponse> {
+  const id = Math.trunc(Number(planId) || 0)
+  if (id <= 0) {
+    throw new Error('plan_id is required')
+  }
+  const res = await fetch(`/api/tradeplans/${id}/origin`)
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`计划来源请求失败: HTTP ${res.status}`)
+  }
+  const body = await res.json()
+  const itemsRaw = Array.isArray(body?.items) ? body.items : []
+  return {
+    code: Number(body?.code ?? -1),
+    ok: !!body?.ok,
+    plan_id: body?.plan_id != null ? Number(body.plan_id) || undefined : undefined,
+    items: itemsRaw.map((it: Record<string, unknown>) => mapTradePlanOriginItem(it || {})),
+    message: body?.message ? String(body.message) : '',
+  }
+}
+
+export async function getTradePlanExecutionReadiness(
+  planId: number,
+): Promise<TradePlanExecutionReadinessResponse> {
+  const id = Math.trunc(Number(planId) || 0)
+  const res = await fetch(`/api/tradeplans/${id}/execution-readiness`)
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`执行准备观察请求失败: HTTP ${res.status}`)
+  }
+  const body = await res.json()
+  const conflictsRaw = Array.isArray(body?.conflicts) ? body.conflicts : []
+  const issuesRaw = Array.isArray(body?.issues) ? body.issues : []
+  const afterRaw = Array.isArray(body?.after_execution ?? body?.afterExecution)
+    ? body.after_execution ?? body.afterExecution
+    : []
+  return {
+    code: Number(body?.code ?? -1),
+    ok: !!body?.ok,
+    message: body?.message ? String(body.message) : undefined,
+    status: String(body?.status ?? ''),
+    cashEnough: !!(body?.cash_enough ?? body?.cashEnough),
+    availableCash: Number(body?.available_cash ?? body?.availableCash ?? 0) || 0,
+    requiredCash: Number(body?.required_cash ?? body?.requiredCash ?? 0) || 0,
+    totalEquity: Number(body?.total_equity ?? body?.totalEquity ?? 0) || 0,
+    concentration: String(body?.concentration ?? 'NORMAL'),
+    conflicts: conflictsRaw.map((c: Record<string, unknown>) => mapExecutionReadinessConflict(c || {})),
+    issues: issuesRaw.map((i: Record<string, unknown>) => mapExecutionReadinessIssue(i || {})),
+    afterExecution: afterRaw.map((w: Record<string, unknown>) => mapExecutionReadinessWeight(w || {})),
   }
 }

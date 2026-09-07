@@ -1,14 +1,17 @@
-// Package holdingdecision is a read-only Holding Decision Engine (Phase10-D.8).
+// Package holdingdecision is a read-only Holding Decision Engine (Phase10-D.8 + Phase12-H.1).
 //
-// Maps Holding Evaluation facts → decision_state. Pure functions: no DB, Broker, Execution, or sell orders.
+// D.8 maps Holding Evaluation facts → decision_state (action stays "none").
+// H.1 Observe / SimulateSellDecision map Holdings + PositionState + Evaluation + RiskSnapshot →
+// action HOLD|REDUCE|EXIT. Pure observation: no DB writes, no Execution, no SellTradePlan,
+// no buy-chain wiring. persist_sell_plans defaults false and is never applied here.
 package holdingdecision
 
 // Decision states (not sell instructions).
 const (
-	StateHoldNormal     = "HOLD_NORMAL"
-	StateHoldWatch      = "HOLD_WATCH"
-	StateHoldReview     = "HOLD_REVIEW"
-	StateExitCandidate  = "EXIT_CANDIDATE" // produced only when Policy.ExitCandidateEnabled
+	StateHoldNormal    = "HOLD_NORMAL"
+	StateHoldWatch     = "HOLD_WATCH"
+	StateHoldReview    = "HOLD_REVIEW"
+	StateExitCandidate = "EXIT_CANDIDATE" // produced only when Policy.ExitCandidateEnabled
 )
 
 // Reason codes (no SELL / EXIT_NOW / FORCE_CLOSE).
@@ -21,9 +24,9 @@ const (
 )
 
 const (
-	HintContinueHold    = "CONTINUE_HOLD"
-	HintKeepWatching    = "KEEP_WATCHING"
-	HintReassessThesis  = "REASSESS_THESIS"
+	HintContinueHold     = "CONTINUE_HOLD"
+	HintKeepWatching     = "KEEP_WATCHING"
+	HintReassessThesis   = "REASSESS_THESIS"
 	HintConsiderExitEval = "CONSIDER_EXIT_EVAL" // only with ExitCandidateEnabled; not a sell
 )
 
@@ -50,16 +53,16 @@ type Evidence struct {
 
 // HoldingDecision is one lot- or stock-level conclusion.
 type HoldingDecision struct {
-	Symbol        string   `json:"symbol"`
-	FillID        uint     `json:"fill_id,omitempty"`
-	PlanID        uint     `json:"plan_id,omitempty"`
-	State         string   `json:"state"`
-	Reason        string   `json:"reason"` // primary reason
-	ReasonCodes   []string `json:"reason_codes"`
-	NextHint      string   `json:"next_hint"`
-	Summary       string   `json:"summary"`
-	Evidence      Evidence `json:"evidence"`
-	Action        string   `json:"action"` // always "none" in D.8
+	Symbol      string   `json:"symbol"`
+	FillID      uint     `json:"fill_id,omitempty"`
+	PlanID      uint     `json:"plan_id,omitempty"`
+	State       string   `json:"state"`
+	Reason      string   `json:"reason"` // primary reason
+	ReasonCodes []string `json:"reason_codes"`
+	NextHint    string   `json:"next_hint"`
+	Summary     string   `json:"summary"`
+	Evidence    Evidence `json:"evidence"`
+	Action      string   `json:"action"` // always "none" in D.8
 }
 
 // StockDecision aggregates lots for one symbol (worst state).
@@ -76,11 +79,11 @@ type StockDecision struct {
 
 // View is the observation payload (holding_decision).
 type View struct {
-	AsOf               string          `json:"as_of,omitempty"`
-	ExitCandidateEnabled bool          `json:"exit_candidate_enabled"`
-	ByState            map[string]int  `json:"by_state"`
-	Holdings           []StockDecision `json:"holdings"`
-	DataSourceNote     string          `json:"data_source_note"`
+	AsOf                 string          `json:"as_of,omitempty"`
+	ExitCandidateEnabled bool            `json:"exit_candidate_enabled"`
+	ByState              map[string]int  `json:"by_state"`
+	Holdings             []StockDecision `json:"holdings"`
+	DataSourceNote       string          `json:"data_source_note"`
 }
 
 const dataSourceNote = "Holding Decision · read-only from Holding Evaluation facts; not a sell recommendation; EXIT_CANDIDATE default off"

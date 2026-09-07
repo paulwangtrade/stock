@@ -98,3 +98,40 @@ func TestTradePlansAPI_PlanByID_InvalidAndMissing(t *testing.T) {
 	require.Equal(t, api.TradePlanCodeNoUpcoming, missResp.Code)
 	require.False(t, missResp.OK)
 }
+
+func TestTradePlansAPI_PlanByID_SellItemReason(t *testing.T) {
+	setupAPITestDB(t)
+	require.NoError(t, data.EnsureTradePlanTables())
+	repo := data.NewTradePlanRepo()
+	now := time.Now()
+	sellReason := "exit_review:REVIEW_REQUIRED;LOSS_REVIEW;亏损关注"
+
+	plan := &models.TradePlan{
+		TradeDate: "2026-08-29", GeneratedAt: now, PoolID: 1,
+		Status: models.TradePlanStatusDraft, PlanVersion: 1,
+		Side: "sell", SourceSession: models.TradePlanSourceExitReview,
+		RiskStatus: risk.PlanRiskStatusPassed,
+	}
+	require.NoError(t, repo.CreatePlanWithItems(plan, []models.TradePlanItem{
+		{
+			StockCode: "sz000001", StockName: "深科技", Side: "sell",
+			Priority: 1, TargetVolume: 100, Status: models.TradePlanItemPending,
+			Reason: sellReason,
+		},
+	}))
+
+	mux := registerTradePlansTestMux(t)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(
+		http.MethodGet,
+		"/api/tradeplans/plan?plan_id="+strconv.FormatUint(uint64(plan.ID), 10),
+		nil,
+	))
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp api.UpcomingTradePlanResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.True(t, resp.OK)
+	require.Len(t, resp.Plan.Items, 1)
+	require.Equal(t, sellReason, resp.Plan.Items[0].Reason)
+}

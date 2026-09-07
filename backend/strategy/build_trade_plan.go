@@ -8,6 +8,8 @@ import (
 	"go-stock/backend/logger"
 	"go-stock/backend/models"
 	"go-stock/backend/risk"
+	"go-stock/backend/strategysnapshot"
+	"go-stock/backend/tradingconfig"
 )
 
 // BuildTradePlan 仅落库 RiskFilter 结果，不做任何风控判断。
@@ -20,11 +22,8 @@ func BuildTradePlan(tradeDate string, pool *models.CandidatePool, filtered *risk
 		return nil, fmt.Errorf("risk filter result is nil")
 	}
 
-	cfg := data.GetPaperOpenBuyConfig()
-	amount := cfg.OpenBuyAmountPerStock
-	if amount <= 0 {
-		amount = 100_000
-	}
+	// Phase6.5-D / H.4: planned_amount + EnableExecute via TradingConfig Provider.
+	amount := resolvePlanAmountViaSizer()
 	maxNames := defaultMaxPlanNames
 
 	plan := &models.TradePlan{
@@ -35,7 +34,7 @@ func BuildTradePlan(tradeDate string, pool *models.CandidatePool, filtered *risk
 		Side:              "buy",
 		AmountPerStock:    amount,
 		MaxNames:          maxNames,
-		EnableExecute:     cfg.EnablePaperOpenBuy,
+		EnableExecute:     tradingconfig.Default().EnablePaperOpenBuy(),
 		Message:           fmt.Sprintf("from pool=%d filter=%s accepted=%d rejected=%d", pool.ID, filtered.RiskStatus, filtered.AcceptedCount, filtered.FilteredCount),
 		RiskStatus:        filtered.RiskStatus,
 		MarketLevel:       filtered.MarketLevel,
@@ -76,6 +75,13 @@ func BuildTradePlan(tradeDate string, pool *models.CandidatePool, filtered *risk
 	if err := data.NewTradePlanRepo().CreatePlanWithItems(plan, planItems); err != nil {
 		return nil, err
 	}
+	// Phase11-G: read-only Strategy Snapshot bypass — must not fail TradePlan create.
+	if _, snapErr := strategysnapshot.RecordAfterTradePlanCreate(plan, pool); snapErr != nil {
+		logger.SugaredLogger.Warnf(
+			"strategy snapshot capture failed plan_id=%d: %v (ignored; does not affect trading)",
+			plan.ID, snapErr,
+		)
+	}
 	logger.SugaredLogger.Infof("BuildTradePlan date=%s planId=%d poolId=%d items=%d accepted=%d rejected=%d risk=%s",
 		tradeDate, plan.ID, plan.PoolID, len(plan.Items), plan.RiskAcceptedCount, plan.RiskFilteredCount, plan.RiskStatus)
 	return plan, nil
@@ -92,11 +98,7 @@ func BuildTradePlanForDate(tradeDate string) (*models.TradePlan, error) {
 	if pool.Status != models.CandidatePoolStatusReady || len(pool.Items) == 0 {
 		return nil, fmt.Errorf("candidate pool %d not ready or empty", pool.ID)
 	}
-	cfg := data.GetPaperOpenBuyConfig()
-	amount := cfg.OpenBuyAmountPerStock
-	if amount <= 0 {
-		amount = 100_000
-	}
+	amount := resolvePlanAmountViaSizer()
 	filtered, err := FilterPoolForTradePlan(pool, amount, defaultMaxPlanNames)
 	if err != nil {
 		return nil, err
@@ -104,7 +106,9 @@ func BuildTradePlanForDate(tradeDate string) (*models.TradePlan, error) {
 	return BuildTradePlan(tradeDate, pool, filtered)
 }
 
-// RunDailyCandidateAndPlan 9:20：CandidatePool → risk.PlanFilter → BuildTradePlan。
+// RunDailyCandidateAndPlan is the 09:20 fallback: CandidatePool → Draft Builder.
+// FilterPoolForTradePlan is not applied here — BuildDraftTradePlanFromCandidatePool
+// already filters. Does not call the legacy ready builder.
 func RunDailyCandidateAndPlan(tradeDate string) (*models.CandidatePool, *models.TradePlan, error) {
 	tradeDate = normalizeTradeDate(tradeDate)
 	pool, err := BuildCandidatePool(tradeDate)
@@ -117,20 +121,9 @@ func RunDailyCandidateAndPlan(tradeDate string) (*models.CandidatePool, *models.
 		return pool, nil, fmt.Errorf("candidate pool empty: %s", pool.Message)
 	}
 
-	cfg := data.GetPaperOpenBuyConfig()
-	amount := cfg.OpenBuyAmountPerStock
-	if amount <= 0 {
-		amount = 100_000
-	}
-	filtered, err := FilterPoolForTradePlan(pool, amount, defaultMaxPlanNames)
+	plan, err := BuildDraftTradePlanFromCandidatePool(pool)
 	if err != nil {
-		logger.SugaredLogger.Errorf("[PaperPlan] PlanFilter failed: %v", err)
-		return pool, nil, err
-	}
-
-	plan, err := BuildTradePlan(tradeDate, pool, filtered)
-	if err != nil {
-		logger.SugaredLogger.Errorf("[PaperPlan] BuildTradePlan failed: %v", err)
+		logger.SugaredLogger.Errorf("[PaperPlan] BuildDraftTradePlanFromCandidatePool failed: %v", err)
 		return pool, nil, err
 	}
 
@@ -145,7 +138,7 @@ func RunDailyCandidateAndPlan(tradeDate string) (*models.CandidatePool, *models.
 		strategyName = plan.Items[0].StrategyName
 		strategyVer = plan.Items[0].StrategyVersion
 	}
-	logger.SugaredLogger.Infof("[PaperPlan] source=%s strategy=%s version=%s pending=%d stocks=%v planId=%d risk=%s",
-		pool.Source, strategyName, strategyVer, len(pending), pending, plan.ID, plan.RiskStatus)
+	logger.SugaredLogger.Infof("[PaperPlan] source=%s strategy=%s version=%s pending=%d stocks=%v planId=%d status=%s risk=%s",
+		pool.Source, strategyName, strategyVer, len(pending), pending, plan.ID, plan.Status, plan.RiskStatus)
 	return pool, plan, nil
 }

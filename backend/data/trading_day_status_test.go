@@ -45,6 +45,7 @@ func TestBuildTradingDayStatus_FrozenReady(t *testing.T) {
 	plan := &models.TradePlan{
 		TradeDate: tradeDate, GeneratedAt: now, PoolID: pool.ID,
 		Status: models.TradePlanStatusReady, PlanVersion: 2,
+		ApprovedAt: &freezeAt, ApprovedBy: "approver",
 		FreezeAt: &freezeAt, FreezeBy: "ops",
 		SourceSession: models.TradePlanSourceAfterClose,
 		RiskStatus:    risk.PlanRiskStatusPassed,
@@ -175,6 +176,7 @@ func TestBuildTradingDayStatus_SchemaBlocked(t *testing.T) {
 	plan := &models.TradePlan{
 		TradeDate: tradeDate, GeneratedAt: now, PoolID: 1,
 		Status: models.TradePlanStatusReady, PlanVersion: 1,
+		ApprovedAt: &freezeAt, ApprovedBy: "approver",
 		FreezeAt: &freezeAt, FreezeBy: "ops",
 		SourceSession: models.TradePlanSourceAfterClose,
 		RiskStatus:    risk.PlanRiskStatusPassed,

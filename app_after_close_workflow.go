@@ -1,9 +1,11 @@
 package main
 
 import (
-	"go-stock/backend/data"
+	"go-stock/backend/job"
 	"go-stock/backend/logger"
+	"go-stock/backend/marketstate"
 	"go-stock/backend/strategy"
+	"go-stock/backend/tradingconfig"
 )
 
 const (
@@ -27,33 +29,45 @@ func (a *App) InitAfterClosePlanJobs() {
 		return
 	}
 
+	tradingconfig.LogInitialized()
+	afterCloseEnabled := tradingconfig.Default().AfterCloseEnabled()
 	if _, exists := a.getCronEntry(afterClosePlanCronKey); exists {
-		logger.SugaredLogger.Infof("after-close plan cron already registered key=%s enable=%v",
-			afterClosePlanCronKey, data.IsAfterClosePlanEnabled())
+		logger.SugaredLogger.Infof("after-close plan cron already registered key=%s enable=%v source=%s",
+			afterClosePlanCronKey, afterCloseEnabled, tradingconfig.SourceLegacyAfterClose)
 		return
 	}
 
 	id, err := a.cron.AddFunc(afterClosePlanCronSpec, func() {
 		defer PanicHandler()
-		if skipIfNonWeekday("15:30 after_close") {
-			return
-		}
-		runAfterClosePlanWorkflowJob()
+		job.Default().Observe(job.JobAfterCloseWorkflow, func() {
+			if skipIfNonWeekday("15:30 after_close") {
+				return
+			}
+			runAfterClosePlanWorkflowJob()
+		})()
 	})
 	if err != nil {
 		logger.SugaredLogger.Errorf("InitAfterClosePlanJobs: %s", err.Error())
 		return
 	}
-	a.setCronEntry(afterClosePlanCronKey, id)
+	a.setCronEntryObserved(afterClosePlanCronKey, afterClosePlanCronSpec, id)
 	logger.SugaredLogger.Infof(
-		"after-close plan cron registered key=%s spec=%s enable=%v",
-		afterClosePlanCronKey, afterClosePlanCronSpec, data.IsAfterClosePlanEnabled(),
+		"after-close plan cron registered key=%s spec=%s enable=%v source=%s",
+		afterClosePlanCronKey, afterClosePlanCronSpec, afterCloseEnabled, tradingconfig.SourceLegacyAfterClose,
 	)
 }
 
 func runAfterClosePlanWorkflowJob() {
-	if !data.IsAfterClosePlanEnabled() {
-		logger.SugaredLogger.Infof("AfterCloseWorkflow cron skipped after_close_plan_enabled=false")
+	// Phase11-B: plan generation gate (time-only; no strategy/order).
+	if !marketstate.CanGeneratePlan() {
+		logger.SugaredLogger.Infof("AfterCloseWorkflow cron skipped market_state=%s canGeneratePlan=false",
+			marketstate.GetCurrentMarketState())
+		return
+	}
+	// Phase6.5-A: after_close switch via TradingConfig Provider (legacy_after_close; behavior unchanged).
+	if !tradingconfig.Default().AfterCloseEnabled() {
+		logger.SugaredLogger.Infof("AfterCloseWorkflow cron skipped after_close_plan_enabled=false source=%s",
+			tradingconfig.SourceLegacyAfterClose)
 		return
 	}
 

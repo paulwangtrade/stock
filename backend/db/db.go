@@ -12,6 +12,10 @@ import (
 
 var Dao *gorm.DB
 
+// Init opens the SQLite database at sqlitePath.
+// sqlitePath must be an absolute path (Phase16.16-B: caller provides path via
+// runtimeutil.GetDatabasePath(); legacy callers that pass "" still fall back to
+// the relative path for backward-compat with tests that set up cwd explicitly).
 func Init(sqlitePath string) {
 	dbLogger := logger.New(
 		log.New(os.Stdout, "\r\n", log.LstdFlags),
@@ -26,6 +30,8 @@ func Init(sqlitePath string) {
 	var openDb *gorm.DB
 	var err error
 	if sqlitePath == "" {
+		// Legacy fallback: relative path resolved from cwd.
+		// Production main() must pass an absolute path from runtimeutil.GetDatabasePath().
 		sqlitePath = "data/stock.db?_busy_timeout=10000&_journal_mode=WAL&_synchronous=NORMAL&_cache_size=-524288"
 	}
 	openDb, err = gorm.Open(sqlite.Open(sqlitePath), &gorm.Config{

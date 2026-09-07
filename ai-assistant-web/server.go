@@ -13,8 +13,6 @@ import (
 	"os"
 	"strings"
 	"time"
-
-	"github.com/go-resty/resty/v2"
 )
 
 //go:embed static
@@ -58,7 +56,7 @@ func Start() error {
 		db.Init("")
 	}
 	autoMigrate()
-	data.InitAnalyzeSentiment()
+	// 分词词典由 AnalyzeSentiment 首次调用时懒加载
 
 	a := &app{}
 	mux := http.NewServeMux()
@@ -110,9 +108,9 @@ func (a *app) vipStatus(w http.ResponseWriter, r *http.Request) {
 
 func vipDeniedMessage(level int, active bool) string {
 	if !active && level > 0 {
-		return "检测到赞助信息，但当前不在 VIP 有效期内或尚未到授权生效时间。请在 go-stock 客户端「关于」确认赞助状态。"
+		return "检测到功能授权，但当前不在 Pro 有效期内或尚未到生效时间。请在 go-stock 桌面端「关于」确认授权状态。"
 	}
-	return "go-stock AI 助手（Web）仅对 VIP2 及以上有效赞助用户开放。请在 go-stock 桌面客户端「关于」页面填写赞助码后，使用与本机相同的 data 目录启动服务。"
+	return "go-stock AI 助手（Web）需要 Pro 功能授权。请在 go-stock 桌面端完成授权后，使用与本机相同的 data 目录启动服务。"
 }
 
 func requireVip2(w http.ResponseWriter) bool {
@@ -273,32 +271,9 @@ func (a *app) shareText(w http.ResponseWriter, r *http.Request) {
 	if !requireVip2(w) {
 		return
 	}
-	var req shareRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
-		return
-	}
-	req.Text = strings.TrimSpace(req.Text)
-	req.Title = strings.TrimSpace(req.Title)
-	if req.Text == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "内容为空"})
-		return
-	}
-	if req.Title == "" {
-		req.Title = "AI助手"
-	}
-	analysisTime := time.Now().Format("2006/01/02")
-	resp, err := resty.New().SetHeader("ua-x", "go-stock").R().SetFormData(map[string]string{
-		"text":         req.Text,
-		"stockCode":    req.Title,
-		"stockName":    req.Title,
-		"analysisTime": analysisTime,
-	}).Post("http://go-stock.sparkmemory.top:16688/upload")
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"message": resp.String()})
+	writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+		"error": "社区分享功能已停用",
+	})
 }
 
 func parseHistory(historyJSON string) []map[string]interface{} {
@@ -330,10 +305,17 @@ func (a *app) chatStream(w http.ResponseWriter, r *http.Request) {
 }
 
 func autoMigrate() {
-	db.Dao.AutoMigrate(&data.Settings{})
-	db.Dao.AutoMigrate(&data.AIConfig{})
-	db.Dao.AutoMigrate(&models.PromptTemplate{})
-	db.Dao.AutoMigrate(&models.AiAssistantSession{})
+	// 主程序已按 schema 版本迁移过则跳过；独立启动时只补齐本服务所需表，不写版本号
+	//（避免残缺迁移被标成 CurrentSchemaVersion 导致主程序跳过全量迁移）
+	if db.IsSchemaCurrent(db.CurrentSchemaVersion) {
+		return
+	}
+	_ = db.Dao.AutoMigrate(
+		&data.Settings{},
+		&data.AIConfig{},
+		&models.PromptTemplate{},
+		&models.AiAssistantSession{},
+	)
 }
 
 func getAddr() string {

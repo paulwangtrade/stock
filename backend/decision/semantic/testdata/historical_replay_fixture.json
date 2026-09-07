@@ -1,0 +1,140 @@
+{
+  "seriesId": "hist-replay-demo",
+  "code": "sz000001",
+  "name": "PingAnBank",
+  "marketModeKey": "level3",
+  "existingVolume": 0,
+  "purpose": "watchlist",
+  "days": [
+    {
+      "tradeDate": "2026-07-14",
+      "asOf": "2026-07-14T00:00:00.000Z",
+      "signal": { "tag": "强", "daysAgo": 0, "statusText": "d1-strong", "score": 0.9 },
+      "entryZone": {
+        "text": "10.00~10.20",
+        "instantText": "10.10",
+        "instantPrice": 10.1,
+        "mode": "near",
+        "deferMode": "same",
+        "daysAgo": 0,
+        "note": "near",
+        "low": 10,
+        "high": 10.2
+      },
+      "gate": {
+        "ready": true,
+        "score": 0.9,
+        "requiredPassed": true,
+        "readyThreshold": 0.85,
+        "items": [{ "id": "buy_signal", "label": "buy_signal", "passed": true }]
+      },
+      "size": {
+        "ok": true,
+        "targetShares": 1000,
+        "addShares": 1000,
+        "positionPct": 12.5,
+        "stopPrice": 9.85,
+        "reason": "d1"
+      }
+    },
+    {
+      "tradeDate": "2026-07-15",
+      "asOf": "2026-07-15T00:00:00.000Z",
+      "signal": { "tag": "强", "daysAgo": 1, "statusText": "d2-pullback", "score": 0.8 },
+      "entryZone": {
+        "text": "10.00~10.20",
+        "instantText": "10.35",
+        "instantPrice": 10.35,
+        "mode": "above",
+        "deferMode": "wait",
+        "daysAgo": 1,
+        "note": "above",
+        "low": 10,
+        "high": 10.2
+      },
+      "gate": {
+        "ready": false,
+        "score": 0.7,
+        "requiredPassed": true,
+        "readyThreshold": 0.85,
+        "items": [{ "id": "buy_signal", "label": "buy_signal", "passed": true }]
+      },
+      "size": {
+        "ok": false,
+        "targetShares": 0,
+        "addShares": 0,
+        "reason": "d2-wait"
+      },
+      "candidate": {
+        "actionPatch": {
+          "code": "WAIT_PULLBACK",
+          "label": "等回踩",
+          "allowDraft": false,
+          "side": "none"
+        }
+      }
+    },
+    {
+      "tradeDate": "2026-07-16",
+      "asOf": "2026-07-16T00:00:00.000Z",
+      "signal": { "tag": "趋", "daysAgo": 0, "statusText": "d3-trend", "score": 0.85 },
+      "entryZone": {
+        "text": "10.10~10.30",
+        "instantText": "10.20",
+        "instantPrice": 10.2,
+        "mode": "near",
+        "deferMode": "same",
+        "daysAgo": 0,
+        "note": "near",
+        "low": 10.1,
+        "high": 10.3
+      },
+      "gate": {
+        "ready": true,
+        "score": 0.88,
+        "requiredPassed": true,
+        "readyThreshold": 0.85,
+        "items": [{ "id": "buy_signal", "label": "buy_signal", "passed": true }]
+      },
+      "size": {
+        "ok": true,
+        "targetShares": 800,
+        "addShares": 800,
+        "positionPct": 10,
+        "stopPrice": 9.95,
+        "reason": "d3"
+      }
+    },
+    {
+      "tradeDate": "2026-07-17",
+      "asOf": "2026-07-17T00:00:00.000Z",
+      "signal": { "tag": "强", "daysAgo": 0, "statusText": "d4-strong", "score": 0.92 },
+      "entryZone": {
+        "text": "10.10~10.30",
+        "instantText": "10.18",
+        "instantPrice": 10.18,
+        "mode": "inZone",
+        "deferMode": "same",
+        "daysAgo": 0,
+        "note": "in",
+        "low": 10.1,
+        "high": 10.3
+      },
+      "gate": {
+        "ready": true,
+        "score": 0.92,
+        "requiredPassed": true,
+        "readyThreshold": 0.85,
+        "items": [{ "id": "buy_signal", "label": "buy_signal", "passed": true }]
+      },
+      "size": {
+        "ok": true,
+        "targetShares": 1000,
+        "addShares": 1000,
+        "positionPct": 12.5,
+        "stopPrice": 9.95,
+        "reason": "d4"
+      }
+    }
+  ]
+}

@@ -93,6 +93,11 @@ func BuildCandidatePool(tradeDate string, options ...BuildCandidatePoolOption) (
 			option(config)
 		}
 	}
+
+	// M1-B: directed universe signal snapshot AFTER rank/truncate, BEFORE persist.
+	// Failure → Warn only; score/rank already frozen and unchanged.
+	_ = applyUniverseSignalSnapshot(uni, tradeDate, config)
+
 	cfgSnap, _ := json.Marshal(config)
 
 	pool := &models.CandidatePool{
@@ -131,6 +136,8 @@ func BuildCandidatePool(tradeDate string, options ...BuildCandidatePoolOption) (
 	if err := data.NewCandidatePoolRepo().CreatePoolWithItems(pool, poolItems); err != nil {
 		return nil, err
 	}
+
+	applyPoolProvenanceLink(pool, poolItems)
 
 	logCandidatePoolSummary(pool, uni.Source, snapshotID, enhancedFlag, beforeCut, enhanced)
 	return pool, nil

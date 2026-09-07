@@ -28,10 +28,13 @@ type UniverseCandidate struct {
 }
 
 type universeBuildResult struct {
-	Source    string
-	SourceRef string
-	Items     []UniverseCandidate
-	Message   string
+	Source        string
+	SourceRef     string
+	Items         []UniverseCandidate
+	Message       string
+	StrategyID    uint
+	StrategyRunID uint
+	StrategyName  string
 }
 
 func todayTradeDate() string {
@@ -77,10 +80,13 @@ func collectUniverse() universeBuildResult {
 			items := parseStrategyRunItems(strat, run)
 			if len(items) > 0 {
 				return universeBuildResult{
-					Source:    models.CandidatePoolSourceStrategyRun,
-					SourceRef: fmt.Sprintf("strategyId=%d;runId=%d", strat.ID, run.ID),
-					Items:     items,
-					Message:   fmt.Sprintf("from strategy %q run=%d count=%d", strat.Name, run.ID, len(items)),
+					Source:        models.CandidatePoolSourceStrategyRun,
+					SourceRef:     fmt.Sprintf("strategyId=%d;runId=%d", strat.ID, run.ID),
+					Items:         items,
+					Message:       fmt.Sprintf("from strategy %q run=%d count=%d", strat.Name, run.ID, len(items)),
+					StrategyID:    strat.ID,
+					StrategyRunID: run.ID,
+					StrategyName:  strat.Name,
 				}
 			}
 			logger.SugaredLogger.Warnf("strategy run %d empty, fallback follow", run.ID)

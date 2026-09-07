@@ -1,0 +1,38 @@
+{
+  "authority": {
+    "canAuthorizeExecute": false,
+    "canModifyDecision": false,
+    "canReadDecision": true,
+    "ok": true
+  },
+  "case1_lifecycle": {
+    "draftId": "tpd:1ad757e1dd0ad6dd",
+    "from": "CREATED",
+    "ok": true,
+    "sourceDecisionId": "qd1:js_legacy:sz000001:2026-07-21T00:00:00Z:ENTER:可买",
+    "sourceSnapshotHash": "83c838e9049ac6284d86d338658b26be94340c9f7cdf41faffed3979d99bb675",
+    "to": "VALIDATED"
+  },
+  "case2_snapshot_changed": {
+    "codes": [
+      "snapshot_changed"
+    ],
+    "ok": false
+  },
+  "case3_draft_mutation": {
+    "codes": [
+      "draft_mutation_detected"
+    ],
+    "ok": false
+  },
+  "case4_execute_forbidden": {
+    "codes": [
+      "execute_forbidden"
+    ],
+    "enableExecute": false,
+    "ok": false
+  },
+  "decisionAndRankUntouched": true,
+  "harness": "quant-tradeplan-draft-lifecycle",
+  "phase": "Phase4-B"
+}

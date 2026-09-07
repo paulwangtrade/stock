@@ -44,6 +44,15 @@ type Service struct {
 // Default is the process-wide service (Local + tradingcalendar.Default).
 var Default = New(nil, nil, tradingcalendar.Default)
 
+// SwapDefaultForTest replaces Default for unit tests (e.g. fixed weekday/session). Restore via returned func.
+func SwapDefaultForTest(s *Service) func() {
+	prev := Default
+	if s != nil {
+		Default = s
+	}
+	return func() { Default = prev }
+}
+
 // New constructs a Service. nil clock → time.Now; nil loc → time.Local.
 func New(clock Clock, loc *time.Location, cal tradingcalendar.Calendar) *Service {
 	if clock == nil {

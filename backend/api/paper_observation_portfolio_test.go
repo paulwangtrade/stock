@@ -64,7 +64,8 @@ func TestPortfolioObservationAPI_EmptyBook(t *testing.T) {
 func TestPortfolioObservationAPI_NormalBookNoMutation(t *testing.T) {
 	setupAPITestDB(t)
 	acc := seedEvalObsAccount(t)
-	plan, item := seedEvalObsPlanItem(t, "2026-08-11", "sz000001", "平安银行")
+	recentDate := time.Now().AddDate(0, 0, -3).Format("2006-01-02")
+	plan, item := seedEvalObsPlanItem(t, recentDate, "sz000001", "平安银行")
 	seedEvalObsFill(t, acc.ID, plan, item, 10.00, 1000)
 	require.NoError(t, db.Dao.Create(&papertrading.PaperSimPosition{
 		AccountID: acc.ID, StockCode: "sz000001", StockName: "平安银行",

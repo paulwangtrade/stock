@@ -167,6 +167,51 @@ func TestProvider_PaperMVPMatchesJSON(t *testing.T) {
 	require.True(t, r.PaperMVP.EnablePaperTrading)
 	require.Equal(t, float64(2_000_000), r.PaperMVP.InitialCash)
 	require.Equal(t, "B", r.PaperMVP.FillMode)
+	require.Equal(t, tradingconfig.PositionSizerModeFixedAmount, r.PaperMVP.PositionSizerMode)
 	require.True(t, tradingconfig.Default().PaperTradingEnabled())
 	require.Equal(t, "B", tradingconfig.Default().FillMode())
+	require.Equal(t, tradingconfig.PositionSizerModeFixedAmount, tradingconfig.Default().PositionSizerMode())
+}
+
+func TestProvider_PositionSizerModePortfolioAwareFromJSON(t *testing.T) {
+	dir := t.TempDir()
+	prev, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { _ = os.Chdir(prev) })
+
+	require.NoError(t, os.MkdirAll("data", 0o755))
+	raw := []byte(`{"enablePaperTrading":true,"positionSizerMode":"portfolio_aware"}`)
+	require.NoError(t, os.WriteFile(filepath.Join("data", "paper_trading_mvp.json"), raw, 0o644))
+
+	r := (&tradingconfig.LegacyAdapter{}).Load()
+	require.Equal(t, tradingconfig.PositionSizerModePortfolioAware, r.PaperMVP.PositionSizerMode)
+	require.Equal(t, tradingconfig.PositionSizerModePortfolioAware, tradingconfig.Default().PositionSizerMode())
+}
+
+func TestProvider_PortfolioAwareNestedJSON(t *testing.T) {
+	dir := t.TempDir()
+	prev, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { _ = os.Chdir(prev) })
+
+	require.NoError(t, os.MkdirAll("data", 0o755))
+	raw := []byte(`{"enablePaperTrading":true,"positionSizerMode":"portfolio_aware","portfolioAware":{"maxExposure":0.8,"maxSinglePositionWeight":0.15,"reserveCashRatio":0.05,"minOrderAmount":2000}}`)
+	require.NoError(t, os.WriteFile(filepath.Join("data", "paper_trading_mvp.json"), raw, 0o644))
+
+	r := (&tradingconfig.LegacyAdapter{}).Load()
+	require.Equal(t, 0.8, r.PaperMVP.PortfolioAware.MaxExposure)
+	require.Equal(t, 0.15, r.PaperMVP.PortfolioAware.MaxSinglePositionWeight)
+	require.Equal(t, 0.05, r.PaperMVP.PortfolioAware.ReserveCashRatio)
+	require.Equal(t, 2000.0, r.PaperMVP.PortfolioAware.MinOrderAmount)
+}
+
+func TestProviderShadow_DefaultDisabled(t *testing.T) {
+	got := tradingconfig.Default().ProviderShadow()
+	require.False(t, got.Enabled)
+	require.False(t, tradingconfig.ProviderShadowEnabled())
+	require.Equal(t, tradingconfig.SourceCompileDefault, got.Source)
+	r := (&tradingconfig.LegacyAdapter{}).Load()
+	require.False(t, r.ProviderShadow.Enabled)
 }

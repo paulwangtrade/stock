@@ -5,6 +5,7 @@ import (
 	"errors"
 	"go-stock/backend/db"
 	"go-stock/backend/logger"
+	"go-stock/backend/security"
 	"strings"
 	"time"
 
@@ -89,44 +90,103 @@ func NewSettingsApi() *SettingsApi {
 }
 
 func (s *SettingsApi) Export() string {
-	d, _ := json.MarshalIndent(s.Config, "", "    ")
+	// Phase13-V.5: default export is redacted (no API Key / Token plaintext).
+	return ExportConfigJSON(s.Config, true)
+}
+
+// ExportConfigJSON serializes settings. When redact=true (default export path),
+// secrets become security.RedactedPlaceholder without mutating live config.
+func ExportConfigJSON(cfg *SettingConfig, redact bool) string {
+	if cfg == nil {
+		return "{}"
+	}
+	if !redact {
+		d, _ := json.MarshalIndent(cfg, "", "    ")
+		return string(d)
+	}
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		return "{}"
+	}
+	var copy SettingConfig
+	if err := json.Unmarshal(raw, &copy); err != nil {
+		return "{}"
+	}
+	redactSettingConfig(&copy)
+	d, _ := json.MarshalIndent(&copy, "", "    ")
 	return string(d)
+}
+
+func redactSettingConfig(cfg *SettingConfig) {
+	if cfg == nil {
+		return
+	}
+	if cfg.Settings != nil {
+		if strings.TrimSpace(cfg.TushareToken) != "" {
+			cfg.TushareToken = security.RedactedPlaceholder
+		}
+		if strings.TrimSpace(cfg.SponsorCode) != "" {
+			cfg.SponsorCode = security.RedactedPlaceholder
+		}
+		if strings.TrimSpace(cfg.DingRobot) != "" {
+			cfg.DingRobot = security.RedactedPlaceholder
+		}
+	}
+	for _, ai := range cfg.AiConfigs {
+		if ai == nil {
+			continue
+		}
+		if strings.TrimSpace(ai.ApiKey) != "" {
+			ai.ApiKey = security.RedactedPlaceholder
+		}
+		if strings.TrimSpace(ai.SessionId) != "" {
+			ai.SessionId = security.RedactedPlaceholder
+		}
+	}
 }
 
 func UpdateConfig(s *SettingConfig) string {
 	count := int64(0)
 	db.Dao.Model(&Settings{}).Count(&count)
 	if count > 0 {
-		db.Dao.Model(&Settings{}).Where("id=?", s.ID).Updates(map[string]any{
-			"local_push_enable":          s.LocalPushEnable,
-			"ding_push_enable":           s.DingPushEnable,
-			"ding_robot":                 s.DingRobot,
-			"update_basic_info_on_start": s.UpdateBasicInfoOnStart,
-			"refresh_interval":           s.RefreshInterval,
-			"open_ai_enable":             s.OpenAiEnable,
-			"tushare_token":              s.TushareToken,
-			"prompt":                     s.Prompt,
-			"check_update":               s.CheckUpdate,
-			"question_template":          s.QuestionTemplate,
-			"crawl_time_out":             s.CrawlTimeOut,
-			"k_days":                     s.KDays,
-			"enable_danmu":               s.EnableDanmu,
-			"browser_path":               s.BrowserPath,
-			"enable_news":                s.EnableNews,
-			"dark_theme":                 s.DarkTheme,
-			"enable_fund":                s.EnableFund,
-			"enable_push_news":           s.EnablePushNews,
-			"enable_only_push_red_news":  s.EnableOnlyPushRedNews,
-			"sponsor_code":               s.SponsorCode,
-			"http_proxy":                 s.HttpProxy,
-			"http_proxy_enabled":         s.HttpProxyEnabled,
-			"enable_agent":               s.EnableAgent,
-			"qgqp_b_id":                  strings.TrimSpace(s.QgqpBId),
+		updates := map[string]any{
+			"local_push_enable":                s.LocalPushEnable,
+			"ding_push_enable":                 s.DingPushEnable,
+			"update_basic_info_on_start":       s.UpdateBasicInfoOnStart,
+			"refresh_interval":                 s.RefreshInterval,
+			"open_ai_enable":                   s.OpenAiEnable,
+			"prompt":                           s.Prompt,
+			"check_update":                     s.CheckUpdate,
+			"question_template":                s.QuestionTemplate,
+			"crawl_time_out":                   s.CrawlTimeOut,
+			"k_days":                           s.KDays,
+			"enable_danmu":                     s.EnableDanmu,
+			"browser_path":                     s.BrowserPath,
+			"enable_news":                      s.EnableNews,
+			"dark_theme":                       s.DarkTheme,
+			"enable_fund":                      s.EnableFund,
+			"enable_push_news":                 s.EnablePushNews,
+			"enable_only_push_red_news":        s.EnableOnlyPushRedNews,
+			"http_proxy":                       s.HttpProxy,
+			"http_proxy_enabled":               s.HttpProxyEnabled,
+			"enable_agent":                     s.EnableAgent,
+			"qgqp_b_id":                        strings.TrimSpace(s.QgqpBId),
 			"window_width":                     s.WindowWidth,
 			"window_height":                    s.WindowHeight,
 			"signal_params":                    s.SignalParams,
 			"candidate_pool_score_threshold":   normalizeCandidatePoolThreshold(s.CandidatePoolScoreThreshold),
-		})
+		}
+		// Phase13-V.5: do not overwrite secrets when import/export placeholder is present.
+		if !security.IsRedactedPlaceholder(s.DingRobot) {
+			updates["ding_robot"] = s.DingRobot
+		}
+		if !security.IsRedactedPlaceholder(s.TushareToken) {
+			updates["tushare_token"] = s.TushareToken
+		}
+		if !security.IsRedactedPlaceholder(s.SponsorCode) {
+			updates["sponsor_code"] = s.SponsorCode
+		}
+		db.Dao.Model(&Settings{}).Where("id=?", s.ID).Updates(updates)
 
 		//更新AiConfig
 		err := updateAiConfigs(s.AiConfigs)
@@ -182,21 +242,32 @@ func updateAiConfigs(aiConfigs []*AIConfig) error {
 		}
 		// ID<=0 一律视为新配置，走插入逻辑；否则根据是否已存在决定更新或新增
 		if item.ID <= 0 || !idMap[item.ID] {
+			if security.IsRedactedPlaceholder(item.ApiKey) {
+				item.ApiKey = ""
+			}
+			if security.IsRedactedPlaceholder(item.SessionId) {
+				item.SessionId = ""
+			}
 			addAiConfigs = append(addAiConfigs, item)
 		} else {
 			notDeleteIds = append(notDeleteIds, item.ID)
-			e = db.Dao.Model(&AIConfig{}).Where("id=?", item.ID).Updates(map[string]interface{}{
+			aiUpdates := map[string]interface{}{
 				"name":               item.Name,
 				"base_url":           item.BaseUrl,
-				"api_key":            item.ApiKey,
 				"model_name":         item.ModelName,
 				"max_tokens":         item.MaxTokens,
 				"temperature":        item.Temperature,
 				"time_out":           item.TimeOut,
 				"http_proxy":         item.HttpProxy,
 				"http_proxy_enabled": item.HttpProxyEnabled,
-				"session_id":         item.SessionId,
-			}).Error
+			}
+			if !security.IsRedactedPlaceholder(item.ApiKey) {
+				aiUpdates["api_key"] = item.ApiKey
+			}
+			if !security.IsRedactedPlaceholder(item.SessionId) {
+				aiUpdates["session_id"] = item.SessionId
+			}
+			e = db.Dao.Model(&AIConfig{}).Where("id=?", item.ID).Updates(aiUpdates).Error
 			if e != nil {
 				return
 			}

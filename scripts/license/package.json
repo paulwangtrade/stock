@@ -1,0 +1,12 @@
+{
+  "name": "go-stock-license-tools",
+  "private": true,
+  "description": "Dev-only license inventory tools for go-stock compliance (not shipped in product)",
+  "scripts": {
+    "inventory:frontend": "license-checker --production --json --out ../../compliance/inventory/frontend-packages.json",
+    "inventory:frontend:all": "license-checker --json --out ../../compliance/inventory/frontend-packages-all.json"
+  },
+  "devDependencies": {
+    "license-checker": "^25.0.1"
+  }
+}

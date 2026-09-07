@@ -9,6 +9,7 @@ import (
 	"go-stock/backend/logger"
 	"go-stock/backend/models"
 	"go-stock/backend/risk"
+	"go-stock/backend/strategysnapshot"
 )
 
 // BuildDraftTradePlanFromCandidatePool projects a ready CandidatePool into a new
@@ -89,6 +90,14 @@ func BuildDraftTradePlanFromCandidatePool(pool *models.CandidatePool) (*models.T
 	populateAfterCloseExecutionIntent(plan, planItems, pool)
 	if err := repo.CreatePlanWithItems(plan, planItems); err != nil {
 		return nil, err
+	}
+
+	// Phase16.18-B3 / Phase11-G: read-only Strategy Snapshot persist; must not fail TradePlan create.
+	if _, snapErr := strategysnapshot.RecordAfterTradePlanCreate(plan, pool); snapErr != nil {
+		logger.SugaredLogger.Warnf(
+			"strategy snapshot capture failed plan_id=%d: %v (ignored; does not affect trading)",
+			plan.ID, snapErr,
+		)
 	}
 
 	logger.SugaredLogger.Infof(

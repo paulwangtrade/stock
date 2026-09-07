@@ -13,8 +13,11 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-// 仅拉 Cookie 时仍需冷启动浏览器，但不必等 K 线 JSON 整页渲染，超时可略短于原「整页抓取」
-const eastMoneyCookieChromedpMinTimeout = 2 * time.Minute
+// 仅拉 Cookie 时仍需冷启动浏览器；Phase9-C 稳定性：缩短最小超时，避免 UI 永久 Loading。
+const eastMoneyCookieChromedpMinTimeout = 12 * time.Second
+
+// eastMoneyCookieChromedpMaxTimeout 硬上限，防止 CrawlTimeOut+90s 把 Wails 调用拖到数分钟。
+const eastMoneyCookieChromedpMaxTimeout = 20 * time.Second
 
 // EastMoneyCookieCacheTTL Cookie 缓存有效期；过期后下次 K 线请求才会再次 chromedp（K 线 HTTP 仍每次都发真实请求）
 const EastMoneyCookieCacheTTL = 12 * time.Minute
@@ -35,6 +38,50 @@ type cookieCache struct {
 
 var eastMoneyCookieCache = &cookieCache{
 	items: make(map[string]*cookieCacheItem),
+}
+
+// cookieFlightCall 同 key 并发 chromedp 只起一次浏览器（singleflight）。
+type cookieFlightCall struct {
+	wg     sync.WaitGroup
+	header string
+	err    error
+}
+
+var (
+	cookieFlightMu sync.Mutex
+	cookieFlight   = map[string]*cookieFlightCall{}
+)
+
+func clampEastMoneyCookieTimeout(timeout time.Duration) time.Duration {
+	if timeout < eastMoneyCookieChromedpMinTimeout {
+		timeout = eastMoneyCookieChromedpMinTimeout
+	}
+	if timeout > eastMoneyCookieChromedpMaxTimeout {
+		timeout = eastMoneyCookieChromedpMaxTimeout
+	}
+	return timeout
+}
+
+// doEastMoneyCookieSingleflight 保证同一 cacheKey 仅一个 chromedp 在飞。
+func doEastMoneyCookieSingleflight(cacheKey string, fn func() (string, error)) (string, error) {
+	cookieFlightMu.Lock()
+	if call, ok := cookieFlight[cacheKey]; ok {
+		cookieFlightMu.Unlock()
+		call.wg.Wait()
+		return call.header, call.err
+	}
+	call := &cookieFlightCall{}
+	call.wg.Add(1)
+	cookieFlight[cacheKey] = call
+	cookieFlightMu.Unlock()
+
+	call.header, call.err = fn()
+	call.wg.Done()
+
+	cookieFlightMu.Lock()
+	delete(cookieFlight, cacheKey)
+	cookieFlightMu.Unlock()
+	return call.header, call.err
 }
 
 // InvalidateEastMoneyCookieCache 清空 Cookie 缓存（例如切换浏览器路径或调试时可调用）
@@ -98,15 +145,16 @@ func getURLCacheKey(pageURL string) string {
 // EastMoneyCookieHeaderForPush2his 供所有访问 push2his.eastmoney.com 的 HTTP 请求复用，与 K 线共用 chromedp Cookie 缓存。
 // browserPath 为空时自动检测系统浏览器（Edge/Chrome/Firefox），检测失败时返回空串。
 func EastMoneyCookieHeaderForPush2his(config *SettingConfig) string {
-	if config == nil {
+	if config == nil || config.Settings == nil {
 		return ""
 	}
 	browserPath := strings.TrimSpace(config.BrowserPath)
 	crawl := time.Duration(config.CrawlTimeOut) * time.Second
-	if crawl < 15*time.Second {
-		crawl = 30 * time.Second
+	if crawl <= 0 {
+		crawl = 15 * time.Second
 	}
-	cdTimeout := crawl + 90*time.Second
+	// 稳定性：Cookie 拉取超时与 CrawlTimeOut 解耦上限，避免阻塞顶栏/持仓 UI。
+	cdTimeout := clampEastMoneyCookieTimeout(crawl)
 	// 获取 push2his 接口的 Cookie，需要访问 quote 页面
 	h, err := FetchEastMoneyCookiesViaChromedp(browserPath, cdTimeout, quoteEastMoneyPage)
 	if err != nil {
@@ -159,20 +207,32 @@ func fetchEastMoneyCookiesViaChromedp(browserPath string, timeout time.Duration,
 	}
 	eastMoneyCookieCache.mu.Unlock()
 
-	h, err := eastMoneyCookiesViaChromedpOnce(browserPath, timeout, pageURL)
+	timeout = clampEastMoneyCookieTimeout(timeout)
+	h, err := doEastMoneyCookieSingleflight(cacheKey, func() (string, error) {
+		// 进入 flight 后再查一次缓存，避免并发重复起浏览器。
+		eastMoneyCookieCache.mu.Lock()
+		if item, ok := eastMoneyCookieCache.items[cacheKey]; ok && time.Now().Before(item.expiry) {
+			header := item.header
+			eastMoneyCookieCache.mu.Unlock()
+			return header, nil
+		}
+		eastMoneyCookieCache.mu.Unlock()
+
+		header, onceErr := eastMoneyCookiesViaChromedpOnce(browserPath, timeout, pageURL)
+		if onceErr != nil {
+			return "", onceErr
+		}
+		eastMoneyCookieCache.mu.Lock()
+		eastMoneyCookieCache.items[cacheKey] = &cookieCacheItem{
+			header: header,
+			expiry: time.Now().Add(EastMoneyCookieCacheTTL),
+		}
+		eastMoneyCookieCache.mu.Unlock()
+		return header, nil
+	})
 	if err != nil {
 		return "", err
 	}
-
-	eastMoneyCookieCache.mu.Lock()
-	eastMoneyCookieCache.items[cacheKey] = &cookieCacheItem{
-		header: h,
-		expiry: now.Add(EastMoneyCookieCacheTTL),
-	}
-	eastMoneyCookieCache.mu.Unlock()
-
-	//logger.SugaredLogger.Debugf("东财 Cookie 已缓存（URL: %s），至 %s 失效", urlCacheKey, now.Add(EastMoneyCookieCacheTTL).Format(time.RFC3339))
-
 	return h, nil
 }
 
@@ -180,9 +240,7 @@ func fetchEastMoneyCookiesViaChromedp(browserPath string, timeout time.Duration,
 // pageURL: 需要访问的页面 URL（可以包含查询参数），用于获取该页面的 Cookie
 // 注意：Cookie 缓存键为 URL 路径部分（排除查询参数），但实际访问时使用完整的 pageURL
 func eastMoneyCookiesViaChromedpOnce(browserPath string, timeout time.Duration, pageURL string) (cookieHeader string, err error) {
-	if timeout < eastMoneyCookieChromedpMinTimeout {
-		timeout = eastMoneyCookieChromedpMinTimeout
-	}
+	timeout = clampEastMoneyCookieTimeout(timeout)
 
 	parent, cancelParent := context.WithTimeout(context.Background(), timeout)
 	defer cancelParent()

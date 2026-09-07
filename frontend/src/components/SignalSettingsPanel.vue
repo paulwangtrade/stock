@@ -139,6 +139,10 @@ function gridStyle(group) {
       <n-text depth="3" class="signal-settings__hint">
         <template v-if="showSignalRules">
           调整 K 线信号识别规则；列表主标签优先级：止/减 &gt; 强 &gt; 趋 &gt; 转 &gt; 突 &gt; 弹 &gt; 买。修改后请点击页面底部「保存设置」生效。
+          <br />
+          参数调整只影响未来扫描结果，不会修改历史交易计划和已保存策略解释。
+          <br />
+          Beta 提示：建议不要频繁修改默认参数；试用请优先使用默认配置。
         </template>
         <template v-else>
           调整自选卡片等全局界面表现。修改后请点击页面底部「保存设置」生效。

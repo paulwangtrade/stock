@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/duke-git/lancet/v2/convertor"
@@ -72,17 +73,41 @@ var baseDict string
 //go:embed data/dict/zh/s_1.txt
 var zhDict string
 
+var (
+	sentimentDictMu     sync.Mutex
+	sentimentDictLoaded bool
+)
+
+// ensureSentimentDictLoaded 懒加载分词词典（首次情感分析时灌入；之后走内存缓存）。
+func ensureSentimentDictLoaded() {
+	sentimentDictMu.Lock()
+	defer sentimentDictMu.Unlock()
+	if sentimentDictLoaded {
+		return
+	}
+	loadSentimentDictLocked()
+	sentimentDictLoaded = true
+}
+
+// InitAnalyzeSentiment 显式触发词典加载（兼容测试/旧调用；启动路径勿再调用）。
 func InitAnalyzeSentiment() {
+	ensureSentimentDictLoaded()
+}
+
+// ResetSentimentDictForTest 仅测试用：重置懒加载状态（勿在生产路径调用）。
+func ResetSentimentDictForTest() {
+	sentimentDictMu.Lock()
+	defer sentimentDictMu.Unlock()
+	sentimentDictLoaded = false
+	seg = gse.Segmenter{}
+}
+
+func loadSentimentDictLocked() {
 	defer func() {
 		if r := recover(); r != nil {
 			logger.SugaredLogger.Error(fmt.Sprintf("panic: %v", r))
 		}
 	}()
-	// 加载简体中文词典
-	//err := seg.LoadDict("zh_s")
-	//if err != nil {
-	//	logger.SugaredLogger.Error(err.Error())
-	//}
 
 	err := seg.LoadDictEmbed(baseDict)
 	if err != nil {
@@ -92,65 +117,72 @@ func InitAnalyzeSentiment() {
 	}
 	seg.CalcToken()
 
-	stocks := &[]StockBasic{}
-	db.Dao.Model(&StockBasic{}).Find(stocks)
-	for _, stock := range *stocks {
-		if strutil.Trim(stock.Name) == "" {
-			continue
-		}
-		err := seg.AddToken(stock.Name, basefreq+100, "n")
-		if strutil.Trim(stock.BKName) != "" {
-			err = seg.AddToken(stock.BKName, basefreq+100, "n")
-		}
-		if err != nil {
-			logger.SugaredLogger.Errorf("添加%s失败:%s", stock.Name, err.Error())
-		}
+	if db.Dao == nil {
+		logger.SugaredLogger.Info("词典懒加载：数据库未初始化，仅使用内置词典")
+		seg.CalcToken()
+		return
 	}
-	logger.SugaredLogger.Info("加载股票名称词典成功")
+
+	stocks := &[]StockBasic{}
+	if err := db.Dao.Model(&StockBasic{}).Find(stocks).Error; err != nil {
+		logger.SugaredLogger.Errorf("词典懒加载：读取 StockBasic 失败: %v", err)
+	} else {
+		for _, stock := range *stocks {
+			if strutil.Trim(stock.Name) == "" {
+				continue
+			}
+			err := seg.AddToken(stock.Name, basefreq+100, "n")
+			if strutil.Trim(stock.BKName) != "" {
+				err = seg.AddToken(stock.BKName, basefreq+100, "n")
+			}
+			if err != nil {
+				logger.SugaredLogger.Errorf("添加%s失败:%s", stock.Name, err.Error())
+			}
+		}
+		logger.SugaredLogger.Info("加载股票名称词典成功")
+	}
 
 	stockhks := &[]models.StockInfoHK{}
-	db.Dao.Model(&models.StockInfoHK{}).Find(stockhks)
-	for _, stock := range *stockhks {
-		if strutil.Trim(stock.Name) == "" {
-			continue
+	if err := db.Dao.Model(&models.StockInfoHK{}).Find(stockhks).Error; err != nil {
+		logger.SugaredLogger.Errorf("词典懒加载：读取港股失败: %v", err)
+	} else {
+		for _, stock := range *stockhks {
+			if strutil.Trim(stock.Name) == "" {
+				continue
+			}
+			err := seg.AddToken(stock.Name, basefreq+100, "n")
+			if strutil.Trim(stock.BKName) != "" {
+				err = seg.AddToken(stock.BKName, basefreq+100, "n")
+			}
+			if err != nil {
+				logger.SugaredLogger.Errorf("添加%s失败:%s", stock.Name, err.Error())
+			}
 		}
-		err := seg.AddToken(stock.Name, basefreq+100, "n")
-		if strutil.Trim(stock.BKName) != "" {
-			err = seg.AddToken(stock.BKName, basefreq+100, "n")
-		}
-		if err != nil {
-			logger.SugaredLogger.Errorf("添加%s失败:%s", stock.Name, err.Error())
-		}
+		logger.SugaredLogger.Info("加载港股名称词典成功")
 	}
-	logger.SugaredLogger.Info("加载港股名称词典成功")
-	//stockus := &[]models.StockInfoUS{}
-	//db.Dao.Model(&models.StockInfoUS{}).Where("trim(name) != ?", "").Find(stockus)
-	//for _, stock := range *stockus {
-	//	err := seg.AddToken(stock.Name, 500)
-	//	if err != nil {
-	//		logger.SugaredLogger.Errorf("添加%s失败:%s", stock.Name, err.Error())
-	//	}
-	//}
+
 	tags := &[]models.Tags{}
-	db.Dao.Model(&models.Tags{}).Where("type = ?", "subject").Find(tags)
-	for _, tag := range *tags {
-		if tag.Name == "" {
-			continue
+	if err := db.Dao.Model(&models.Tags{}).Where("type = ?", "subject").Find(tags).Error; err != nil {
+		logger.SugaredLogger.Errorf("词典懒加载：读取 tags 失败: %v", err)
+	} else {
+		for _, tag := range *tags {
+			if tag.Name == "" {
+				continue
+			}
+			err := seg.AddToken(tag.Name, basefreq+100, "n")
+			if err != nil {
+				logger.SugaredLogger.Errorf("添加%s失败:%s", tag.Name, err.Error())
+			}
 		}
-		err := seg.AddToken(tag.Name, basefreq+100, "n")
-		if err != nil {
-			logger.SugaredLogger.Errorf("添加%s失败:%s", tag.Name, err.Error())
-		} else {
-			//logger.SugaredLogger.Infof("添加tags词典[%s]成功", tag.Name)
-		}
+		logger.SugaredLogger.Info("加载tags词典成功")
 	}
-	logger.SugaredLogger.Info("加载tags词典成功")
 	seg.CalcToken()
-	//加载用户自定义词典 先判断用户词典是否存在
+
 	if fileutil.IsExist("data/dict/user.txt") {
 		lines, err := fileutil.ReadFileByLine("data/dict/user.txt")
 		if err != nil {
 			logger.SugaredLogger.Error(err.Error())
+			seg.CalcToken()
 			return
 		}
 		for _, line := range lines {
@@ -186,7 +218,6 @@ func InitAnalyzeSentiment() {
 			default:
 				logger.SugaredLogger.Errorf("用户词典格式错误:%s", line)
 			}
-			//logger.SugaredLogger.Infof("添加用户词典[%s]成功", line)
 		}
 		if err != nil {
 			logger.SugaredLogger.Error(err.Error())
@@ -329,6 +360,8 @@ const (
 
 // AnalyzeSentiment 判断文本的情感
 func AnalyzeSentiment(text string) models.SentimentResult {
+	ensureSentimentDictLoaded()
+
 	// 初始化得分
 	score := 0.0
 	positiveCount := 0

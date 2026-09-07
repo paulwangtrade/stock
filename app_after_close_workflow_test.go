@@ -7,10 +7,13 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"go-stock/backend/data"
 	"go-stock/backend/db"
+	"go-stock/backend/marketstate"
 	"go-stock/backend/strategy"
+	"go-stock/backend/tradingcalendar"
 
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
@@ -35,13 +38,15 @@ func setupAfterCloseCronTestDB(t *testing.T) {
 
 func withTempAfterCloseConfig(t *testing.T, enabled bool) {
 	t.Helper()
-	dir := t.TempDir()
+	dir, err := os.MkdirTemp("", "after-close-cfg-*")
+	require.NoError(t, err)
 	origWD, err := os.Getwd()
 	require.NoError(t, err)
 	require.NoError(t, os.Chdir(dir))
 	t.Cleanup(func() {
 		_ = os.Chdir(origWD)
 		data.ResetAfterClosePlanConfigCache()
+		_ = os.RemoveAll(dir)
 	})
 	data.ResetAfterClosePlanConfigCache()
 	require.NoError(t, data.SaveAfterClosePlanConfig(data.AfterClosePlanConfig{
@@ -82,6 +87,11 @@ func TestRunAfterClosePlanWorkflowJob_DisabledDoesNotRun(t *testing.T) {
 
 func TestRunAfterClosePlanWorkflowJob_EnabledCallsWorkflow(t *testing.T) {
 	withTempAfterCloseConfig(t, true)
+
+	loc := time.Local
+	mondayAfterClose := time.Date(2026, 8, 17, 15, 35, 0, 0, loc)
+	restoreMarket := marketstate.SwapDefaultForTest(marketstate.New(func() time.Time { return mondayAfterClose }, loc, tradingcalendar.Default))
+	t.Cleanup(restoreMarket)
 
 	var calls atomic.Int32
 	var gotSource string

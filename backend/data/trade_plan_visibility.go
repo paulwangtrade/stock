@@ -9,6 +9,7 @@ import (
 	"go-stock/backend/db"
 	"go-stock/backend/models"
 	"go-stock/backend/risk"
+	"go-stock/backend/tradingwindow"
 
 	"gorm.io/gorm"
 )
@@ -38,21 +39,35 @@ type TradePlanVisibilityView struct {
 	FreezeBy      string     `json:"freezeBy"`
 	FreezeReason  string     `json:"freezeReason"`
 	IsFrozen      bool       `json:"isFrozen"`
+	WindowStatus  string     `json:"windowStatus"`
+	WindowReason  string     `json:"windowReason"`
+	OpenWindowStart string   `json:"openWindowStart"`
+	OpenWindowEnd   string   `json:"openWindowEnd"`
+	FreezeDeadline  string   `json:"freezeDeadline"`
 	Items         []TradePlanVisibilityItemView `json:"items"`
 }
 
 // TradePlanVisibilityItemView 计划明细只读视图。
+// Execution Preview 字段（RefPrice/LimitPrice/TargetVolume/EntryRule/IntentStatus）
+// 从 trade_plan_items 只读投影；AfterClose 阶段 LimitPrice/TargetVolume 为 0 属正常。
 type TradePlanVisibilityItemView struct {
-	StockCode    string  `json:"stockCode"`
-	StockName    string  `json:"stockName"`
-	Side         string  `json:"side"`
-	Priority     int     `json:"priority"`
-	TargetAmount float64 `json:"targetAmount"`
-	Status       string  `json:"status"`
-	Score        float64 `json:"score"`
-	RiskCode     string  `json:"riskCode"`
-	RiskMessage  string  `json:"riskMessage"`
-	StrategyName string  `json:"strategyName"`
+	ID            uint    `json:"id"` // Phase13-D: read-only for strategy explanation wiring
+	StockCode     string  `json:"stockCode"`
+	StockName     string  `json:"stockName"`
+	Side          string  `json:"side"`
+	Priority      int     `json:"priority"`
+	TargetAmount  float64 `json:"targetAmount"`
+	Status        string  `json:"status"`
+	Score         float64 `json:"score"`
+	RiskCode      string  `json:"riskCode"`
+	RiskMessage   string  `json:"riskMessage"`
+	StrategyName  string  `json:"strategyName"`
+	RefPrice      float64 `json:"refPrice"`
+	LimitPrice    float64 `json:"limitPrice"`
+	TargetVolume  int64   `json:"targetVolume"`
+	EntryRule     string  `json:"entryRule"`
+	IntentStatus  string  `json:"intentStatus"`
+	Reason        string  `json:"reason"`
 }
 
 // GetUpcomingTradePlan 只读查询即将交易的计划（可视化用，不改变任何交易状态）。
@@ -150,8 +165,22 @@ func toTradePlanVisibilityView(plan *models.TradePlan) *TradePlanVisibilityView 
 		IsFrozen:      plan.IsFrozen(),
 		Items:         make([]TradePlanVisibilityItemView, 0, len(plan.Items)),
 	}
+	window := tradingwindow.EvaluatePlanWindow(tradingwindow.PlanWindowInput{
+		TradeDate:   plan.TradeDate,
+		CurrentTime: time.Now(),
+		PlanStatus:  plan.Status,
+		IsFrozen:    plan.IsFrozen(),
+		FrozenTime:  plan.FreezeAt,
+	})
+	view.WindowStatus = string(window.Status)
+	view.WindowReason = window.Reason
+	view.OpenWindowStart = window.OpenWindowStart
+	view.OpenWindowEnd = window.OpenWindowEnd
+	view.FreezeDeadline = window.FreezeDeadline
+
 	for _, it := range plan.Items {
 		view.Items = append(view.Items, TradePlanVisibilityItemView{
+			ID:           it.ID,
 			StockCode:    it.StockCode,
 			StockName:    it.StockName,
 			Side:         it.Side,
@@ -162,6 +191,12 @@ func toTradePlanVisibilityView(plan *models.TradePlan) *TradePlanVisibilityView 
 			RiskCode:     it.RiskCode,
 			RiskMessage:  it.RiskMessage,
 			StrategyName: it.StrategyName,
+			RefPrice:     it.RefPrice,
+			LimitPrice:   it.LimitPrice,
+			TargetVolume: it.TargetVolume,
+			EntryRule:    it.EntryRule,
+			IntentStatus: it.IntentStatus,
+			Reason:       it.Reason,
 		})
 	}
 	return view

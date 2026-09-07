@@ -1,0 +1,40 @@
+{
+  "authority": {
+    "canAuthorizeExecute": false,
+    "canCreateCandidate": true,
+    "canModifyDecision": false,
+    "canReadDecision": true,
+    "ok": true
+  },
+  "case1_ok": {
+    "candidateId": "tpc:726663c4b4b4c86b",
+    "entryPriceHint": 10.1,
+    "executable": false,
+    "intentKind": "ENTER_HINT",
+    "ok": true,
+    "side": "buy",
+    "sourceDecisionId": "qd1:js_legacy:sz000001:2026-07-21T00:00:00Z:ENTER:可买",
+    "sourceSnapshotHash": "b7bfc76419fc0ae43eb9abbab521dc1869b17de3c8d705ac86c3c9fc312aa3bd",
+    "stopPriceHint": 9.85,
+    "targetShares": 1000
+  },
+  "case2_draft_not_validated": {
+    "code": "draft_not_validated",
+    "err": "draft_not_validated: status=CREATED",
+    "ok": false
+  },
+  "case3_execute_forbidden": {
+    "code": "candidate_execute_forbidden",
+    "err": "candidate_execute_forbidden",
+    "executable": false,
+    "ok": false
+  },
+  "case4_mutation": {
+    "codes": [
+      "candidate_mutation_detected"
+    ],
+    "ok": false
+  },
+  "harness": "quant-tradeplan-candidate-shadow",
+  "phase": "Phase5-B"
+}

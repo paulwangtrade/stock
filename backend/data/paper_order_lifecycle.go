@@ -66,13 +66,18 @@ const (
 	// PaperBrokerStatusPaper 纸面通道占位（非券商回报；不伪造 broker/external id）。
 	PaperBrokerStatusPaper = "paper"
 
-	BrokerStatusPending         = "pending" // Submit 后、ACK 前
+	BrokerStatusPending         = "pending" // Submit 后、ACK 前（同步 accepted 后常用 accepted）
 	BrokerStatusAccepted        = "accepted"
 	BrokerStatusWorking         = "working"
 	BrokerStatusPartiallyFilled = "partially_filled"
 	BrokerStatusFilled          = "filled"
-	BrokerStatusCancelled       = "cancelled"
-	BrokerStatusRejected        = "rejected"
+	// BrokerStatusCancelPending 撤单请求已送达通道、尚未收到 CANCEL 回报；OMS 仍 pending（非终态）。
+	BrokerStatusCancelPending = "cancel_pending"
+	BrokerStatusCancelled     = "cancelled"
+	BrokerStatusRejected      = "rejected"
+	// BrokerStatusTimeout / BrokerStatusUnknown：同步 Submit 不确定结果（仅 L2，不进 OMS enum）。
+	BrokerStatusTimeout = "timeout"
+	BrokerStatusUnknown = "unknown"
 )
 
 // PaperOMSStatuses Paper 允许的 OMS 业务态（不含 accepted / processing）。
@@ -116,6 +121,11 @@ const (
 	PaperOrderRejectPositionInsufficient = "POSITION_INSUFFICIENT"
 	PaperOrderRejectInvalidOrder         = "INVALID_ORDER"
 	PaperOrderRejectInternal             = "INTERNAL"
+
+	// Phase6.5.7.3.2.1 scenario reject reasons (stored in reject_code; no migration).
+	PaperSimRejectReasonPrice     = "price"
+	PaperSimRejectReasonLiquidity = "liquidity"
+	PaperSimRejectReasonBroker    = "broker"
 )
 
 // PaperOrderEventType 订单生命周期事件类型。

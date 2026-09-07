@@ -1,0 +1,25 @@
+{
+  "actionConflict": {
+    "conflictKind": "action_code_conflict",
+    "created": true,
+    "left": "ENTER",
+    "right": "WATCH"
+  },
+  "conflictCount": 2,
+  "conflictKinds": [
+    "action_code_conflict",
+    "id_content_conflict"
+  ],
+  "count": 2,
+  "harness": "quant-decision-snapshot-integrity",
+  "overwriteAttempt": {
+    "conflictKind": "id_content_conflict",
+    "keptHash": "b4e454280e7b3689e802a16d69aa8b6ea79cfee2697507a41a28b13f36116cd9"
+  },
+  "phase": "Phase3-C",
+  "sealed": {
+    "decisionId": "qd1:js_legacy:sz000001:2026-07-21T00:00:00Z:ENTER:可买",
+    "hash": "b4e454280e7b3689e802a16d69aa8b6ea79cfee2697507a41a28b13f36116cd9",
+    "intact": true
+  }
+}

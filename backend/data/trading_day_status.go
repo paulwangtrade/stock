@@ -305,8 +305,8 @@ func deriveMorningView(plan *models.TradePlan) TradingDayMorningView {
 	return TradingDayMorningView{Mode: MorningModeBuildMorning}
 }
 
-// deriveExecutionReadyView mirrors models.RequireFrozenReadyTradePlan (A6.2 Guard).
-// Condition: status=ready AND freeze_at != nil. Never uses legacy executionReady.
+// deriveExecutionReadyView mirrors models.RequireFrozenReadyTradePlan (A6.2 + Phase10-D.0.1).
+// Condition: status=ready AND freeze_at != nil AND approved_at != nil (INV-P-RDY-01).
 func deriveExecutionReadyView(plan *models.TradePlan) TradingDayExecutionReadyView {
 	guard := models.RequireFrozenReadyTradePlan(plan)
 	if guard.Allowed {

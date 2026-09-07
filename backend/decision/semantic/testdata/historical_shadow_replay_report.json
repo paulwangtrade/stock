@@ -1,0 +1,471 @@
+{
+  "phase": "Phase2-D",
+  "harness": "quant-decision-historical-shadow-replay",
+  "generatedAt": "2026-07-29T17:52:25.580Z",
+  "seriesId": "hist-replay-demo",
+  "code": "sz000001",
+  "totalDays": 4,
+  "daily": [
+    {
+      "tradeDate": "2026-07-14",
+      "asOf": "2026-07-14T00:00:00.000Z",
+      "baselineActionCode": "ENTER",
+      "candidateActionCode": "ENTER",
+      "stability": {
+        "phase": "Phase2-C",
+        "harness": "quant-decision-shadow-stability",
+        "generatedAt": "2026-07-29T17:52:25.531Z",
+        "totalPairs": 1,
+        "semanticEqualCount": 1,
+        "semanticMismatchCount": 0,
+        "displayOnlyDiffCount": 0,
+        "semanticEqualRate": 1,
+        "actionCode": {
+          "equalCount": 1,
+          "conflictCount": 0,
+          "equalRate": 1,
+          "conflictStats": [],
+          "conflictPairs": []
+        },
+        "mismatchBySlice": {
+          "signal": {
+            "mismatchPairCount": 0,
+            "pathCounts": {}
+          },
+          "entryZone": {
+            "mismatchPairCount": 0,
+            "pathCounts": {}
+          },
+          "gate": {
+            "mismatchPairCount": 0,
+            "pathCounts": {}
+          },
+          "risk": {
+            "mismatchPairCount": 0,
+            "pathCounts": {}
+          },
+          "size": {
+            "mismatchPairCount": 0,
+            "pathCounts": {}
+          },
+          "action": {
+            "mismatchPairCount": 0,
+            "pathCounts": {}
+          }
+        },
+        "pairs": [
+          {
+            "id": "hist-replay-demo:2026-07-14",
+            "code": "sz000001",
+            "semanticEqual": true,
+            "actionCodeEqual": true,
+            "leftActionCode": "ENTER",
+            "rightActionCode": "ENTER",
+            "displayDiffCount": 0,
+            "semanticDiffCount": 0,
+            "summary": "SEMANTIC_OK js_legacy ≡ go_engine",
+            "mismatchedSlices": []
+          }
+        ],
+        "summary": "STABLE: 1/1 semantic OK; 0 action.code conflicts"
+      }
+    },
+    {
+      "tradeDate": "2026-07-15",
+      "asOf": "2026-07-15T00:00:00.000Z",
+      "baselineActionCode": "WATCH",
+      "candidateActionCode": "WAIT_PULLBACK",
+      "stability": {
+        "phase": "Phase2-C",
+        "harness": "quant-decision-shadow-stability",
+        "generatedAt": "2026-07-29T17:52:25.531Z",
+        "totalPairs": 1,
+        "semanticEqualCount": 0,
+        "semanticMismatchCount": 1,
+        "displayOnlyDiffCount": 0,
+        "semanticEqualRate": 0,
+        "actionCode": {
+          "equalCount": 0,
+          "conflictCount": 1,
+          "equalRate": 0,
+          "conflictStats": [
+            {
+              "leftCode": "WATCH",
+              "rightCode": "WAIT_PULLBACK",
+              "count": 1
+            }
+          ],
+          "conflictPairs": [
+            {
+              "id": "hist-replay-demo:2026-07-15",
+              "code": "sz000001",
+              "leftCode": "WATCH",
+              "rightCode": "WAIT_PULLBACK"
+            }
+          ]
+        },
+        "mismatchBySlice": {
+          "signal": {
+            "mismatchPairCount": 0,
+            "pathCounts": {}
+          },
+          "entryZone": {
+            "mismatchPairCount": 0,
+            "pathCounts": {}
+          },
+          "gate": {
+            "mismatchPairCount": 0,
+            "pathCounts": {}
+          },
+          "risk": {
+            "mismatchPairCount": 0,
+            "pathCounts": {}
+          },
+          "size": {
+            "mismatchPairCount": 0,
+            "pathCounts": {}
+          },
+          "action": {
+            "mismatchPairCount": 1,
+            "pathCounts": {
+              "action.code": 1
+            }
+          }
+        },
+        "pairs": [
+          {
+            "id": "hist-replay-demo:2026-07-15",
+            "code": "sz000001",
+            "semanticEqual": false,
+            "actionCodeEqual": false,
+            "leftActionCode": "WATCH",
+            "rightActionCode": "WAIT_PULLBACK",
+            "displayDiffCount": 1,
+            "semanticDiffCount": 1,
+            "summary": "SEMANTIC_FAIL action.code WATCH ≠ WAIT_PULLBACK",
+            "mismatchedSlices": [
+              "action"
+            ]
+          }
+        ],
+        "summary": "UNSTABLE: semanticFail=1/1; actionCodeConflicts=1"
+      }
+    },
+    {
+      "tradeDate": "2026-07-16",
+      "asOf": "2026-07-16T00:00:00.000Z",
+      "baselineActionCode": "ENTER",
+      "candidateActionCode": "ENTER",
+      "stability": {
+        "phase": "Phase2-C",
+        "harness": "quant-decision-shadow-stability",
+        "generatedAt": "2026-07-29T17:52:25.548Z",
+        "totalPairs": 1,
+        "semanticEqualCount": 1,
+        "semanticMismatchCount": 0,
+        "displayOnlyDiffCount": 0,
+        "semanticEqualRate": 1,
+        "actionCode": {
+          "equalCount": 1,
+          "conflictCount": 0,
+          "equalRate": 1,
+          "conflictStats": [],
+          "conflictPairs": []
+        },
+        "mismatchBySlice": {
+          "signal": {
+            "mismatchPairCount": 0,
+            "pathCounts": {}
+          },
+          "entryZone": {
+            "mismatchPairCount": 0,
+            "pathCounts": {}
+          },
+          "gate": {
+            "mismatchPairCount": 0,
+            "pathCounts": {}
+          },
+          "risk": {
+            "mismatchPairCount": 0,
+            "pathCounts": {}
+          },
+          "size": {
+            "mismatchPairCount": 0,
+            "pathCounts": {}
+          },
+          "action": {
+            "mismatchPairCount": 0,
+            "pathCounts": {}
+          }
+        },
+        "pairs": [
+          {
+            "id": "hist-replay-demo:2026-07-16",
+            "code": "sz000001",
+            "semanticEqual": true,
+            "actionCodeEqual": true,
+            "leftActionCode": "ENTER",
+            "rightActionCode": "ENTER",
+            "displayDiffCount": 0,
+            "semanticDiffCount": 0,
+            "summary": "SEMANTIC_OK js_legacy ≡ go_engine",
+            "mismatchedSlices": []
+          }
+        ],
+        "summary": "STABLE: 1/1 semantic OK; 0 action.code conflicts"
+      }
+    },
+    {
+      "tradeDate": "2026-07-17",
+      "asOf": "2026-07-17T00:00:00.000Z",
+      "baselineActionCode": "ENTER",
+      "candidateActionCode": "ENTER",
+      "stability": {
+        "phase": "Phase2-C",
+        "harness": "quant-decision-shadow-stability",
+        "generatedAt": "2026-07-29T17:52:25.580Z",
+        "totalPairs": 1,
+        "semanticEqualCount": 1,
+        "semanticMismatchCount": 0,
+        "displayOnlyDiffCount": 0,
+        "semanticEqualRate": 1,
+        "actionCode": {
+          "equalCount": 1,
+          "conflictCount": 0,
+          "equalRate": 1,
+          "conflictStats": [],
+          "conflictPairs": []
+        },
+        "mismatchBySlice": {
+          "signal": {
+            "mismatchPairCount": 0,
+            "pathCounts": {}
+          },
+          "entryZone": {
+            "mismatchPairCount": 0,
+            "pathCounts": {}
+          },
+          "gate": {
+            "mismatchPairCount": 0,
+            "pathCounts": {}
+          },
+          "risk": {
+            "mismatchPairCount": 0,
+            "pathCounts": {}
+          },
+          "size": {
+            "mismatchPairCount": 0,
+            "pathCounts": {}
+          },
+          "action": {
+            "mismatchPairCount": 0,
+            "pathCounts": {}
+          }
+        },
+        "pairs": [
+          {
+            "id": "hist-replay-demo:2026-07-17",
+            "code": "sz000001",
+            "semanticEqual": true,
+            "actionCodeEqual": true,
+            "leftActionCode": "ENTER",
+            "rightActionCode": "ENTER",
+            "displayDiffCount": 0,
+            "semanticDiffCount": 0,
+            "summary": "SEMANTIC_OK js_legacy ≡ go_engine",
+            "mismatchedSlices": []
+          }
+        ],
+        "summary": "STABLE: 1/1 semantic OK; 0 action.code conflicts"
+      }
+    }
+  ],
+  "rollup": {
+    "phase": "Phase2-C",
+    "harness": "quant-decision-shadow-stability",
+    "generatedAt": "2026-07-29T17:52:25.580Z",
+    "totalPairs": 4,
+    "semanticEqualCount": 3,
+    "semanticMismatchCount": 1,
+    "displayOnlyDiffCount": 0,
+    "semanticEqualRate": 0.75,
+    "actionCode": {
+      "equalCount": 3,
+      "conflictCount": 1,
+      "equalRate": 0.75,
+      "conflictStats": [
+        {
+          "leftCode": "WATCH",
+          "rightCode": "WAIT_PULLBACK",
+          "count": 1
+        }
+      ],
+      "conflictPairs": [
+        {
+          "id": "hist-replay-demo:2026-07-15",
+          "code": "sz000001",
+          "leftCode": "WATCH",
+          "rightCode": "WAIT_PULLBACK"
+        }
+      ]
+    },
+    "mismatchBySlice": {
+      "signal": {
+        "mismatchPairCount": 0,
+        "pathCounts": {}
+      },
+      "entryZone": {
+        "mismatchPairCount": 0,
+        "pathCounts": {}
+      },
+      "gate": {
+        "mismatchPairCount": 0,
+        "pathCounts": {}
+      },
+      "risk": {
+        "mismatchPairCount": 0,
+        "pathCounts": {}
+      },
+      "size": {
+        "mismatchPairCount": 0,
+        "pathCounts": {}
+      },
+      "action": {
+        "mismatchPairCount": 1,
+        "pathCounts": {
+          "action.code": 1
+        }
+      }
+    },
+    "pairs": [
+      {
+        "id": "hist-replay-demo:2026-07-14",
+        "code": "sz000001",
+        "semanticEqual": true,
+        "actionCodeEqual": true,
+        "leftActionCode": "ENTER",
+        "rightActionCode": "ENTER",
+        "displayDiffCount": 0,
+        "semanticDiffCount": 0,
+        "summary": "SEMANTIC_OK js_legacy ≡ go_engine",
+        "mismatchedSlices": []
+      },
+      {
+        "id": "hist-replay-demo:2026-07-15",
+        "code": "sz000001",
+        "semanticEqual": false,
+        "actionCodeEqual": false,
+        "leftActionCode": "WATCH",
+        "rightActionCode": "WAIT_PULLBACK",
+        "displayDiffCount": 1,
+        "semanticDiffCount": 1,
+        "summary": "SEMANTIC_FAIL action.code WATCH ≠ WAIT_PULLBACK",
+        "mismatchedSlices": [
+          "action"
+        ]
+      },
+      {
+        "id": "hist-replay-demo:2026-07-16",
+        "code": "sz000001",
+        "semanticEqual": true,
+        "actionCodeEqual": true,
+        "leftActionCode": "ENTER",
+        "rightActionCode": "ENTER",
+        "displayDiffCount": 0,
+        "semanticDiffCount": 0,
+        "summary": "SEMANTIC_OK js_legacy ≡ go_engine",
+        "mismatchedSlices": []
+      },
+      {
+        "id": "hist-replay-demo:2026-07-17",
+        "code": "sz000001",
+        "semanticEqual": true,
+        "actionCodeEqual": true,
+        "leftActionCode": "ENTER",
+        "rightActionCode": "ENTER",
+        "displayDiffCount": 0,
+        "semanticDiffCount": 0,
+        "summary": "SEMANTIC_OK js_legacy ≡ go_engine",
+        "mismatchedSlices": []
+      }
+    ],
+    "summary": "UNSTABLE: semanticFail=1/4; actionCodeConflicts=1"
+  },
+  "actionTransitions": {
+    "baseline": {
+      "transitionCount": 3,
+      "uniqueEdges": 3,
+      "transitions": [
+        {
+          "fromCode": "ENTER",
+          "toCode": "ENTER",
+          "count": 1
+        },
+        {
+          "fromCode": "ENTER",
+          "toCode": "WATCH",
+          "count": 1
+        },
+        {
+          "fromCode": "WATCH",
+          "toCode": "ENTER",
+          "count": 1
+        }
+      ],
+      "fromTotals": {
+        "ENTER": 2,
+        "WATCH": 1
+      },
+      "toTotals": {
+        "WATCH": 1,
+        "ENTER": 2
+      }
+    },
+    "candidate": {
+      "transitionCount": 3,
+      "uniqueEdges": 3,
+      "transitions": [
+        {
+          "fromCode": "ENTER",
+          "toCode": "ENTER",
+          "count": 1
+        },
+        {
+          "fromCode": "ENTER",
+          "toCode": "WAIT_PULLBACK",
+          "count": 1
+        },
+        {
+          "fromCode": "WAIT_PULLBACK",
+          "toCode": "ENTER",
+          "count": 1
+        }
+      ],
+      "fromTotals": {
+        "ENTER": 2,
+        "WAIT_PULLBACK": 1
+      },
+      "toTotals": {
+        "WAIT_PULLBACK": 1,
+        "ENTER": 2
+      }
+    },
+    "crossProducerSameDay": {
+      "dayCount": 4,
+      "uniqueEdges": 2,
+      "transitions": [
+        {
+          "fromCode": "ENTER",
+          "toCode": "ENTER",
+          "count": 3
+        },
+        {
+          "fromCode": "WATCH",
+          "toCode": "WAIT_PULLBACK",
+          "count": 1
+        }
+      ]
+    }
+  },
+  "summary": "UNSTABLE_REPLAY: 4d; semanticFail=1; actionCodeConflicts=1; baselineTransitions=3"
+}

@@ -1,16 +1,16 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { formatPercent2 } from '../utils/formatNumber'
-import { formatBuyPriceRangeText, buyPriceRangeLabel, formatPriceTick } from '../utils/buyPriceRange'
-import { formatPositionPlanText } from '../utils/buyPositionSizing'
-import { formatChecklistScore } from '../utils/buyChecklist'
-import { formatSignalTagLabel, getSignalTagColor } from '../utils/signalBuyGuide'
-import { resolveSignalActionHint, formatSignalActionTooltip } from '../utils/signalActionHint'
+import { formatPriceTick } from '../utils/buyPriceRange'
+import { getSignalTagColor } from '../utils/signalBuyGuide'
+import { projectWatchlistCard } from '../utils/quantWatchlistProjection'
 import { signalSettingsState } from '../utils/signalSettingsStore'
 import StockSparkLine from './stockSparkLine.vue'
 
 const props = defineProps({
   result: { type: Object, required: true },
+  /** Phase1-A：量化 UI 投影（优先）；缺省时由散装 props 组装 */
+  projection: { type: Object, default: null },
   signal: { type: Object, default: null },
   buyPriceRange: { type: Object, default: null },
   entryTag: { type: String, default: '' },
@@ -19,6 +19,8 @@ const props = defineProps({
   showSparkline: { type: Boolean, default: true },
   /** 父级渲染窗口内的卡片才允许挂载迷你分时（再叠加可视区/hover） */
   sparklineEligible: { type: Boolean, default: true },
+  /** Observation-only tags: 用户关注 | 模型发现 | 交易计划 */
+  observationTags: { type: Array, default: () => [] },
   openAiEnable: { type: Boolean, default: false },
   groupList: { type: Array, default: () => [] },
   groupMode: { type: Boolean, default: false },
@@ -93,103 +95,17 @@ const emit = defineEmits([
 const r = computed(() => props.result)
 const hasQuote = computed(() => Number(r.value['买一报价']) > 0)
 
-const signalLabel = computed(() => {
-  const s = props.signal
-  if (!s?.tag) return ''
-  return formatSignalTagLabel(s.tag, s.sellPositionPct ?? s.addPositionPct ?? s.rushReducePct)
-})
-
-const signalActionHint = computed(() =>
-  resolveSignalActionHint({
-    tag: props.signal?.tag,
+/** 量化标注只读 projection，禁止本地二次判定 Action */
+const p = computed(() => {
+  if (props.projection) return props.projection
+  return projectWatchlistCard({
+    result: props.result,
+    signal: props.signal,
     buyPriceRange: props.buyPriceRange,
-    sellPositionPct: props.signal?.sellPositionPct,
-    addPositionPct: props.signal?.addPositionPct,
-    rushReducePct: props.signal?.rushReducePct,
-    sellVolume: props.signal?.sellVolume,
-    costPrice: props.signal?.costPrice,
-    sourceTag: props.signal?.sourceTag,
-    daysAgo: props.signal?.recentSignalDaysAgo ?? props.signal?.daysAgo,
-    checklistReady: props.quantChecklist?.ready,
-    holdingAdvice: props.signal?.holdingAdvice,
-  }),
-)
-
-const signalTooltip = computed(() => {
-  const parts = [`${r.value['股票名称'] || '未知股票'} (${r.value['股票代码'] || '--'})`]
-  if (props.signal?.statusText) parts.push(props.signal.statusText)
-  const advice = props.signal?.holdingAdvice
-  if (advice?.factors?.length) {
-    const lines = advice.factors.map((f) => `${f.impact >= 0 ? '+' : ''}${f.impact} ${f.label}：${f.detail}`)
-    parts.push(`持仓辅助（参考）\n${lines.join('\n')}`)
-  }
-  const action = formatSignalActionTooltip(signalActionHint.value)
-  if (action) parts.push(action)
-  return parts.filter(Boolean).join('\n\n')
-})
-
-const hasHolding = computed(() => Number(r.value.costVolume) > 0 && Number(r.value.costPrice) > 0)
-
-const holdingAdviceLabel = computed(() => {
-  const advice = props.signal?.holdingAdvice
-  if (!advice || !hasHolding.value) return ''
-  const pct = advice.suggestPctDisplay
-  if (pct > 0 && !props.signal?.tag) {
-    return `${advice.actionLabel} ${pct}%`
-  }
-  return advice.actionLabel
-})
-
-const holdingAdviceType = computed(() => {
-  const action = props.signal?.holdingAdvice?.action
-  if (action === 'add') return 'success'
-  if (action === 'reduce') return 'error'
-  return 'default'
-})
-
-const buyPriceDisplay = computed(() => formatBuyPriceRangeText(props.buyPriceRange))
-
-const buyRangeLabel = computed(() => buyPriceRangeLabel(props.buyPriceRange))
-
-const buyPriceTooltip = computed(() => {
-  const bp = props.buyPriceRange
-  if (!bp) return ''
-  const parts = [bp.note]
-  if (bp.instantText) parts.push(`出信号价 ${bp.instantText}`)
-  if (bp.deferMode === 'wait') parts.push('今日偏高，明日等回踩，不必当日追入')
-  else if (bp.deferMode === 'todayOrTomorrow') {
-    parts.push('明日仍可买，开盘或盘中落入区间即可')
-    if (bp.rangeHigh > bp.instantPrice) {
-      parts.push(`出信号价 ${formatPriceTick(bp.instantPrice)}，区间上沿含小幅高开容忍`)
-    }
-  }
-  parts.push('参考区间，非投资建议')
-  return parts.filter(Boolean).join(' · ')
-})
-
-const planText = computed(() => formatPositionPlanText(props.quantPlan))
-const checklistText = computed(() => formatChecklistScore(props.quantChecklist))
-
-const canCreateDraft = computed(() => {
-  if (props.quantPlan?.ok && (props.quantPlan.suggestedAddShares > 0 || props.quantPlan.suggestedShares > 0)) {
-    return true
-  }
-  const tag = props.signal?.tag
-  const sellPct = props.signal?.sellPositionPct
-  if (tag && Number(sellPct) > 0 && hasHolding.value) return true
-  return false
-})
-
-const draftButtonLabel = computed(() => {
-  if (props.quantPlan?.ok) return '生成买入草稿'
-  if (props.signal?.sellPositionPct > 0) return '生成卖出草稿'
-  return '生成交易草稿'
-})
-
-const checklistTooltip = computed(() => {
-  const ck = props.quantChecklist
-  if (!ck?.items?.length) return ''
-  return ck.items.map((i) => `${i.passed ? '✓' : '✗'} ${i.label}`).join('\n')
+    entryTag: props.entryTag,
+    quantPlan: props.quantPlan,
+    quantChecklist: props.quantChecklist,
+  })
 })
 
 function parseFollowDate(raw) {
@@ -216,15 +132,13 @@ const followTimeText = computed(() => {
   return `关注 ${dateStr} · ${days}天`
 })
 
-const tintTag = computed(() => props.signal?.tag || props.entryTag || props.buyPriceRange?.tag || '')
-
 const cardSignalTintOn = computed(
-  () => !!signalSettingsState.value.display?.watchlistCardSignalTint && !!tintTag.value,
+  () => !!signalSettingsState.value.display?.watchlistCardSignalTint && !!p.value.tintTag,
 )
 
 const cardTintStyle = computed(() => {
   if (!cardSignalTintOn.value) return undefined
-  const c = getSignalTagColor(tintTag.value)
+  const c = getSignalTagColor(p.value.tintTag)
   return {
     '--wl-card-tint-bg': c.color,
     '--wl-card-tint-border': c.borderColor,
@@ -232,8 +146,8 @@ const cardTintStyle = computed(() => {
 })
 
 const followBasePrice = computed(() => {
-  const p = Number(r.value['关注价格'] ?? r.value.FollowPrice)
-  return Number.isFinite(p) && p > 0 ? p : null
+  const px = Number(r.value['关注价格'] ?? r.value.FollowPrice)
+  return Number.isFinite(px) && px > 0 ? px : null
 })
 
 function resolveCurrentPrice(row) {
@@ -245,6 +159,14 @@ function resolveCurrentPrice(row) {
   if (Number.isFinite(pre) && pre > 0) return pre
   return null
 }
+
+const quoteStatusText = computed(() => {
+  const hasPrice = resolveCurrentPrice(r.value) != null
+  // 无价且行情未回：灰色占位；有旧价则直接展示旧价，待 revalidate 覆盖
+  if (r.value?.quotePending && !hasPrice) return '加载中...'
+  if (r.value?.quoteFailed && !hasPrice) return '--'
+  return null
+})
 
 const followCurrentPrice = computed(() => resolveCurrentPrice(r.value))
 
@@ -267,10 +189,10 @@ const followProfitDiff = computed(() => {
 })
 
 const followProfitType = computed(() => {
-  const p = followProfitPct.value
-  if (p == null) return 'default'
-  if (p > 0) return 'error'
-  if (p < 0) return 'success'
+  const pct = followProfitPct.value
+  if (pct == null) return 'default'
+  if (pct > 0) return 'error'
+  if (pct < 0) return 'success'
   return 'default'
 })
 
@@ -311,48 +233,59 @@ const followProfitTooltip = computed(() => {
       <div class="wl-card__head">
         <div class="wl-card__title-row">
           <n-text strong class="wl-card__name">{{ r['股票名称'] }}</n-text>
-          <n-tooltip v-if="signal?.tag || holdingAdviceLabel" trigger="hover">
+          <n-tooltip v-if="p.showSignalHeader" trigger="hover">
             <template #trigger>
               <n-flex :size="4" align="center" :wrap="false" style="display: inline-flex">
                 <n-tag
-                  v-if="signal?.tag"
+                  v-if="p.signalTag"
                   class="wl-card__signal"
                   size="small"
                   round
                   :bordered="true"
-                  :color="getSignalTagColor(signal.tag)"
+                  :color="getSignalTagColor(p.signalTag)"
                   style="cursor: pointer"
-                  @click="emit('signal-click', signal)"
+                  @click="emit('signal-click', p.signal)"
                 >
-                  {{ signalLabel }}
+                  {{ p.signalLabel }}
                 </n-tag>
                 <n-tag
-                  v-if="signalActionHint"
+                  v-if="p.actionHint"
                   size="tiny"
-                  :type="signalActionHint.type"
+                  :type="p.actionType"
                   :bordered="true"
                   round
                   style="cursor: help"
                 >
-                  {{ signalActionHint.label }}
+                  {{ p.actionLabel }}
                 </n-tag>
                 <n-tag
-                  v-if="holdingAdviceLabel && !signal?.tag"
+                  v-if="p.showHoldingAdvice"
                   size="tiny"
-                  :type="holdingAdviceType"
+                  :type="p.holdingAdviceType"
                   :bordered="true"
                   round
                   style="cursor: help"
                 >
-                  {{ holdingAdviceLabel }}
+                  {{ p.holdingAdviceLabel }}
                 </n-tag>
               </n-flex>
             </template>
-            <span style="white-space: pre-wrap">{{ signalTooltip }}</span>
+            <span style="white-space: pre-wrap">{{ p.signalTooltip }}</span>
           </n-tooltip>
         </div>
         <div class="wl-card__head-actions">
           <n-text depth="3" class="wl-card__code">{{ r['股票代码'] }}</n-text>
+          <n-flex v-if="observationTags.length" :size="4" :wrap="true" class="wl-card__obs-tags">
+            <n-tag
+              v-for="tag in observationTags"
+              :key="tag"
+              size="tiny"
+              :bordered="false"
+              :type="tag === '模型发现' ? 'info' : tag === '交易计划' ? 'warning' : 'success'"
+            >
+              {{ tag }}
+            </n-tag>
+          </n-flex>
           <n-tag
             v-if="r['所属行业']"
             size="tiny"
@@ -388,18 +321,23 @@ const followProfitTooltip = computed(() => {
 
     <div class="wl-card__price-row">
       <div class="wl-card__price-main">
-        <n-text :type="r.type" class="wl-card__price">
-          <n-number-animation
-            :duration="800"
-            :precision="2"
-            :from="r['上次当前价格']"
-            :to="Number(r['当前价格'])"
-          />
-        </n-text>
-        <n-text :type="r.type" class="wl-card__pct">
-          <n-number-animation :duration="800" :precision="2" :from="0" :to="r.changePercent" />
-          <span class="wl-card__pct-unit">%</span>
-        </n-text>
+        <template v-if="quoteStatusText">
+          <n-text depth="3" class="wl-card__price">{{ quoteStatusText }}</n-text>
+        </template>
+        <template v-else>
+          <n-text :type="r.type" class="wl-card__price">
+            <n-number-animation
+              :duration="800"
+              :precision="2"
+              :from="r['上次当前价格']"
+              :to="Number(r['当前价格'])"
+            />
+          </n-text>
+          <n-text :type="r.type" class="wl-card__pct">
+            <n-number-animation :duration="800" :precision="2" :from="0" :to="r.changePercent || 0" />
+            <span class="wl-card__pct-unit">%</span>
+          </n-text>
+        </template>
         <n-tag
           v-if="r['盘前盘后'] > 0"
           size="tiny"
@@ -441,41 +379,41 @@ const followProfitTooltip = computed(() => {
     </div>
 
     <div class="wl-card__stats">
-      <div v-if="buyPriceRange" class="wl-card__stat wl-card__stat--buy-range">
-        <span class="wl-card__stat-label">{{ buyRangeLabel }}</span>
+      <div v-if="p.showBuyRange" class="wl-card__stat wl-card__stat--buy-range">
+        <span class="wl-card__stat-label">{{ p.buyRangeLabel }}</span>
         <n-tooltip trigger="hover">
           <template #trigger>
             <span
               class="wl-card__stat-val wl-card__buy-range"
-              :class="{ 'wl-card__buy-range--extended': buyPriceRange.extended }"
+              :class="{ 'wl-card__buy-range--extended': p.buyRangeExtended }"
             >
-              {{ buyPriceDisplay }}
+              {{ p.buyPriceDisplay }}
             </span>
           </template>
-          {{ buyPriceTooltip }}
+          {{ p.buyPriceTooltip }}
         </n-tooltip>
       </div>
-      <div v-if="quantPlan?.ok || quantChecklist" class="wl-card__stat wl-card__stat--quant">
+      <div v-if="p.showQuantStat" class="wl-card__stat wl-card__stat--quant">
         <span class="wl-card__stat-label">量化</span>
-        <n-tooltip v-if="quantChecklist" trigger="hover">
+        <n-tooltip v-if="p.showChecklist" trigger="hover">
           <template #trigger>
             <n-tag
               size="tiny"
-              :type="quantChecklist.ready ? 'success' : 'default'"
+              :type="p.checklistReady ? 'success' : 'default'"
               :bordered="false"
               class="wl-card__quant-tag"
             >
-              清单 {{ checklistText }}
+              清单 {{ p.checklistText }}
             </n-tag>
           </template>
-          <span style="white-space: pre-wrap">{{ checklistTooltip }}</span>
+          <span style="white-space: pre-wrap">{{ p.checklistTooltip }}</span>
         </n-tooltip>
-        <n-tooltip v-if="quantPlan" trigger="hover">
+        <n-tooltip v-if="p.showPlan" trigger="hover">
           <template #trigger>
-            <span class="wl-card__stat-val wl-card__quant-plan">{{ planText }}</span>
+            <span class="wl-card__stat-val wl-card__quant-plan">{{ p.planText }}</span>
           </template>
-          {{ quantPlan.reason }}
-          <template v-if="quantPlan.stopPrice"> · 止损≈{{ formatPriceTick(quantPlan.stopPrice) }}</template>
+          {{ p.planReason }}
+          <template v-if="p.planStopPrice"> · 止损≈{{ formatPriceTick(p.planStopPrice) }}</template>
         </n-tooltip>
       </div>
       <div class="wl-card__stat">
@@ -512,13 +450,13 @@ const followProfitTooltip = computed(() => {
     <div class="wl-card__primary-actions">
       <n-button size="small" type="primary" @click="emit('lw-kline', r)">多周期 K 线</n-button>
       <n-button
-        v-if="canCreateDraft"
+        v-if="p.canCreateDraft"
         size="small"
         type="warning"
         secondary
         @click="emit('create-draft', r)"
       >
-        {{ draftButtonLabel }}
+        {{ p.draftButtonLabel }}
       </n-button>
     </div>
 

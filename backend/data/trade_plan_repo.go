@@ -109,6 +109,31 @@ func (r *TradePlanRepo) GetLatestByTradeDate(tradeDate string) (*models.TradePla
 	return &plan, nil
 }
 
+// GetLatestBuyDraftByTradeDate is the morning-adapter fallback: newest draft with
+// side=buy (empty side treated as buy for legacy). GetLatestByTradeDate is unchanged.
+func (r *TradePlanRepo) GetLatestBuyDraftByTradeDate(tradeDate string) (*models.TradePlan, error) {
+	if db.Dao == nil {
+		return nil, fmt.Errorf("数据库未初始化")
+	}
+	tradeDate = strings.TrimSpace(tradeDate)
+	if tradeDate == "" {
+		return nil, fmt.Errorf("trade date is required")
+	}
+	var plan models.TradePlan
+	err := db.Dao.Where("trade_date = ? AND status = ?", tradeDate, models.TradePlanStatusDraft).
+		Where("(TRIM(COALESCE(side, '')) = '' OR LOWER(TRIM(COALESCE(side, ''))) = ?)", "buy").
+		Order("id DESC").First(&plan).Error
+	if err != nil {
+		return nil, err
+	}
+	items, err := r.loadItems(plan.ID)
+	if err != nil {
+		return nil, err
+	}
+	plan.Items = items
+	return &plan, nil
+}
+
 // NextPlanVersion returns MAX(plan_version)+1 for tradeDate (append-only versioning).
 // When no rows exist, returns 1. Legacy rows with plan_version=0 yield 1 on first draft.
 func (r *TradePlanRepo) NextPlanVersion(tradeDate string) (int, error) {
@@ -149,9 +174,10 @@ func (r *TradePlanRepo) GetReadyByTradeDate(tradeDate string) (*models.TradePlan
 	return &plan, nil
 }
 
-// GetFrozenByTradeDate returns the preferred frozen ready plan for tradeDate.
-// Criteria: status=ready AND freeze_at IS NOT NULL.
+// GetFrozenByTradeDate returns the preferred executable frozen ready plan for tradeDate.
+// Criteria (Phase10-D.0 INV-P-RDY-01): status=ready AND freeze_at IS NOT NULL AND approved_at IS NOT NULL.
 // Multi-version rule: highest plan_version, then highest id (read-only; no mutations).
+// Historical naked ready (no freeze) is excluded — execution isolation, no DB repair.
 func (r *TradePlanRepo) GetFrozenByTradeDate(tradeDate string) (*models.TradePlan, error) {
 	if db.Dao == nil {
 		return nil, fmt.Errorf("数据库未初始化")
@@ -162,7 +188,7 @@ func (r *TradePlanRepo) GetFrozenByTradeDate(tradeDate string) (*models.TradePla
 	}
 	var plan models.TradePlan
 	err := db.Dao.Where(
-		"trade_date = ? AND status = ? AND freeze_at IS NOT NULL",
+		"trade_date = ? AND status = ? AND freeze_at IS NOT NULL AND approved_at IS NOT NULL",
 		tradeDate, models.TradePlanStatusReady,
 	).Order("plan_version DESC, id DESC").First(&plan).Error
 	if err != nil {
@@ -195,6 +221,7 @@ func (r *TradePlanRepo) MarkChecked(planID uint) error {
 
 // ApproveDraft writes approval audit fields while keeping status=draft (CAS).
 // Does not set FreezeAt, ready, or EnableExecute.
+// Legacy path (Risk-only ApproveTradePlan); Prefer ApproveDraftGate for Phase6.5.6.15+.
 func (r *TradePlanRepo) ApproveDraft(planID uint, approvedBy, approvalReason string, at time.Time) (bool, error) {
 	if db.Dao == nil {
 		return false, fmt.Errorf("数据库未初始化")
@@ -213,6 +240,36 @@ func (r *TradePlanRepo) ApproveDraft(planID uint, approvedBy, approvalReason str
 			"approved_at":     at,
 			"approved_by":     approvedBy,
 			"approval_reason": approvalReason,
+			"updated_at":      at,
+		})
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected == 1, nil
+}
+
+// ApproveDraftGate CAS-writes approved_at / approved_by / approved_source for a first-time
+// draft approval (approved_at IS NULL). Keeps status=draft; does not touch items / Intent /
+// limit_price / target_volume / freeze_* / enable_execute.
+// Returns false when CAS misses (not draft, already approved, or concurrent race).
+func (r *TradePlanRepo) ApproveDraftGate(planID uint, approvedBy, approvedSource string, at time.Time) (bool, error) {
+	if db.Dao == nil {
+		return false, fmt.Errorf("数据库未初始化")
+	}
+	if planID == 0 {
+		return false, fmt.Errorf("plan id is required")
+	}
+	if at.IsZero() {
+		at = time.Now()
+	}
+	approvedBy = strings.TrimSpace(approvedBy)
+	approvedSource = strings.TrimSpace(approvedSource)
+	res := db.Dao.Model(&models.TradePlan{}).
+		Where("id = ? AND status = ? AND approved_at IS NULL", planID, models.TradePlanStatusDraft).
+		Updates(map[string]any{
+			"approved_at":     at,
+			"approved_by":     approvedBy,
+			"approved_source": approvedSource,
 			"updated_at":      at,
 		})
 	if res.Error != nil {
@@ -367,8 +424,23 @@ func (r *TradePlanRepo) ListExecutingPlans(beforeTime time.Time) ([]models.Trade
 	return plans, err
 }
 
-// GetPlanExecutionSummary 聚合 item 与 paper_order 事实。
+// PlanExecutionSummaryReader optional override for LEG-1 / Phase10-H.2.
+// When set (by papertrading init), prefers paper_sim_* aggregates; legacy paper_orders kept as fallback inside the reader.
+// data must not import papertrading (cycle); registration is one-way.
+var PlanExecutionSummaryReader func(planID uint) (*TradePlanExecutionSummary, error)
+
+// GetPlanExecutionSummary 聚合 item 与执行订单事实（优先 paper_sim，经 PlanExecutionSummaryReader）。
 func (r *TradePlanRepo) GetPlanExecutionSummary(planID uint) (*TradePlanExecutionSummary, error) {
+	if PlanExecutionSummaryReader != nil {
+		if sum, err := PlanExecutionSummaryReader(planID); err == nil && sum != nil {
+			return sum, nil
+		}
+	}
+	return r.getPlanExecutionSummaryLegacy(planID)
+}
+
+// getPlanExecutionSummaryLegacy 保留 paper_orders 读路径（兼容 / Reader 未注册时）。
+func (r *TradePlanRepo) getPlanExecutionSummaryLegacy(planID uint) (*TradePlanExecutionSummary, error) {
 	if db.Dao == nil {
 		return nil, fmt.Errorf("数据库未初始化")
 	}
@@ -435,6 +507,8 @@ func tradePlanItemEffectivelyFilled(it models.TradePlanItem, orderCache map[uint
 	return it.Status == models.TradePlanItemFilled
 }
 
+// UpdateItemExecution persists Execution outcomes only.
+// Phase6.5.7.2.2: must NOT write Order Spec (limit_price / target_volume) or Intent fields.
 func (r *TradePlanRepo) UpdateItemExecution(item *models.TradePlanItem) error {
 	if db.Dao == nil {
 		return fmt.Errorf("数据库未初始化")
@@ -451,9 +525,59 @@ func (r *TradePlanRepo) UpdateItemExecution(item *models.TradePlanItem) error {
 		"filled_price":  item.FilledPrice,
 		"filled_volume": item.FilledVolume,
 		"filled_fee":    item.FilledFee,
-		"target_volume": item.TargetVolume,
 		"stock_name":    item.StockName,
 		"updated_at":    item.UpdatedAt,
+	}).Error
+}
+
+// UpdateItemMorningLimitPrice persists morning Intent→limit_price materialization fields.
+// It intentionally does not update target_volume (Phase6.5.6.13.1 scope).
+func (r *TradePlanRepo) UpdateItemMorningLimitPrice(item *models.TradePlanItem) error {
+	if db.Dao == nil {
+		return fmt.Errorf("数据库未初始化")
+	}
+	if item == nil || item.ID == 0 {
+		return fmt.Errorf("invalid trade plan item")
+	}
+	item.UpdatedAt = time.Now()
+	return db.Dao.Model(&models.TradePlanItem{}).Where("id = ?", item.ID).Updates(map[string]any{
+		"limit_price":    item.LimitPrice,
+		"open_ref_price": item.OpenRefPrice,
+		"intent_status":  item.IntentStatus,
+		"priced_at":      item.PricedAt,
+		"priced_by":      item.PricedBy,
+		"updated_at":     item.UpdatedAt,
+	}).Error
+}
+
+// UpdateItemMorningTargetVolume persists morning position materialization (Phase6.5.6.13.2.1).
+// Updates target_volume + intent_status only; does not touch limit_price / risk_* / filled_*.
+func (r *TradePlanRepo) UpdateItemMorningTargetVolume(item *models.TradePlanItem) error {
+	if db.Dao == nil {
+		return fmt.Errorf("数据库未初始化")
+	}
+	if item == nil || item.ID == 0 {
+		return fmt.Errorf("invalid trade plan item")
+	}
+	item.UpdatedAt = time.Now()
+	return db.Dao.Model(&models.TradePlanItem{}).Where("id = ?", item.ID).Updates(map[string]any{
+		"target_volume": item.TargetVolume,
+		"intent_status": item.IntentStatus,
+		"updated_at":    item.UpdatedAt,
+	}).Error
+}
+
+// UpdatePlanPricingStage updates trade_plans.pricing_stage only.
+func (r *TradePlanRepo) UpdatePlanPricingStage(planID uint, stage string) error {
+	if db.Dao == nil {
+		return fmt.Errorf("数据库未初始化")
+	}
+	if planID == 0 {
+		return fmt.Errorf("plan id is required")
+	}
+	return db.Dao.Model(&models.TradePlan{}).Where("id = ?", planID).Updates(map[string]any{
+		"pricing_stage": stage,
+		"updated_at":    time.Now(),
 	}).Error
 }
 

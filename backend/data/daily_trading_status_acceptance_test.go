@@ -34,8 +34,8 @@ func TestPhase15_GetDailyTradingStatus_NoCandidate(t *testing.T) {
 	require.Equal(t, "not_started", st.Execution.Phase)
 	require.Contains(t, st.BlockReasons, "candidate_pool_empty")
 	require.Contains(t, st.BlockReasons, "trade_plan_missing")
-	require.Equal(t, "candidate_pool_empty", st.BlockReason)
-	require.Contains(t, st.Message, "blocked: candidate_pool_empty")
+	requireDailyBlockReason(t, st, "candidate_pool_empty")
+	requireDailyMessageContains(t, st, "blocked: candidate_pool_empty")
 }
 
 func TestPhase15_GetDailyTradingStatus_CandidateWithoutPlan(t *testing.T) {
@@ -61,7 +61,7 @@ func TestPhase15_GetDailyTradingStatus_CandidateWithoutPlan(t *testing.T) {
 	require.False(t, st.Execution.Ready)
 	require.NotContains(t, st.BlockReasons, "candidate_pool_empty")
 	require.Contains(t, st.BlockReasons, "trade_plan_missing")
-	require.Equal(t, "trade_plan_missing", st.BlockReason)
+	requireDailyBlockReason(t, st, "trade_plan_missing")
 }
 
 func TestPhase15_GetDailyTradingStatus_RiskAllFiltered(t *testing.T) {
@@ -98,7 +98,7 @@ func TestPhase15_GetDailyTradingStatus_RiskAllFiltered(t *testing.T) {
 	require.Equal(t, "skipped", st.Execution.Phase)
 	require.False(t, st.Execution.Ready)
 	require.Contains(t, st.BlockReasons, "all_plan_items_filtered_or_skipped")
-	require.Equal(t, "all_plan_items_filtered_or_skipped", st.BlockReason)
+	requireDailyBlockReason(t, st, "all_plan_items_filtered_or_skipped")
 }
 
 func TestPhase15_GetDailyTradingStatus_PlanStuckExecuting(t *testing.T) {
@@ -129,7 +129,7 @@ func TestPhase15_GetDailyTradingStatus_PlanStuckExecuting(t *testing.T) {
 	require.Equal(t, "executing", st.Execution.Phase)
 	require.False(t, st.Execution.Ready)
 	require.Contains(t, st.BlockReasons, "plan_stuck_executing")
-	require.Equal(t, "plan_stuck_executing", st.BlockReason)
+	requireDailyBlockReason(t, st, "plan_stuck_executing")
 	require.Equal(t, 0, st.Paper.FillCount)
 }
 
@@ -178,8 +178,7 @@ func TestPhase15_GetDailyTradingStatus_PaperFilled(t *testing.T) {
 	require.Equal(t, 1, st.Paper.OrderCount)
 	require.Equal(t, 1, st.Paper.FillCount)
 	require.Equal(t, 1, st.Paper.FilledOrderCount)
-	require.Empty(t, st.BlockReason, "成交完成不应再阻断")
-	require.Empty(t, st.BlockReasons)
-	require.Contains(t, st.Message, "execution=done")
+	requireDailyNoBlockReason(t, st)
+	requireDailyMessageContains(t, st, "execution=done")
 	require.False(t, st.Execution.Ready, "已完成执行不应再 ready")
 }

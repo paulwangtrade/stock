@@ -1,0 +1,29 @@
+# License compliance policy for go-stock release engineering.
+# Used by tools/compliance and scripts/license/*.ps1 — does NOT affect runtime product code.
+
+version: 1
+
+# Licenses that block release unless explicitly allowlisted (case-insensitive substring match).
+forbidden:
+  - GPL
+  - AGPL
+  - LGPL
+
+# Packages may be allowlisted after legal review (module path or npm name).
+allowlist:
+  go: []
+  npm: []
+
+# npm: scan production tree by default; also scan full tree when --dev is passed.
+frontend:
+  projects:
+    - name: main
+      path: frontend
+      production: true
+    - name: ai-assistant-web
+      path: ai-assistant-web/frontend
+      production: true
+
+output:
+  inventory_dir: compliance/inventory
+  notices_file: THIRD_PARTY_NOTICES.md

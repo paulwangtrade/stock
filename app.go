@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/hex"
@@ -17,6 +15,9 @@ import (
 	"go-stock/backend/logger"
 	"go-stock/backend/marketdata"
 	"go-stock/backend/models"
+	"go-stock/backend/security"
+	_ "go-stock/backend/tradingrule" // QuantityPolicy Submit hooks (legacy paper)
+	"go-stock/backend/version"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,7 +25,6 @@ import (
 	"time"
 
 	"github.com/duke-git/lancet/v2/cryptor"
-	"github.com/inconshreveable/go-update"
 	"github.com/samber/lo"
 	"golang.org/x/exp/slices"
 
@@ -63,6 +63,8 @@ type App struct {
 	// settingsReloadPrev：UpdateConfig 写入前的关键字段快照，供 updateSettings 决定是否 WindowReloadApp
 	settingsReloadMu   sync.Mutex
 	settingsReloadPrev *settingsReloadFingerprint
+	// marketData：App 实例级行情门面（MD-001 M1）；禁止业务直连 EastMoney/Tencent Provider。
+	marketData marketdata.MarketDataService
 }
 
 // settingsReloadFingerprint 仅包含「必须整页重载」的关键配置字段。
@@ -114,6 +116,7 @@ func NewApp() *App {
 		AiTools:            tools,
 		stockAlertLastSent: make(map[string]time.Time),
 		priceAtAlertReset:  make(map[string]float64),
+		marketData:         newAppMarketDataService(),
 	}
 }
 
@@ -186,7 +189,7 @@ func (a *App) GetSponsorInfo() map[string]any {
 	return a.SponsorInfo
 }
 
-// GetEffectiveSponsorVip 从本地配置解密赞助信息并判断当前是否在 VIP 有效期内（与 ai-assistant-web / data.EffectiveSponsorVipLevel 一致）。
+// GetEffectiveSponsorVip 从本地配置解密授权信息并判断当前是否在 Pro 有效期内（与 ai-assistant-web / data.EffectiveSponsorVipLevel 一致）。
 func (a *App) GetEffectiveSponsorVip() map[string]any {
 	level, active := data.EffectiveSponsorVipLevel()
 	return map[string]any{
@@ -201,7 +204,7 @@ func (a *App) CheckSponsorCode(sponsorCode string) map[string]any {
 		if err != nil {
 			return map[string]any{
 				"code": 0,
-				"msg":  "赞助码格式错误,请输入正确的赞助码!",
+				"msg":  "授权码格式错误，请输入正确的授权码",
 			}
 		}
 		key, err := hex.DecodeString(BuildKey)
@@ -209,20 +212,18 @@ func (a *App) CheckSponsorCode(sponsorCode string) map[string]any {
 			logger.SugaredLogger.Error(err.Error())
 			return map[string]any{
 				"code": 0,
-				"msg":  "版本错误，不支持赞助码!",
+				"msg":  "当前版本不支持授权码校验",
 			}
 		}
 		decrypt := cryptor.AesEcbDecrypt(encrypted, key)
 		if decrypt == nil || len(decrypt) == 0 {
 			return map[string]any{
 				"code": 0,
-				"msg":  "赞助码错误，请输入正确的赞助码!",
+				"msg":  "授权码无效，请检查后重试",
 			}
 		}
 
-		// 校验通过后，将赞助码持久化到 Settings 中
 		config := data.GetSettingConfig()
-		// 只在赞助码变更时写库，避免无谓更新
 		if config.SponsorCode != sponsorCode {
 			config.SponsorCode = sponsorCode
 			data.UpdateConfig(config)
@@ -230,268 +231,16 @@ func (a *App) CheckSponsorCode(sponsorCode string) map[string]any {
 
 		return map[string]any{
 			"code": 1,
-			"msg":  "赞助码校验成功，感谢您的支持!",
-		}
-	} else {
-		return map[string]any{"code": 0, "message": "赞助码不能为空,请输入正确的赞助码!"}
-	}
-}
-
-func (a *App) CheckUpdate(flag int) {
-	sponsorCode := strutil.Trim(a.GetConfig().SponsorCode)
-	if sponsorCode != "" {
-		encrypted, err := hex.DecodeString(sponsorCode)
-		if err != nil {
-			logger.SugaredLogger.Error(err.Error())
-			return
-		}
-		key, err := hex.DecodeString(BuildKey)
-		if err != nil {
-			logger.SugaredLogger.Error(err.Error())
-			return
-		}
-		decrypt := string(cryptor.AesEcbDecrypt(encrypted, key))
-		err = json.Unmarshal([]byte(decrypt), &a.SponsorInfo)
-		if err != nil {
-			logger.SugaredLogger.Error(err.Error())
-			return
+			"msg":  "授权码校验成功",
 		}
 	}
-
-	releaseVersion := &models.GitHubReleaseVersion{}
-	_, err := resty.New().R().
-		SetResult(releaseVersion).
-		Get("https://api.github.com/repos/ArvinLovegood/go-stock/releases/latest")
-	if err != nil {
-		logger.SugaredLogger.Errorf("get github release version error:%s", err.Error())
-		return
-	}
-	//logger.SugaredLogger.Infof("releaseVersion:%+v", releaseVersion.TagName)
-
-	if data.BypassSponsorVip {
-		a.VipLevel = 9
-		go a.syncNews()
-	} else if _, vipLevel, ok := a.isVip(sponsorCode, "", releaseVersion); ok {
-		level, _ := convertor.ToInt(vipLevel)
-		a.VipLevel = level
-		if level >= 2 {
-			go a.syncNews()
-		}
-	}
-
-	if releaseVersion.TagName != Version {
-		tag := &models.Tag{}
-		_, err = resty.New().R().
-			SetResult(tag).
-			Get("https://api.github.com/repos/ArvinLovegood/go-stock/git/ref/tags/" + releaseVersion.TagName)
-		if err == nil {
-			releaseVersion.Tag = *tag
-		}
-
-		commit := &models.Commit{}
-		_, err = resty.New().R().
-			SetResult(commit).
-			Get(tag.Object.Url)
-		if err == nil {
-			releaseVersion.Commit = *commit
-		}
-
-		// 构建下载链接
-		downloadUrl := fmt.Sprintf("https://github.com/ArvinLovegood/go-stock/releases/download/%s/go-stock-windows-amd64.exe", releaseVersion.TagName)
-		if IsMacOS() {
-			downloadUrl = fmt.Sprintf("https://github.com/ArvinLovegood/go-stock/releases/download/%s/go-stock-darwin-universal", releaseVersion.TagName)
-		} else if IsLinux() {
-			downloadUrl = fmt.Sprintf("https://github.com/ArvinLovegood/go-stock/releases/download/%s/go-stock-linux-amd64", releaseVersion.TagName)
-		}
-		downloadUrl, _, done := a.isVip(sponsorCode, downloadUrl, releaseVersion)
-		if !done {
-			return
-		}
-		go runtime.EventsEmit(a.ctx, "newsPush", map[string]any{
-			"time":    "发现新版本：" + releaseVersion.TagName,
-			"isRed":   true,
-			"source":  "go-stock",
-			"content": fmt.Sprintf("%s", commit.Message),
-		})
-		resp, err := resty.New().R().Get(downloadUrl)
-		if err != nil {
-			go runtime.EventsEmit(a.ctx, "newsPush", map[string]any{
-				"time":    "新版本：" + releaseVersion.TagName,
-				"isRed":   true,
-				"source":  "go-stock",
-				"content": commit.Message + "\n新版本下载失败,请稍后重试或请前往 https://github.com/ArvinLovegood/go-stock/releases 手动下载替换文件。",
-			})
-			return
-		}
-		body := resp.Body()
-
-		if len(body) < 1024*500 {
-			go runtime.EventsEmit(a.ctx, "newsPush", map[string]any{
-				"time":    "新版本：" + releaseVersion.TagName,
-				"isRed":   true,
-				"source":  "go-stock",
-				"content": commit.Message + "\n新版本下载失败,请稍后重试或请前往 https://github.com/ArvinLovegood/go-stock/releases 手动下载替换文件。",
-			})
-			return
-		}
-
-		err = update.Apply(bytes.NewReader(body), update.Options{})
-		if err != nil {
-			logger.SugaredLogger.Error("更新失败: ", err.Error())
-			go runtime.EventsEmit(a.ctx, "updateVersion", releaseVersion)
-			return
-		} else {
-			go runtime.EventsEmit(a.ctx, "newsPush", map[string]any{
-				"time":    "新版本：" + releaseVersion.TagName,
-				"isRed":   true,
-				"source":  "go-stock",
-				"content": "版本更新完成,下次重启软件生效.",
-			})
-		}
-	} else {
-		if flag == 1 {
-			go runtime.EventsEmit(a.ctx, "newsPush", map[string]any{
-				"time":    "当前版本：" + Version,
-				"isRed":   true,
-				"source":  "go-stock",
-				"content": "当前版本无更新",
-			})
-		}
-
-	}
-}
-
-func (a *App) isVip(sponsorCode string, downloadUrl string, releaseVersion *models.GitHubReleaseVersion) (string, string, bool) {
-	isVip := false
-	vipLevel := "0"
-	sponsorCode = strutil.Trim(a.GetConfig().SponsorCode)
-	if sponsorCode != "" {
-		encrypted, err := hex.DecodeString(sponsorCode)
-		if err != nil {
-			logger.SugaredLogger.Error(err.Error())
-			return "", "0", false
-		}
-		key, err := hex.DecodeString(BuildKey)
-		if err != nil {
-			logger.SugaredLogger.Error(err.Error())
-			return "", "0", false
-		}
-		decrypt := string(cryptor.AesEcbDecrypt(encrypted, key))
-		err = json.Unmarshal([]byte(decrypt), &a.SponsorInfo)
-		if err != nil {
-			logger.SugaredLogger.Error(err.Error())
-			return "", "0", false
-		}
-		vipLevel = a.SponsorInfo["vipLevel"].(string)
-		vipStartTime, err := time.ParseInLocation("2006-01-02 15:04:05", a.SponsorInfo["vipStartTime"].(string), time.Local)
-		vipEndTime, err := time.ParseInLocation("2006-01-02 15:04:05", a.SponsorInfo["vipEndTime"].(string), time.Local)
-		vipAuthTime, err := time.ParseInLocation("2006-01-02 15:04:05", a.SponsorInfo["vipAuthTime"].(string), time.Local)
-		if err != nil {
-			logger.SugaredLogger.Error(err.Error())
-			return "", vipLevel, false
-		}
-
-		if time.Now().After(vipAuthTime) && time.Now().After(vipStartTime) && time.Now().Before(vipEndTime) {
-			isVip = true
-		}
-
-		if IsWindows() {
-			if isVip {
-				if a.SponsorInfo["winDownUrl"] == nil {
-					downloadUrl = fmt.Sprintf("https://gitproxy.click/https://github.com/ArvinLovegood/go-stock/releases/download/%s/go-stock-windows-amd64.exe", releaseVersion.TagName)
-				} else {
-					downloadUrl = a.SponsorInfo["winDownUrl"].(string)
-				}
-			} else {
-				downloadUrl = fmt.Sprintf("https://github.com/ArvinLovegood/go-stock/releases/download/%s/go-stock-windows-amd64.exe", releaseVersion.TagName)
-			}
-		}
-		if IsMacOS() {
-			if isVip {
-				if a.SponsorInfo["macDownUrl"] == nil {
-					downloadUrl = fmt.Sprintf("https://gitproxy.click/https://github.com/ArvinLovegood/go-stock/releases/download/%s/go-stock-darwin-universal", releaseVersion.TagName)
-				} else {
-					downloadUrl = a.SponsorInfo["macDownUrl"].(string)
-				}
-			} else {
-				downloadUrl = fmt.Sprintf("https://github.com/ArvinLovegood/go-stock/releases/download/%s/go-stock-darwin-universal", releaseVersion.TagName)
-			}
-		}
-		if IsLinux() {
-			if isVip {
-				if a.SponsorInfo["linuxDownUrl"] == nil {
-					downloadUrl = fmt.Sprintf("https://gitproxy.click/https://github.com/ArvinLovegood/go-stock/releases/download/%s/go-stock-linux-amd64", releaseVersion.TagName)
-				} else {
-					downloadUrl = a.SponsorInfo["linuxDownUrl"].(string)
-				}
-			} else {
-				downloadUrl = fmt.Sprintf("https://github.com/ArvinLovegood/go-stock/releases/download/%s/go-stock-linux-amd64", releaseVersion.TagName)
-			}
-		}
-
-	}
-	return downloadUrl, vipLevel, isVip
+	return map[string]any{"code": 0, "message": "授权码不能为空"}
 }
 
 func (a *App) syncNews() {
 	defer PanicHandler()
-	client := resty.New()
-	url := fmt.Sprintf("http://go-stock.sparkmemory.top:16666/FinancialNews/json?since=%d", time.Now().Add(-24*time.Hour).Unix())
-	//logger.SugaredLogger.Infof("syncNews:%s", url)
-	resp, err := client.R().SetDoNotParseResponse(true).Get(url)
-	body := resp.RawBody()
-	defer body.Close()
-	if err != nil {
-		logger.SugaredLogger.Errorf("syncNews error:%s", err.Error())
-	}
-	scanner := bufio.NewScanner(body)
-	for scanner.Scan() {
-		//line := scanner.Text()
-		//logger.SugaredLogger.Infof("Received data: %s", line)
-		news := &models.NtfyNews{}
-		err := json.Unmarshal(scanner.Bytes(), news)
-		if err != nil {
-			return
-		}
-		dataTime := time.UnixMilli(int64(news.Time * 1000))
-
-		if slice.ContainAny(news.Tags, []string{"外媒资讯", "财联社电报", "新浪财经", "外媒简讯", "外媒"}) {
-			isRed := false
-			if slice.Contain(news.Tags, "rotating_light") {
-				isRed = true
-			}
-			telegraph := &models.Telegraph{
-				Title:           news.Title,
-				Content:         news.Message,
-				DataTime:        &dataTime,
-				IsRed:           isRed,
-				Time:            dataTime.Format("15:04:05"),
-				Source:          GetSource(news.Tags),
-				SentimentResult: data.AnalyzeSentiment(news.Message).Description,
-			}
-			if !data.TelegraphExists(telegraph) {
-				db.Dao.Model(telegraph).Create(&telegraph)
-				//计算时间差如果<5分钟则推送
-				if time.Now().Sub(dataTime) < 5*time.Minute {
-					a.NewsPush(&[]models.Telegraph{*telegraph})
-				}
-				tags := slice.Filter(news.Tags, func(index int, item string) bool {
-					return !(item == "rotating_light" || item == "loudspeaker")
-				})
-				for _, subject := range tags {
-					tag := &models.Tags{
-						Name: subject,
-						Type: "subject",
-					}
-					db.Dao.Model(tag).Where("name=? and type=?", subject, "subject").FirstOrCreate(&tag)
-					db.Dao.Model(models.TelegraphTags{}).Where("telegraph_id=? and tag_id=?", telegraph.ID, tag.ID).FirstOrCreate(&models.TelegraphTags{
-						TelegraphId: telegraph.ID,
-						TagId:       tag.ID,
-					})
-				}
-			}
-		}
-	}
+	// Phase 1B: legacy remote news sync disabled; local crawlers remain unchanged.
+	logger.SugaredLogger.Debug("syncNews: remote operator endpoint sync disabled")
 }
 
 func GetSource(tags []string) string {
@@ -507,241 +256,6 @@ func GetSource(tags []string) string {
 	return ""
 }
 
-// domReady is called after front-end resources have been loaded
-func (a *App) domReady(ctx context.Context) {
-	defer PanicHandler()
-	defer func() {
-		// 增加延迟确保前端已准备好接收事件
-		go func() {
-			time.Sleep(2 * time.Second)
-			runtime.EventsEmit(a.ctx, "loadingMsg", "done")
-		}()
-	}()
-
-	//if stocksBin != nil && len(stocksBin) > 0 {
-	//	go runtime.EventsEmit(a.ctx, "loadingMsg", "检查A股基础信息...")
-	//	go initStockData(a.ctx)
-	//}
-	//
-	//if stocksBinHK != nil && len(stocksBinHK) > 0 {
-	//	go runtime.EventsEmit(a.ctx, "loadingMsg", "检查港股基础信息...")
-	//	go initStockDataHK(a.ctx)
-	//}
-	//
-	//if stocksBinUS != nil && len(stocksBinUS) > 0 {
-	//	go runtime.EventsEmit(a.ctx, "loadingMsg", "检查美股基础信息...")
-	//	go initStockDataUS(a.ctx)
-	//}
-	updateBasicInfo()
-
-	// Add your action here
-	//定时更新数据
-	config := data.GetSettingConfig()
-	// P1：异步预热自选行业/板块缓存，减轻首轮 MonitorStockPrices 冷启动
-	go func() {
-		follows := &[]data.FollowedStock{}
-		db.Dao.Model(&data.FollowedStock{}).Find(follows)
-		codes := make([]string, 0, len(*follows))
-		for _, f := range *follows {
-			codes = append(codes, f.StockCode)
-		}
-		data.NewStockDataApi().WarmIndustrySectorCacheAsync(codes...)
-	}()
-	go func() {
-		go data.NewMarketNewsApi().TelegraphList(30)
-		go data.NewMarketNewsApi().GetSinaNews(30)
-		go data.NewMarketNewsApi().TradingViewNews()
-
-		interval := config.RefreshInterval
-		if interval <= 0 {
-			interval = 1
-		}
-		//ticker := time.NewTicker(time.Second * time.Duration(interval))
-		//defer ticker.Stop()
-		//for range ticker.C {
-		//	MonitorStockPrices(a)
-		//}
-		id, err := a.cron.AddFunc(fmt.Sprintf("@every %ds", interval), func() {
-			MonitorStockPrices(a)
-		})
-		if err != nil {
-			logger.SugaredLogger.Errorf("AddFunc error:%s", err.Error())
-		} else {
-			a.setCronEntry("MonitorStockPrices", id)
-		}
-		entryID, err := a.cron.AddFunc(fmt.Sprintf("@every %ds", interval+10), func() {
-			//news := data.NewMarketNewsApi().GetNewTelegraph(30)
-			news := data.NewMarketNewsApi().TelegraphList(30)
-			if config.EnablePushNews {
-				go a.NewsPush(news)
-			}
-			go runtime.EventsEmit(a.ctx, "newTelegraph", news)
-		})
-		if err != nil {
-			logger.SugaredLogger.Errorf("AddFunc error:%s", err.Error())
-		} else {
-			a.setCronEntry("GetNewTelegraph", entryID)
-		}
-
-		entryIDSina, err := a.cron.AddFunc(fmt.Sprintf("@every %ds", interval+10), func() {
-			news := data.NewMarketNewsApi().GetSinaNews(30)
-			if config.EnablePushNews {
-				go a.NewsPush(news)
-			}
-			go runtime.EventsEmit(a.ctx, "newSinaNews", news)
-		})
-		if err != nil {
-			logger.SugaredLogger.Errorf("AddFunc error:%s", err.Error())
-		} else {
-			a.setCronEntry("newSinaNews", entryIDSina)
-		}
-
-		entryIDTradingViewNews, err := a.cron.AddFunc(fmt.Sprintf("@every %ds", interval+10), func() {
-			news := data.NewMarketNewsApi().TradingViewNews()
-			if config.EnablePushNews {
-				go a.NewsPush(news)
-			}
-			go runtime.EventsEmit(a.ctx, "tradingViewNews", news)
-		})
-		if err != nil {
-			logger.SugaredLogger.Errorf("AddFunc error:%s", err.Error())
-		} else {
-			a.setCronEntry("tradingViewNews", entryIDTradingViewNews)
-		}
-	}()
-
-	//刷新基金净值信息
-	go func() {
-		//ticker := time.NewTicker(time.Second * time.Duration(60))
-		//defer ticker.Stop()
-		//for range ticker.C {
-		//	MonitorFundPrices(a)
-		//}
-		if config.EnableFund {
-			id, err := a.cron.AddFunc(fmt.Sprintf("@every %ds", 60), func() {
-				MonitorFundPrices(a)
-			})
-			if err != nil {
-				logger.SugaredLogger.Errorf("AddFunc error:%s", err.Error())
-			} else {
-				a.setCronEntry("MonitorFundPrices", id)
-			}
-		}
-
-		// AI 推荐股票价格监控定时器
-		idAiStock, err := a.cron.AddFunc(fmt.Sprintf("@every %ds", 60), func() {
-			MonitorAiRecommendStockPrices(a)
-		})
-		if err != nil {
-			logger.SugaredLogger.Errorf("AddFunc MonitorAiRecommendStockPrices error:%s", err.Error())
-		} else {
-			a.setCronEntry("MonitorAiRecommendStockPrices", idAiStock)
-		}
-
-		// 自选股成本价监控定时器
-		idCostPrice, err := a.cron.AddFunc(fmt.Sprintf("@every %ds", 60), func() {
-			MonitorFollowedStockCostPrices(a)
-		})
-		if err != nil {
-			logger.SugaredLogger.Errorf("AddFunc MonitorFollowedStockCostPrices error:%s", err.Error())
-		} else {
-			a.setCronEntry("MonitorFollowedStockCostPrices", idCostPrice)
-		}
-
-	}()
-
-	if config.EnableNews {
-		//go func() {
-		//	ticker := time.NewTicker(time.Second * time.Duration(60))
-		//	defer ticker.Stop()
-		//	for range ticker.C {
-		//		telegraph := refreshTelegraphList()
-		//		if telegraph != nil {
-		//			go runtime.EventsEmit(a.ctx, "telegraph", telegraph)
-		//		}
-		//	}
-		//
-		//}()
-
-		id, err := a.cron.AddFunc(fmt.Sprintf("@every %ds", 60), func() {
-			telegraph := refreshTelegraphList()
-			if telegraph != nil {
-				go runtime.EventsEmit(a.ctx, "telegraph", telegraph)
-			}
-		})
-		if err != nil {
-			logger.SugaredLogger.Errorf("AddFunc error:%s", err.Error())
-		} else {
-			a.setCronEntry("refreshTelegraphList", id)
-		}
-
-		go runtime.EventsEmit(a.ctx, "telegraph", refreshTelegraphList())
-	}
-	go MonitorStockPrices(a)
-	if config.EnableFund {
-		go MonitorFundPrices(a)
-		go data.NewFundApi().AllFund()
-	}
-	// AI 推荐股票价格监控
-	go MonitorAiRecommendStockPrices(a)
-	// 自选股成本价监控
-	go MonitorFollowedStockCostPrices(a)
-	if data.BypassSponsorVip {
-		a.VipLevel = 9
-		go a.syncNews()
-	}
-
-	//检查新版本
-	go func() {
-		a.CheckUpdate(0)
-		go a.CheckStockBaseInfo(a.ctx)
-		go syncAllStockInfo(a.ctx)
-
-		a.cron.AddFunc("0 0 2 * * *", func() {
-			logger.SugaredLogger.Errorf("Checking for updates...")
-			a.CheckStockBaseInfo(a.ctx)
-		})
-		a.cron.AddFunc("30 05 8,12,20 * * *", func() {
-			logger.SugaredLogger.Errorf("Checking for updates...")
-			a.CheckUpdate(0)
-		})
-		a.cron.AddFunc("30 05 8,12,20 * * *", func() {
-			syncAllStockInfo(a.ctx)
-		})
-	}()
-
-	//检查谷歌浏览器
-	//go func() {
-	//	f := checkChromeOnWindows()
-	//	if !f {
-	//		go runtime.EventsEmit(a.ctx, "warnMsg", "谷歌浏览器未安装,ai分析功能可能无法使用")
-	//	}
-	//}()
-
-	//检查Edge浏览器
-	//go func() {
-	//	path, e := checkEdgeOnWindows()
-	//	if !e {
-	//		go runtime.EventsEmit(a.ctx, "warnMsg", "Edge浏览器未安装,ai分析功能可能无法使用")
-	//	} else {
-	//		logger.SugaredLogger.Infof("Edge浏览器已安装，路径为: %s", path)
-	//	}
-	//}()
-	followList := data.NewStockDataApi().GetFollowList(0)
-	for _, follow := range *followList {
-		if follow.Cron == nil || *follow.Cron == "" {
-			continue
-		}
-		entryID, err := a.cron.AddFunc(*follow.Cron, a.AddCronTask(follow))
-		if err != nil {
-			logger.SugaredLogger.Errorf("添加自动分析任务失败:%s cron=%s entryID:%v", follow.Name, *follow.Cron, entryID)
-			continue
-		}
-		a.setCronEntry(follow.StockCode, entryID)
-	}
-	//logger.SugaredLogger.Infof("domReady-cronEntrys:%+v", a.cronEntrys)
-
-}
 
 func syncAllStockInfo(ctx context.Context) {
 	defer PanicHandler()
@@ -1372,7 +886,7 @@ func GetStockInfos(follows ...data.FollowedStock) *[]data.StockInfo {
 
 // getStockInfosWithQuoteService Phase7-A2-3-1：Monitor 展示取数经 QuoteService（可注入 fake）。
 // applyFollow=false 时跳过 addStockFollowData（单测避免 NewStockDataApi→DB）。
-func getStockInfosWithQuoteService(svc marketdata.QuoteService, applyFollow bool, follows ...data.FollowedStock) (*[]data.StockInfo, error) {
+func getStockInfosWithQuoteService(svc quoteBatchService, applyFollow bool, follows ...data.FollowedStock) (*[]data.StockInfo, error) {
 	stockInfos := make([]data.StockInfo, 0)
 	stockCodes := make([]string, 0)
 	for _, follow := range follows {
@@ -1422,7 +936,7 @@ func GetStockInfosRealtimeBatch(follows ...data.FollowedStock) *[]data.StockInfo
 
 // getStockInfosRealtimeBatchWithQuoteService Phase7-A2-3-1：Dashboard batch miss 经 QuoteService；
 // FollowRealtimePriceCache 保留；applyFollow=false 便于无 DB 单测。
-func getStockInfosRealtimeBatchWithQuoteService(svc marketdata.QuoteService, applyFollow bool, follows ...data.FollowedStock) *[]data.StockInfo {
+func getStockInfosRealtimeBatchWithQuoteService(svc quoteBatchService, applyFollow bool, follows ...data.FollowedStock) *[]data.StockInfo {
 	stockInfos := make([]data.StockInfo, 0)
 	stockCodes := make([]string, 0, len(follows))
 	for _, follow := range follows {
@@ -1641,6 +1155,10 @@ func (a *App) GetFollowRealtimeList(groupId int) *[]data.StockInfo {
 		empty := []data.StockInfo{}
 		return &empty
 	}
+	// MD-001 M1：经 App.marketData（MarketDataService.GetQuotes）；包级 Monitor 路径仍用 GetQuoteService。
+	if a != nil && a.marketData != nil {
+		return getStockInfosRealtimeBatchWithQuoteService(a.marketData, true, *follows...)
+	}
 	return GetStockInfosRealtimeBatch(*follows...)
 }
 
@@ -1733,13 +1251,23 @@ func (a *App) GetAIResponseResult(stock string) *models.AIResponseResult {
 }
 
 func (a *App) GetVersionInfo() *models.VersionInfo {
+	bridgeVersionIdentity()
+	cur := version.Current()
+	ver := Version
+	if strings.TrimSpace(ver) == "" {
+		ver = cur.Version
+	}
+	content := VersionCommit
+	if strings.TrimSpace(content) == "" {
+		content = cur.GitCommit
+	}
 	return &models.VersionInfo{
-		Version:           Version,
+		Version:           ver,
 		Icon:              GetImageBase(icon),
-		Alipay:            GetImageBase(alipay),
-		Wxpay:             GetImageBase(wxpay),
-		Wxgzh:             GetImageBase(wxgzh),
-		Content:           VersionCommit,
+		Alipay:            "",
+		Wxpay:             "",
+		Wxgzh:             "",
+		Content:           content,
 		OfficialStatement: OFFICIAL_STATEMENT,
 	}
 }
@@ -1884,7 +1412,7 @@ func (a *App) handleUpdateSettings(ctx context.Context) {
 	a.settingsReloadMu.Unlock()
 
 	next := fingerprintSettings(config)
-	// 仅当代理/浏览器路径/Agent/资讯/基金/赞助码等关键字段变化时整页重载；
+	// 仅当代理/浏览器路径/Agent/资讯/基金/授权码等关键字段变化时整页重载；
 	// RefreshInterval 已热更新 cron；DarkTheme 已通过原生 API 生效，前端 App.vue 监听 updateSettings。
 	if settingsFingerprintChanged(prev, next) {
 		logger.SugaredLogger.Infof("updateSettings: critical config changed, WindowReloadApp")
@@ -1911,64 +1439,35 @@ func (a *App) GetConfig() *data.SettingConfig {
 func (a *App) ExportConfig() string {
 	config := data.NewSettingsApi().Export()
 	file, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
-		Title:                "导出配置文件",
+		Title:                "导出配置文件（默认已脱敏）",
 		CanCreateDirectories: true,
 		DefaultFilename:      "config.json",
 	})
 	if err != nil {
-		logger.SugaredLogger.Errorf("导出配置文件失败:%s", err.Error())
-		return err.Error()
+		msg := security.SanitizeErrorMessage(err.Error())
+		logger.SugaredLogger.Errorf("导出配置文件失败:%s", msg)
+		return msg
 	}
 	err = os.WriteFile(file, []byte(config), os.ModePerm)
 	if err != nil {
-		logger.SugaredLogger.Errorf("导出配置文件失败:%s", err.Error())
-		return err.Error()
+		msg := security.SanitizeErrorMessage(err.Error())
+		logger.SugaredLogger.Errorf("导出配置文件失败:%s", msg)
+		return msg
 	}
-	return "导出成功:" + file
+	return "导出成功（已脱敏）:" + security.PathHint(file)
 }
 
 func (a *App) ShareAnalysis(stockCode, stockName string) string {
-	//http://go-stock.sparkmemory.top:16688/upload
-	res := data.NewDeepSeekOpenAi(a.ctx, 0).GetAIResponseResult(stockCode)
-	if res != nil && len(res.Content) > 100 {
-		analysisTime := res.CreatedAt.Format("2006/01/02")
-		//logger.SugaredLogger.Infof("%s analysisTime:%s", res.CreatedAt, analysisTime)
-		response, err := resty.New().SetHeader("ua-x", "go-stock").R().SetFormData(map[string]string{
-			"text":         res.Content,
-			"stockCode":    stockCode,
-			"stockName":    stockName,
-			"analysisTime": analysisTime,
-		}).Post("http://go-stock.sparkmemory.top:16688/upload")
-		if err != nil {
-			return err.Error()
-		}
-		return response.String()
-	} else {
-		return "分析结果异常"
-	}
+	_ = stockCode
+	_ = stockName
+	return "社区分享功能已停用。分析结果仍保存在本地，可使用导出功能。"
 }
 
 // ShareText 直接把文本分享到社区（用于 AI 助手等非 AIResponseResult 场景）
 func (a *App) ShareText(text, title string) string {
-	text = strings.TrimSpace(text)
-	title = strings.TrimSpace(title)
-	if text == "" {
-		return "内容为空"
-	}
-	if title == "" {
-		title = "AI助手"
-	}
-	analysisTime := time.Now().Format("2006/01/02")
-	response, err := resty.New().SetHeader("ua-x", "go-stock").R().SetFormData(map[string]string{
-		"text":         text,
-		"stockCode":    title,
-		"stockName":    title,
-		"analysisTime": analysisTime,
-	}).Post("http://go-stock.sparkmemory.top:16688/upload")
-	if err != nil {
-		return err.Error()
-	}
-	return response.String()
+	_ = strings.TrimSpace(text)
+	_ = strings.TrimSpace(title)
+	return "社区分享功能已停用。内容仍保存在本地会话中。"
 }
 
 func (a *App) GetfundList(key string) []data.FundBasic {
@@ -2088,21 +1587,49 @@ func (a *App) RemoveGroup(groupId int) string {
 }
 
 func (a *App) GetStockKLine(stockCode, stockName string, days int64) *[]data.KLineData {
-	return data.NewStockDataApi().GetHK_KLineData(stockCode, "day", days)
+	_ = stockName
+	if a == nil || a.marketData == nil {
+		return emptyKLineData()
+	}
+	bars, err := a.marketData.GetBars(stockCode, marketdata.PeriodDailyHK, "", int(days), time.Time{})
+	if err != nil || len(bars) == 0 {
+		return emptyKLineData()
+	}
+	return barsToKLineData(bars)
 }
 
 func (a *App) GetStockMinutePriceLineData(stockCode, stockName string) map[string]any {
 	res := make(map[string]any, 4)
-	priceData, date := data.NewStockDataApi().GetStockMinutePriceData(stockCode)
-	res["priceData"] = priceData
-	res["date"] = date
 	res["stockName"] = stockName
 	res["stockCode"] = stockCode
+	if a == nil || a.marketData == nil {
+		empty := []data.MinuteData{}
+		res["priceData"] = &empty
+		res["date"] = ""
+		return res
+	}
+	pts, date, err := a.marketData.GetMinute(stockCode)
+	if err != nil {
+		empty := []data.MinuteData{}
+		res["priceData"] = &empty
+		res["date"] = date
+		return res
+	}
+	res["priceData"] = minutesToData(pts)
+	res["date"] = date
 	return res
 }
 
 func (a *App) GetStockCommonKLine(stockCode, stockName string, days int64) *[]data.KLineData {
-	return data.NewStockDataApi().GetCommonKLineData(stockCode, "day", days)
+	_ = stockName
+	if a == nil || a.marketData == nil {
+		return emptyKLineData()
+	}
+	bars, err := a.marketData.GetBars(stockCode, marketdata.PeriodDailyFQ, "", int(days), time.Time{})
+	if err != nil || len(bars) == 0 {
+		return emptyKLineData()
+	}
+	return barsToKLineData(bars)
 }
 
 // GetStockEastMoneyKLine 东方财富多周期 K 线（分钟：1/5/10/60/120；日 101、周 102、半年 105、年 106）。
@@ -2112,7 +1639,9 @@ func (a *App) GetStockEastMoneyKLine(stockCode, stockName string, klt string, li
 }
 
 // GetStockEastMoneyKLinePage 分页拉取 K 线：end 为东财 end 参数（YYYYMMDD 或 YYYYMMDDHHmmss），空字符串表示取最新一段（同 GetStockEastMoneyKLine）。
+// MD-001 M1：经 MarketDataService.GetBars → EastMoney Adapter（底层仍走 kline_cache，无第二层缓存）。
 func (a *App) GetStockEastMoneyKLinePage(stockCode, stockName string, klt string, limit int, end string) *[]data.KLineData {
+	_ = stockName
 	if limit <= 0 {
 		limit = 500
 	}
@@ -2123,17 +1652,15 @@ func (a *App) GetStockEastMoneyKLinePage(stockCode, stockName string, klt string
 	if klt == "" {
 		klt = "1"
 	}
-	api := data.NewEastMoneyKLineApi(data.GetSettingConfig())
-	end = strings.TrimSpace(end)
-	//if klt == "10" {
-	//	fetchN := limit * 10
-	//	if fetchN > 5000 {
-	//		fetchN = 5000
-	//	}
-	//	raw := api.GetKLineDataBefore(stockCode, "1", "", fetchN, end)
-	//	return data.AggregateKLineEveryN(raw, 10)
-	//}
-	return api.GetKLineDataBefore(stockCode, klt, "", limit, end)
+	if a == nil || a.marketData == nil {
+		return emptyKLineData()
+	}
+	endTime := marketdata.ParseEndTime(end)
+	bars, err := a.marketData.GetBars(stockCode, klt, "", limit, endTime)
+	if err != nil || len(bars) == 0 {
+		return emptyKLineData()
+	}
+	return barsToKLineData(bars)
 }
 
 func (a *App) GetTelegraphList(source string) *[]*models.Telegraph {

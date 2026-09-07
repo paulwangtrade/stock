@@ -28,7 +28,7 @@ func TestGetDailyTradingStatus_EmptyDay(t *testing.T) {
 	require.False(t, st.Execution.Ready)
 	require.Contains(t, st.BlockReasons, "candidate_pool_empty")
 	require.Contains(t, st.BlockReasons, "trade_plan_missing")
-	require.Equal(t, "candidate_pool_empty", st.BlockReason)
+	requireDailyBlockReason(t, st, "candidate_pool_empty")
 }
 
 func TestGetDailyTradingStatus_ReadyPlan(t *testing.T) {
@@ -77,7 +77,7 @@ func TestGetDailyTradingStatus_ReadyPlan(t *testing.T) {
 	require.Equal(t, "ready", st.Execution.Phase)
 	require.True(t, st.Execution.ExecutorConfigured)
 	require.True(t, st.Execution.Ready)
-	require.Empty(t, st.BlockReason)
+	requireDailyNoBlockReason(t, st)
 }
 
 func TestGetDailyTradingStatus_AllFiltered(t *testing.T) {

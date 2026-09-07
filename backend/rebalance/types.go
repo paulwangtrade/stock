@@ -1,6 +1,8 @@
-// Package rebalance provides read-only Rebalance Diff observation (Phase10-D.12).
+// Package rebalance provides:
+//   - Phase10 Diff: Current vs Target gap labels (KEEP/ADD/…) — observation only
+//   - Phase12-H4 Calculate: Current vs Target → RebalanceSuggestion (BUY/REDUCE/EXIT deltas)
 //
-// Diff(Current, Target) → RebalanceDiff. No BUY/SELL intents, orders, Gateway, or TradePlan writes.
+// Both paths are suggest/observe only: no TradePlan writes, no Execution, no Holdings mutation.
 package rebalance
 
 import "time"

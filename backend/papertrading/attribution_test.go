@@ -91,6 +91,8 @@ func TestAttribution_SinglePlanFull(t *testing.T) {
 	require.Equal(t, item.ID, row.Lots[0].PlanItemID)
 	require.Equal(t, fill.ID, row.Lots[0].FillID)
 	require.Equal(t, int64(3000), row.Lots[0].Volume)
+	require.NotNil(t, row.Lots[0].FilledAt)
+	require.WithinDuration(t, fill.FilledAt, *row.Lots[0].FilledAt, time.Second)
 	require.InDelta(t, 10.5*3000, row.Lots[0].CostAmount, 1e-6)
 	require.Equal(t, papertrading.ReconcileStatusMatched, row.Reconcile.Status)
 	require.Equal(t, int64(0), row.Reconcile.UnattributedVolume)

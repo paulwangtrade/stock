@@ -4,7 +4,9 @@ import (
 	"time"
 
 	"go-stock/backend/data"
+	"go-stock/backend/job"
 	"go-stock/backend/logger"
+	"go-stock/backend/marketstate"
 	"go-stock/backend/models"
 	"go-stock/backend/strategy"
 )
@@ -111,12 +113,18 @@ var morningPlanPreparationFn = func(tradeDate string) (*models.CandidatePool, *m
 
 // runPaperDailyPlanCronJob is the 9:20 callback: prefer Frozen adopt, else legacy Build.
 func runPaperDailyPlanCronJob() (mode string, err error) {
+	if !marketstate.CanGeneratePlan() {
+		logger.SugaredLogger.Infof("RunMorningPlanPreparation skipped market_state=%s canGeneratePlan=false",
+			marketstate.GetCurrentMarketState())
+		return "skipped_market_state", nil
+	}
 	_, _, mode, err = morningPlanPreparationFn("")
 	if err != nil {
 		logger.SugaredLogger.Errorf("RunMorningPlanPreparation mode=%s: %v", mode, err)
 		return mode, err
 	}
 	logger.SugaredLogger.Infof("RunMorningPlanPreparation cron done mode=%s", mode)
+	runTradingAutomationMaterializeAfterPlanPrep("")
 	return mode, nil
 }
 
@@ -144,16 +152,18 @@ func (a *App) registerTradePlanReconcileCron(key, spec, label string) bool {
 	}
 	id, err := a.cron.AddFunc(spec, func() {
 		defer PanicHandler()
-		if skipIfNonWeekday(label) {
-			return
-		}
-		runTradePlanReconcileJob()
+		job.Default().Observe(key, func() {
+			if skipIfNonWeekday(label) {
+				return
+			}
+			runTradePlanReconcileJob()
+		})()
 	})
 	if err != nil {
 		logger.SugaredLogger.Errorf("InitPaperOpenBuyJobs reconcile %s: %s", key, err.Error())
 		return false
 	}
-	a.setCronEntry(key, id)
+	a.setCronEntryObserved(key, spec, id)
 	return true
 }
 
@@ -179,15 +189,18 @@ func (a *App) InitPaperOpenBuyJobs() {
 	if _, exists := a.getCronEntry(dailyKey); !exists {
 		id, err := a.cron.AddFunc(paperDailyPlanCronSpec, func() {
 			defer PanicHandler()
-			if skipIfNonWeekday("9:20") {
-				return
-			}
-			runPaperDailyPlanCronJob()
+			job.Default().ObserveErr(job.JobDailyPlan, func() error {
+				if skipIfNonWeekday("9:20") {
+					return nil
+				}
+				_, err := runPaperDailyPlanCronJob()
+				return err
+			})()
 		})
 		if err != nil {
 			logger.SugaredLogger.Errorf("InitPaperOpenBuyJobs daily: %s", err.Error())
 		} else {
-			a.setCronEntry(dailyKey, id)
+			a.setCronEntryObserved(dailyKey, paperDailyPlanCronSpec, id)
 			dailyOK = true
 		}
 	} else {
@@ -197,15 +210,17 @@ func (a *App) InitPaperOpenBuyJobs() {
 	if _, exists := a.getCronEntry(prepareKey); !exists {
 		id, err := a.cron.AddFunc("0 25 9 * * 1-5", func() {
 			defer PanicHandler()
-			if skipIfNonWeekday("9:25") {
-				return
-			}
-			data.RunPaperOpenPrepare()
+			job.Default().Observe(job.JobOpenPrepare, func() {
+				if skipIfNonWeekday("9:25") {
+					return
+				}
+				data.RunPaperOpenPrepare()
+			})()
 		})
 		if err != nil {
 			logger.SugaredLogger.Errorf("InitPaperOpenBuyJobs prepare: %s", err.Error())
 		} else {
-			a.setCronEntry(prepareKey, id)
+			a.setCronEntryObserved(prepareKey, "0 25 9 * * 1-5", id)
 			prepareOK = true
 		}
 	} else {
@@ -215,15 +230,23 @@ func (a *App) InitPaperOpenBuyJobs() {
 	if _, exists := a.getCronEntry(buyKey); !exists {
 		id, err := a.cron.AddFunc("0 30 9 * * 1-5", func() {
 			defer PanicHandler()
-			if skipIfNonWeekday("9:30") {
-				return
-			}
-			data.RunPaperOpenBuyOnce(true)
+			job.Default().Observe(job.JobOpenBuy, func() {
+				if skipIfNonWeekday("9:30") {
+					return
+				}
+				// Phase11-B: execution window gate (time-only; does not call Gateway/Fill).
+				if !marketstate.CanExecute() {
+					logger.SugaredLogger.Infof("paper open buy skipped market_state=%s canExecute=false",
+						marketstate.GetCurrentMarketState())
+					return
+				}
+				data.RunPaperOpenBuyOnce(true)
+			})()
 		})
 		if err != nil {
 			logger.SugaredLogger.Errorf("InitPaperOpenBuyJobs buy: %s", err.Error())
 		} else {
-			a.setCronEntry(buyKey, id)
+			a.setCronEntryObserved(buyKey, "0 30 9 * * 1-5", id)
 			buyOK = true
 		}
 	} else {

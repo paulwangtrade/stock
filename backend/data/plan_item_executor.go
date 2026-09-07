@@ -15,6 +15,8 @@ type PlanItemExecOpts struct {
 	Reason      string
 	StrategyTag string
 	AutoFill    bool
+	// Plan enables Safety Gate freeze check (Phase6.5.7.4.1).
+	Plan *models.TradePlan
 }
 
 // PlanItemExecutor 开盘买入唯一下单入口（由 execution 注入 ExecutionService 实现）。

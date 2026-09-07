@@ -1,0 +1,71 @@
+{
+  "id": "qd1:go_engine:sz000001:2026-07-21T00:00:00Z:ENTER:可买",
+  "asOf": "2026-07-21T00:00:00Z",
+  "tradeDate": "2026-07-21",
+  "purpose": "watchlist",
+  "instrument": {
+    "stockCode": "sz000001",
+    "stockName": "PingAnBank"
+  },
+  "regime": {
+    "level": 3,
+    "key": "level3",
+    "name": "中性观望",
+    "source": "shadow_go",
+    "exposureCap": 0.2
+  },
+  "signal": {
+    "tag": "强",
+    "tagKind": "entry",
+    "daysAgo": 0,
+    "score": 0,
+    "summary": "today-strong"
+  },
+  "entryZone": {
+    "low": 10,
+    "high": 10.2,
+    "instantPrice": 10.1,
+    "mode": "near",
+    "deferMode": "same",
+    "daysAgo": 0,
+    "text": "10.00~10.20",
+    "note": "near"
+  },
+  "gate": {
+    "score": 0.875,
+    "ready": true,
+    "requiredPassed": true,
+    "readyThreshold": 0.85,
+    "items": [
+      {
+        "id": "buy_signal",
+        "label": "buy_signal",
+        "passed": true,
+        "required": false
+      }
+    ]
+  },
+  "risk": {
+    "passed": true,
+    "code": "APPROVED",
+    "message": "phase2-a shadow placeholder (PlanFilter not wired)"
+  },
+  "size": {
+    "ok": true,
+    "stopPrice": 9.85,
+    "targetShares": 1000,
+    "addShares": 1000,
+    "positionPct": 12.5,
+    "reason": "buy-1000"
+  },
+  "action": {
+    "code": "ENTER",
+    "label": "可买",
+    "allowDraft": true,
+    "side": "buy"
+  },
+  "meta": {
+    "schemaVersion": 1,
+    "producer": "go_engine"
+  }
+}

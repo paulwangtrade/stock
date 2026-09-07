@@ -3,9 +3,16 @@ package models
 import "time"
 
 const (
-	SignalScanScopeAll    = "all"
-	SignalScanSessionMid  = "midday"
-	SignalScanSessionClose = "close"
+	SignalScanScopeAll      = "all"
+	SignalScanScopeUniverse = "universe" // Phase16.12 M1: strategy-run directed scan
+	SignalScanSessionMid    = "midday"
+	SignalScanSessionClose  = "close"
+
+	SignalPriceStatusMissing = "missing"
+	SignalPriceStatusFrozen  = "frozen"
+	SignalPriceStatusDerived = "derived"
+
+	SignalSchemaVersionV1 = "signal_event.v1"
 )
 
 // SignalScanSnapshot 全市场信号扫描快照（按交易日 + 时段）
@@ -65,6 +72,17 @@ type SignalScanHit struct {
 	StatusText       string `json:"statusText"`
 	SortRank         int    `json:"sortRank"`
 	RSI              float64 `json:"rsi,omitempty"`
+
+	// SignalEvent 最小字段（Phase14-C）：与实时行情 NEW_PRICE 严格分离
+	SchemaVersion     string  `json:"schema_version,omitempty"`
+	SignalPrice       float64 `json:"signal_price,omitempty"`
+	SignalTime        string  `json:"signal_time,omitempty"`
+	SignalPriceSource string  `json:"signal_price_source,omitempty"`
+	SignalDaysAgo     *int    `json:"signal_days_ago,omitempty"`
+	SignalBarRole     string  `json:"signal_bar_role,omitempty"`
+	SignalBarIndex    *int    `json:"signal_bar_index,omitempty"`
+	ConfirmBarIndex   *int    `json:"confirm_bar_index,omitempty"`
+	SignalPriceStatus string  `json:"signal_price_status,omitempty"`
 }
 
 type SignalScanResultPayload struct {
@@ -76,4 +94,15 @@ type SignalScanResultPayload struct {
 	StrategyID    string          `json:"strategyId,omitempty"`
 	StrategyName  string          `json:"strategyName,omitempty"`
 	CompletedAt   string          `json:"completedAt"`
+	// Config carries M1 universe snapshot metadata (no new DB column / config_json).
+	Config *UniverseSignalSnapshotConfig `json:"config,omitempty"`
+}
+
+// UniverseSignalSnapshotConfig is persisted inside result_json for M1 universe snaps.
+type UniverseSignalSnapshotConfig struct {
+	StrategyID    uint   `json:"strategyId,omitempty"`
+	StrategyRunID uint   `json:"strategyRunId,omitempty"`
+	UniverseID    string `json:"universeId"`
+	Scope         string `json:"scope"`
+	StrategyKey   string `json:"strategyKey,omitempty"`
 }

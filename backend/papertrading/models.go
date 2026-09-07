@@ -25,6 +25,8 @@ const (
 	RejectMissingClosePrice    = "missing_close_price"
 	RejectInvalidQuantity      = "invalid_quantity"
 	RejectInsufficientCash     = "insufficient_cash"
+	RejectInsufficientAvailable = "insufficient_available"
+	RejectNoPosition           = "no_position"
 )
 
 // Fill reasons.
@@ -214,5 +216,6 @@ func EnsureSchema(gdb *gorm.DB) error {
 		&PaperSimRun{},
 		&PaperSimDailyReport{},
 		&PaperSimDailyPosition{},
+		&ExitReviewOutcome{},
 	)
 }

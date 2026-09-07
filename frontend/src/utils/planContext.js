@@ -11,6 +11,11 @@ export const PLAN_SWITCH_SECOND = 0
 
 const TITLE_CURRENT = '今日交易计划'
 const TITLE_NEXT = '下一个交易日计划'
+const TITLE_TODAY_EXEC = '今日执行计划'
+const TITLE_NEXT_EXEC = '下一交易日计划'
+const EMPTY_TODAY_EXEC = '暂无今日执行计划'
+const EMPTY_NEXT_EXEC = '暂无下一交易日计划'
+const SAME_PLAN_MESSAGE = '当前计划已与下一交易日计划一致'
 
 function pad2(n) {
   return String(n).padStart(2, '0')
@@ -153,4 +158,98 @@ export function buildDashboardPlanContext(input = {}) {
     next_plan,
     active_plan,
   }
+}
+
+function planId(plan) {
+  const id = Math.trunc(Number(plan?.id) || 0)
+  return id > 0 ? id : 0
+}
+
+function resolveNextTradingDay(resToday, today) {
+  const apiNext = String(resToday?.next_trading_day || '').trim()
+  let nextDay = apiNext || nextTradingDayString(today)
+  if (!nextDay || nextDay <= today) {
+    nextDay = nextTradingDayString(today)
+  }
+  return nextDay
+}
+
+function resolveNextSlotPlan(resToday, resNext, nextDay) {
+  if (!nextDay) return null
+  return (
+    pickExactPlan(resNext, nextDay)
+    || pickOnOrAfterPlan(resNext, nextDay)
+    || pickExactPlan(resToday, nextDay)
+    || pickOnOrAfterPlan(resToday, nextDay)
+  )
+}
+
+/**
+ * TradePlanUpcoming dual-slot display context (presentation-only).
+ * Does not alter upcoming API semantics — filters/maps responses for UI slots.
+ *
+ * @param {{ now?: Date, resToday?: object, resNext?: object }} input
+ */
+export function buildUpcomingDisplayContext(input = {}) {
+  const now = input.now instanceof Date ? input.now : new Date()
+  const today = shanghaiDate(now)
+  const calendarIsTradingDay = isTradingDay(today)
+  const nextDay = resolveNextTradingDay(input.resToday, today)
+
+  const todayPlan = calendarIsTradingDay ? pickExactPlan(input.resToday, today) : null
+  const nextPlanRaw = resolveNextSlotPlan(input.resToday, input.resNext, nextDay)
+
+  const todayId = planId(todayPlan)
+  const nextId = planId(nextPlanRaw)
+  const samePlan = todayId > 0 && nextId > 0 && todayId === nextId
+
+  const todaySlot = {
+    kind: 'today',
+    tradeDate: calendarIsTradingDay ? today : '',
+    title: TITLE_TODAY_EXEC,
+    plan: todayPlan,
+    empty: calendarIsTradingDay && !todayPlan ? EMPTY_TODAY_EXEC : '',
+    visible: calendarIsTradingDay,
+  }
+
+  const nextSlot = {
+    kind: 'next',
+    tradeDate: nextDay || '',
+    title: TITLE_NEXT_EXEC,
+    plan: samePlan ? null : nextPlanRaw,
+    empty: !samePlan && !nextPlanRaw ? EMPTY_NEXT_EXEC : '',
+    visible: true,
+    note: samePlan ? SAME_PLAN_MESSAGE : '',
+  }
+
+  let defaultFocus = 'next'
+  if (calendarIsTradingDay && todayPlan) {
+    defaultFocus = 'today'
+  } else if (nextPlanRaw) {
+    defaultFocus = 'next'
+  } else if (calendarIsTradingDay) {
+    defaultFocus = 'today'
+  }
+
+  return {
+    as_of: now.toISOString(),
+    timezone: PLAN_TZ,
+    today,
+    calendarIsTradingDay,
+    nextTradingDay: nextDay,
+    showTodaySlot: calendarIsTradingDay,
+    todaySlot,
+    nextSlot,
+    samePlanId: samePlan ? todayId : null,
+    samePlanMessage: samePlan ? SAME_PLAN_MESSAGE : '',
+    defaultFocus,
+  }
+}
+
+export {
+  TITLE_TODAY_EXEC,
+  TITLE_NEXT_EXEC,
+  EMPTY_TODAY_EXEC,
+  EMPTY_NEXT_EXEC,
+  SAME_PLAN_MESSAGE,
 }

@@ -108,10 +108,26 @@ import {
   assert.equal(ok.blockers.length, 1)
   const disp = formatMaterializeMorningDisplay(ok)
   assert.equal(disp.ok, true)
+  assert.equal(disp.level, 'success')
   assert.match(disp.title, /成功/)
   assert.ok(disp.detailLines.some((l) => l.includes('物化条目：1')))
   assert.ok(disp.detailLines.some((l) => l.includes('Blocked')))
   assert.ok(disp.detailLines.some((l) => l.includes('QG-E1')))
+}
+
+{
+  const zero = normalizeMaterializeMorningResponse({
+    success: true,
+    plan_id: 17,
+    materialized_items: 0,
+    readiness_ready: false,
+    blockers: [{ code: 'NO_TRADEABLE_ITEMS', message: 'none' }],
+    code: 0,
+  })
+  const zeroDisp = formatMaterializeMorningDisplay(zero)
+  assert.equal(zeroDisp.level, 'warning')
+  assert.equal(zeroDisp.ok, false)
+  assert.match(zeroDisp.title, /未产生可执行项/)
 }
 
 {
@@ -127,6 +143,7 @@ import {
   })
   const disp = formatMaterializeMorningDisplay(fail)
   assert.equal(disp.ok, false)
+  assert.equal(disp.level, 'error')
   assert.match(disp.title, /失败/)
   assert.ok(disp.detailLines.some((l) => l.includes('plan is frozen')))
   assert.ok(disp.detailLines.some((l) => l.includes('precheck')))

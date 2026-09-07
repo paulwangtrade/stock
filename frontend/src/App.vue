@@ -15,7 +15,7 @@ import {
   AlarmOutline,
   AnalyticsOutline,
   BarChartSharp, Bonfire, BonfireOutline, DiamondOutline, EaselSharp,
-  ExpandOutline, Flag,
+  ExpandOutline, Flag, GitCompareOutline,
   Flame, FlameSharp, FlaskOutline,   InformationOutline,
   NewspaperOutline,
   NewspaperSharp, Notifications,
@@ -29,6 +29,11 @@ import {AnalyzeSentiment, GetConfig, GetGroupList,GetVersionInfo} from "../wails
 import { initSignalSettingsSync, loadSignalSettingsFromBackend } from "./utils/signalSettingsStore";
 import { startQuantAutomation, stopQuantAutomation } from "./services/quantAutomationService";
 import { recordPerformanceMetric } from "./services/performanceMetrics";
+import {
+  createProductMenuOptions,
+  findMenuItemByKey,
+  forEachMenuItem,
+} from "./navigation/productMenu";
 import FloatingAiAssistant from "./components/FloatingAiAssistant.vue";
 import FloatingAgentAssistant from "./components/FloatingAgentAssistant.vue";
 import WatchlistActionNotification from "./components/WatchlistActionNotification.vue";
@@ -57,755 +62,116 @@ const enableAgent = ref(false)
 const enableDarkTheme = ref(null)
 const content = ref('')
 const isFullscreen = ref(false)
-const activeKey = ref('stock')
+const activeKey = ref('investmentHome')
 const containerRef = ref({})
 const realtimeProfit = ref(0)
 const telegraph = ref([])
 const groupList = ref([])
 const officialStatement= ref("")
-const menuOptions = ref([
-  {
-    label: () =>
-        h(
-            RouterLink,
-            {
-              to: {
-                name: 'stock',
-                query: {
-                  groupName: '全部',
-                  groupId: 0,
-                },
-                params: {},
-              },
-              onClick: () => {
-                activeKey.value = 'stock'
-              },
-            },
-            {default: () => '自选股',}
-        ),
-    key: 'stock',
-    icon: renderIcon(StarOutline),
-    children: [
-      {
+const menuOptions = ref([])
+
+function rebuildProductMenu() {
+  menuOptions.value = createProductMenuOptions({
+    h,
+    RouterLink,
+    router,
+    activeKey,
+    renderIcon,
+    EventsEmit,
+    NText,
+    Quit,
+    toggleFullscreen,
+    isFullscreen,
+    enableFund,
+    enableAgent,
+    realtimeProfit,
+    icons: {
+      SparklesOutline,
+      Wallet,
+      Pulse,
+      AnalyticsOutline,
+      TimeOutline,
+      Flag,
+      GitCompareOutline,
+      FlaskOutline,
+      AppsList20Regular,
+      NewspaperOutline,
+      NewspaperSharp,
+      BarChartSharp,
+      Dragon,
+      StockOutlined,
+      NotificationFilled,
+      ReportSearch,
+      Gripfire,
+      BoxSearch20Regular,
+      FirefoxBrowser,
+      DiamondOutline,
+      SettingsOutline,
+      StarOutline,
+      Robot,
+      Prompt,
+      ReportAnalytics,
+      TrendingUp,
+      MoneyCollectOutlined,
+      AlarmOutline,
+      ExpandOutline,
+      PowerOutline,
+    },
+  })
+  const stockItem = findMenuItemByKey(menuOptions.value, 'stock')
+  if (stockItem && Array.isArray(groupList.value) && groupList.value.length) {
+    if (!Array.isArray(stockItem.children)) stockItem.children = []
+    stockItem.children = stockItem.children.filter((c) => c.key === 0)
+    stockItem.children.push(
+      ...groupList.value.map((g) => ({
         label: () =>
-            h(
-                'a',
-                {
-                  href: '#',
-                  type: 'info',
-                  onClick: () => {
-                    activeKey.value = 'stock'
-                    //console.log("push",item)
-                    router.push({
-                      name: 'stock',
-                      query: {
-                        groupName: '全部',
-                        groupId: 0,
-                      },
-                    })
-                    EventsEmit("changeTab", {ID: 0, name: '全部'})
-                  },
-                  to: {
-                    name: 'stock',
-                    query: {
-                      groupName: '全部',
-                      groupId: 0,
-                    },
-                  }
-                },
-                {default: () => '全部',}
-            ),
-        key: 0,
-      }
-    ],
-  },
-  {
-    label: () =>
-        h(
-            RouterLink,
-            {
-              to: { name: 'holdings' },
-              onClick: () => {
-                activeKey.value = 'holdings'
-              },
-            },
-            {default: () => '持仓股'}
-        ),
-    key: 'holdings',
-    icon: renderIcon(Wallet),
-  },
-  {
-    label: () =>
-        h(
-            RouterLink,
-            {
-              to: { name: 'holdingT' },
-              onClick: () => {
-                activeKey.value = 'holdingT'
-              },
-            },
-            {default: () => '持仓做T'}
-        ),
-    key: 'holdingT',
-    icon: renderIcon(Pulse),
-  },
-  {
-    label: () =>
-        h(
-            RouterLink,
-            {
-              to: { name: 'quantTrading' },
-              onClick: () => {
-                activeKey.value = 'quantTrading'
-              },
-            },
-            {default: () => '量化交易'}
-        ),
-    key: 'quantTrading',
-    icon: renderIcon(AnalyticsOutline),
-  },
-  {
-    label: () =>
-        h(
-            RouterLink,
-            {
-              to: { name: 'tradePlanUpcoming' },
-              onClick: () => {
-                activeKey.value = 'tradePlanUpcoming'
-              },
-            },
-            { default: () => '明日交易计划' },
-        ),
-    key: 'tradePlanUpcoming',
-    icon: renderIcon(TimeOutline),
-  },
-  {
-    label: () =>
-        h(
-            RouterLink,
-            {
-              to: { name: 'paperObservation' },
-              onClick: () => {
-                activeKey.value = 'paperObservation'
-              },
-            },
-            { default: () => '模拟盘观察' },
-        ),
-    key: 'paperObservation',
-    icon: renderIcon(AnalyticsOutline),
-  },
-  {
-    label: () =>
-        h(
-            RouterLink,
-            {
-              to: { name: 'commercialDemo' },
-              onClick: () => {
-                activeKey.value = 'commercialDemo'
-              },
-            },
-            { default: () => '套餐演示' },
-        ),
-    key: 'commercialDemo',
-    icon: renderIcon(DiamondOutline),
-  },
-  {
-    label: () =>
-        h(
-            RouterLink,
-            {
-              to: {
-                name: 'stockScreen',
-                params: {},
-              },
-              onClick: () => {
-                activeKey.value = 'stockScreen'
-                EventsEmit('allStockListRefresh')
-              },
-            },
-            { default: () => '股票筛选' },
-        ),
-    key: 'stockScreen',
-    icon: renderIcon(AppsList20Regular),
-  },
-  {
-    label: () =>
-        h(
-            RouterLink,
+          h(
+            'a',
             {
               href: '#',
-              to: {
-                name: 'market',
-                params: {}
-              },
+              type: 'info',
               onClick: () => {
-                activeKey.value = 'market'
-                EventsEmit("changeMarketTab", {ID: 0, name: '市场快讯'})
-              },
-            },
-            {default: () => '市场行情'}
-        ),
-    key: 'market',
-    icon: renderIcon(NewspaperOutline),
-    children: [
-      {
-        label: () =>
-            h(
-                RouterLink,
-                {
-                  href: '#',
-                  to: {
-                    name: 'market',
-                    query: {
-                      name: "市场快讯",
-                    }
-                  },
-                  onClick: () => {
-                    activeKey.value = 'market'
-                    EventsEmit("changeMarketTab", {ID: 0, name: '市场快讯'})
-                  },
-                },
-                {default: () => '市场快讯',}
-            ),
-        key: 'market1',
-        icon: renderIcon(NewspaperSharp),
-      },
-      {
-        label: () =>
-            h(
-                RouterLink,
-                {
-                  href: '#',
-                  to: {
-                    name: 'market',
-                    query: {
-                      name: "全球股指",
-                    },
-                  },
-                  onClick: () => {
-                    activeKey.value = 'market'
-                    EventsEmit("changeMarketTab", {ID: 0, name: '全球股指'})
-                  },
-                },
-                {default: () => '全球股指',}
-            ),
-        key: 'market2',
-        icon: renderIcon(BarChartSharp),
-      },
-      {
-        label: () =>
-            h(
-                RouterLink,
-                {
-                  href: '#',
-                  to: {
-                    name: 'market',
-                    query: {
-                      name: "重大指数",
-                    }
-                  },
-                  onClick: () => {
-                    activeKey.value = 'market'
-                    EventsEmit("changeMarketTab", {ID: 0, name: '重大指数'})
-                  },
-                },
-                {default: () => '重大指数',}
-            ),
-        key: 'market3',
-        icon: renderIcon(AnalyticsOutline),
-      },
-      {
-        label: () =>
-            h(
-                RouterLink,
-                {
-                  href: '#',
-                  to: {
-                    name: 'market',
-                    query: {
-                      name: "行业排名",
-                    }
-                  },
-                  onClick: () => {
-                    activeKey.value = 'market'
-                    EventsEmit("changeMarketTab", {ID: 0, name: '行业排名'})
-                  },
-                },
-                {default: () => '行业排名',}
-            ),
-        key: 'market4',
-        icon: renderIcon(Flag),
-      },
-      {
-        label: () =>
-            h(
-                RouterLink,
-                {
-                  href: '#',
-                  to: {
-                    name: 'market',
-                    query: {
-                      name: "个股资金流向",
-                    }
-                  },
-                  onClick: () => {
-                    activeKey.value = 'market'
-                    EventsEmit("changeMarketTab", {ID: 0, name: '个股资金流向'})
-                  },
-                },
-                {default: () => '个股资金流向',}
-            ),
-        key: 'market5',
-        icon: renderIcon(Pulse),
-      },
-      {
-        label: () =>
-            h(
-                RouterLink,
-                {
-                  href: '#',
-                  to: {
-                    name: 'market',
-                    query: {
-                      name: "龙虎榜",
-                    }
-                  },
-                  onClick: () => {
-                    activeKey.value = 'market'
-                    EventsEmit("changeMarketTab", {ID: 0, name: '龙虎榜'})
-                  },
-                },
-                {default: () => '龙虎榜',}
-            ),
-        key: 'market6',
-        icon: renderIcon(Dragon),
-      },
-      {
-        label: () =>
-            h(
-                RouterLink,
-                {
-                  href: '#',
-                  to: {
-                    name: 'market',
-                    query: {
-                      name: "个股研报",
-                    }
-                  },
-                  onClick: () => {
-                    activeKey.value = 'market'
-                    EventsEmit("changeMarketTab", {ID: 0, name: '个股研报'})
-                  },
-                },
-                {default: () => '个股研报',}
-            ),
-        key: 'market7',
-        icon: renderIcon(StockOutlined),
-      },
-      {
-        label: () =>
-            h(
-                RouterLink,
-                {
-                  href: '#',
-                  to: {
-                    name: 'market',
-                    query: {
-                      name: "公司公告",
-                    }
-                  },
-                  onClick: () => {
-                    activeKey.value = 'market'
-                    EventsEmit("changeMarketTab", {ID: 0, name: '公司公告'})
-                  },
-                },
-                {default: () => '公司公告',}
-            ),
-        key: 'market8',
-        icon: renderIcon(NotificationFilled),
-      },
-      {
-        label: () =>
-            h(
-                RouterLink,
-                {
-                  href: '#',
-                  to: {
-                    name: 'market',
-                    query: {
-                      name: "行业研究",
-                    }
-                  },
-                  onClick: () => {
-                    activeKey.value = 'market'
-                    EventsEmit("changeMarketTab", {ID: 0, name: '行业研究'})
-                  },
-                },
-                {default: () => '行业研究',}
-            ),
-        key: 'market9',
-        icon: renderIcon(ReportSearch),
-      },
-      {
-        label: () =>
-            h(
-                RouterLink,
-                {
-                  href: '#',
-                  to: {
-                    name: 'market',
-                    query: {
-                      name: "当前热门",
-                    }
-                  },
-                  onClick: () => {
-                    activeKey.value = 'market'
-                    EventsEmit("changeMarketTab", {ID: 0, name: '当前热门'})
-                  },
-                },
-                {default: () => '当前热门',}
-            ),
-        key: 'market10',
-        icon: renderIcon(Gripfire),
-      },
-      {
-        label: () =>
-            h(
-                RouterLink,
-                {
-                  href: '#',
-                  to: {
-                    name: 'market',
-                    query: {
-                      name: "指标选股",
-                    }
-                  },
-                  onClick: () => {
-                    activeKey.value = 'market'
-                    EventsEmit("changeMarketTab", {ID: 0, name: '指标选股'})
-                  },
-                },
-                {default: () => '指标选股',}
-            ),
-        key: 'market11',
-        icon: renderIcon(BoxSearch20Regular),
-      },
-      {
-        label: () =>
-            h(
-                RouterLink,
-                {
-                  href: '#',
-                  to: {
-                    name: 'market',
-                    query: {
-                      name: "名站优选",
-                    }
-                  },
-                  onClick: () => {
-                    activeKey.value = 'market'
-                    EventsEmit("changeMarketTab", {ID: 0, name: '名站优选'})
-                  },
-                },
-                {default: () => '名站优选',}
-            ),
-        key: 'market12',
-        icon: renderIcon(FirefoxBrowser),
-      },
-    ]
-  },
-  {
-    label: () =>
-        h(
-            RouterLink,
-            {
-              to: {
-                name: 'fund',
-                query: {
-                  name: '基金自选',
-                },
-              },
-              onClick: () => {
-                activeKey.value = 'fund'
-              },
-            },
-            {default: () => '基金自选',}
-        ),
-    show: enableFund.value,
-    key: 'fund',
-    icon: renderIcon(SparklesOutline),
-    children: [
-      {
-        label: () => h(NText, {type: realtimeProfit.value > 0 ? 'error' : 'success'}, {default: () => '功能完善中！'}),
-        key: 'realtimeProfit',
-        show: realtimeProfit.value,
-        icon: renderIcon(AlarmOutline),
-      },
-    ]
-  },
-  {
-    label: () =>
-        h(
-            RouterLink,
-            {
-              to: {
-                name: 'agent',
-                query: {
-                  name:"Ai智能体",
-                },
-                onClick: () => {
-                  activeKey.value = 'agent'
-                },
-              }
-            },
-            {default: () => 'Ai智能体'}
-        ),
-    key: 'agent',
-    show:enableAgent.value,
-    icon: renderIcon(Robot),
-  },
-    {
-      label: () =>
-          h(
-              RouterLink,
-              {
-                to: {
-                  name: 'research',
+                activeKey.value = 'stock'
+                router.push({
+                  name: 'stock',
                   query: {
-                    name:"研究中心",
+                    groupName: g.name,
+                    groupId: g.ID,
                   },
-                },
-                onClick: () => {
-                  activeKey.value = 'research'
-                  setTimeout(() => {
-                    EventsEmit("changeResearchTab", {ID: 0, name: 'AI分析报告'})
-                  }, 100)
-                },
+                })
+                setTimeout(() => {
+                  EventsEmit('changeTab', g)
+                }, 100)
               },
-              {default: () => '研究中心'}
-          ),
-      key: 'research',
-      icon: renderIcon(FlaskOutline),
-      children:[
-          {
-            label: () =>
-                h(
-                    RouterLink,
-                    {
-                      to: {
-                        name: 'research',
-                        query: {
-                          name:"AI分析报告",
-                        },
-                      },
-                      onClick: () => {
-                        activeKey.value = 'research'
-                        setTimeout(() => {
-                          EventsEmit("changeResearchTab", {ID: 0, name: 'AI分析报告'})
-                        }, 100)
-                      },
-                    },
-                    {default: () => 'AI分析报告'}
-                ),
-            key: 'research1',
-            icon: renderIcon(ReportAnalytics),
-          },
-        {
-          label: () =>
-              h(
-                  RouterLink,
-                  {
-                    to: {
-                      name: 'research',
-                      query: {
-                        name:"股票推荐记录",
-                      },
-                    },
-                    onClick: () => {
-                      activeKey.value = 'research'
-                      setTimeout(() => {
-                        EventsEmit("changeResearchTab", {ID: 1, name: '股票推荐记录'})
-                      }, 100)
-                    },
-                  },
-                  {default: () => '股票推荐记录'}
-              ),
-          key: 'research2',
-          icon: renderIcon(DiamondOutline),
-        },
-        {
-          label: () =>
-              h(
-                  RouterLink,
-                  {
-                    to: {
-                      name: 'research',
-                      query: {
-                        name:"异动监控",
-                      },
-                    },
-                    onClick: () => {
-                      activeKey.value = 'research'
-                      setTimeout(() => {
-                        EventsEmit("changeResearchTab", {ID: 2, name: '异动监控'})
-                      }, 100)
-                    },
-                  },
-                  {default: () => '异动监控'}
-              ),
-          key: 'stockChanges',
-          icon: renderIcon(TrendingUp),
-        },
-        {
-          label: () =>
-              h(
-                  RouterLink,
-                  {
-                    to: {
-                      name: 'research',
-                      query: {
-                        name:"提示词模板",
-                      },
-                    },
-                    onClick: () => {
-                      activeKey.value = 'research'
-                      setTimeout(() => {
-                        EventsEmit("changeResearchTab", {ID: 3, name: '提示词模板'})
-                      }, 100)
-                    },
-                  },
-                  {default: () => '提示词模板'}
-              ),
-          key: 'research3',
-          icon: renderIcon(Prompt),
-        },
-        {
-          label: () =>
-              h(
-                  RouterLink,
-                  {
-                    to: {
-                      name: 'research',
-                      query: {
-                        name:"我的策略",
-                      },
-                    },
-                    onClick: () => {
-                      activeKey.value = 'research'
-                      setTimeout(() => {
-                        EventsEmit("changeResearchTab", {ID: 0, name: '我的策略'})
-                      }, 100)
-                    },
-                  },
-                  {default: () => '我的策略'}
-              ),
-          key: 'research_strategy',
-          icon: renderIcon(FlaskOutline),
-        },
-        {
-          label: () =>
-              h(
-                  RouterLink,
-                  {
-                    to: {
-                      name: 'cronTasks',
-                      query: {
-                        name:"定时任务",
-                      },
-                    },
-                    onClick: () => {
-                      activeKey.value = 'research'
-                      setTimeout(() => {
-                        EventsEmit("changeResearchTab", {ID: 5, name: '定时任务'})
-                      }, 100)
-                    },
-                  },
-                  {default: () => '定时任务'}
-              ),
-          key: 'research5',
-          icon: renderIcon(TimeOutline),
-        },
-        {
-          label: () =>
-              h(
-                  RouterLink,
-                  {
-                    to: {
-                      name: 'research',
-                      query: {
-                        name:"交易日志",
-                      },
-                    },
-                    onClick: () => {
-                      activeKey.value = 'research'
-                      setTimeout(() => {
-                        EventsEmit("changeResearchTab", {ID: 6, name: '交易日志'})
-                      }, 100)
-                    },
-                  },
-                  {default: () => '交易日志(beta)'}
-              ),
-          key: 'research6',
-          icon: renderIcon(MoneyCollectOutlined),
-        },
-      ],
-    },
-  {
-    label: () =>
-        h(
-            RouterLink,
-            {
-              to: {
-                name: 'settings',
-                query: {
-                  name:"设置",
-                },
-                onClick: () => {
-                  activeKey.value = 'settings'
-                },
-              }
             },
-            {default: () => '设置'}
-        ),
-    key: 'settings',
-    icon: renderIcon(SettingsOutline),
-  },
-  {
-    show:false,
-    label: () => h("a", {
-      href: '#',
-      onClick: toggleFullscreen,
-      title: '全屏 Ctrl+F 退出全屏 Esc',
-    }, {default: () => isFullscreen.value ? '取消全屏' : '全屏'}),
-    key: 'full',
-    icon: renderIcon(ExpandOutline),
-  },
-  // {
-  //   label: ()=> h("a", {
-  //     href: 'javascript:void(0)',
-  //     style: 'cursor: move;',
-  //     onClick: toggleStartMoveWindow,
-  //   }, { default: () => '移动' }),
-  //   key: 'move',
-  //   icon: renderIcon(MoveOutline),
-  // },
-  {
-    show: false,
-    label: () => h("a", {
-      href: '#',
-      onClick: Quit,
-    }, {default: () => '退出程序'}),
-    key: 'exit',
-    icon: renderIcon(PowerOutline),
-  },
-])
+            { default: () => g.name },
+          ),
+        key: g.ID,
+      })),
+    )
+  }
+}
+
 
 watch(
   () => router.currentRoute.value.name,
   (name) => {
-    const directKeys = new Set(['stock', 'holdings', 'holdingT', 'quantTrading', 'tradePlanUpcoming', 'paperObservation', 'commercialDemo', 'stockScreen', 'market', 'fund', 'agent', 'research', 'settings'])
-    if (directKeys.has(String(name))) activeKey.value = String(name)
-    if (name === 'cronTasks') activeKey.value = 'research'
+    const n = String(name || '')
+    const directKeys = new Set([
+      'investmentHome',
+      'portfolioDashboard',
+      'stockScreen',
+      'watchedOpportunities',
+      'tradePlanUpcoming',
+      'stock',
+      'settings',
+      'fund',
+      'agent',
+      'about',
+    ])
+    if (directKeys.has(n)) activeKey.value = n
+    if (n === 'research') activeKey.value = 'eventMonitor'
+    if (n === 'cronTasks') activeKey.value = 'settings'
   },
   { immediate: true },
 )
@@ -813,6 +179,9 @@ watch(
 function renderIcon(icon) {
   return () => h(NIcon, null, {default: () => h(icon)})
 }
+
+rebuildProductMenu()
+
 
 function toggleFullscreen(e) {
   activeKey.value = 'full'
@@ -906,46 +275,8 @@ onBeforeMount(() => {
   })
 
   GetGroupList().then(result => {
-    groupList.value = result
-    menuOptions.value.map((item) => {
-      //console.log(item)
-      if (item.key === 'stock') {
-        item.children.push(...groupList.value.map(item => {
-          return {
-            label: () =>
-                h(
-                    'a',
-                    {
-                      href: '#',
-                      type: 'info',
-                      onClick: () => {
-                        //console.log("push",item)
-                        router.push({
-                          name: 'stock',
-                          query: {
-                            groupName: item.name,
-                            groupId: item.ID,
-                          },
-                        })
-                        setTimeout(() => {
-                          EventsEmit("changeTab", item)
-                        }, 100)
-                      },
-                      to: {
-                        name: 'stock',
-                        query: {
-                          groupName: item.name,
-                          groupId: item.ID,
-                        },
-                      }
-                    },
-                    {default: () => item.name,}
-                ),
-            key: item.ID,
-          }
-        }))
-      }
-    })
+    groupList.value = result || []
+    rebuildProductMenu()
   })
 
 
@@ -969,7 +300,8 @@ function applySettingsToShell(cfg) {
   enableFund.value = !!cfg.enableFund
   enableAgent.value = !!cfg.enableAgent
   enableDarkTheme.value = cfg.darkTheme ? darkTheme : null
-  menuOptions.value.forEach((item) => {
+  rebuildProductMenu()
+  forEachMenuItem(menuOptions.value, (item) => {
     if (item.key === 'fund') item.show = !!cfg.enableFund
     if (item.key === 'agent') item.show = !!cfg.enableAgent
   })

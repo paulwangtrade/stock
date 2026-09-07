@@ -1,5 +1,5 @@
 <script setup>
-import {h, onBeforeMount, onMounted, onBeforeUnmount, ref, reactive, computed} from 'vue'
+import {h, onBeforeMount, onMounted, onBeforeUnmount, ref, reactive, computed, watch} from 'vue'
 import {
   GetAllStockInfoList,
   GetAllStocks,
@@ -18,11 +18,21 @@ import {
   GetSignalScanTask,
   ListSignalScanSnapshots,
   IsSignalScanRunning,
+  GetStockRealTimePrice,
 } from "../../wailsjs/go/main/App";
 import { followWithDateGroup, formatFollowGroupMessage } from "../utils/followDateGroup"
 import {NButton, NInput, NTag, NText, NTooltip, NProgress, useMessage, useNotification, NDataTable, NSpace, NPagination, NFlex, NSelect, NIcon, NModal, NCard, NTable, NSpin, NAlert} from "naive-ui";
 import StockKlineModal from "./StockKlineModal.vue"
+import StockLink from "./StockLink.vue"
+import OpportunityProjectionDrawer from "./OpportunityProjectionDrawer.vue"
+import InvestmentNarrativePanel from './InvestmentNarrativePanel.vue'
 import { resolveStrategyRowCode, resolveStrategyRowName, toEastMoneyCode, toFollowCodeFromRow } from "../utils/stockCode"
+import { applyStockClickAction, toStockDisplayModel } from "../utils/stockDisplayAdapters.js"
+import {
+  formatPriceWithContext,
+  priceColumnTitle,
+  PRICE_KIND,
+} from '../utils/priceDisplay.js'
 import { scanRowsLastBarSignals } from "../utils/watchlistSignalScan"
 import { calcTrendCompositeScore, getTrendScoreStyle } from "../utils/trendBreakoutScore"
 import { passesSignalTagFilter, passesReboundScreenFilter, getSignalTagColor, buildScreenSignalFilterOptions, formatSignalTagLabel, normalizeScreenSignalTag, SCREEN_SNAPSHOT_SIGNAL_TAG_SET } from "../utils/signalBuyGuide"
@@ -36,6 +46,66 @@ import {
 } from "../utils/signalSettings"
 import {format} from "date-fns";
 import {EventsOn, EventsOff} from "../../wailsjs/runtime";
+import {
+  calcReturnSinceSignal,
+  enrichHitToRow,
+  enrichHitToSummary,
+  formatPctWithSign,
+  isDerivedSignalPriceStatus,
+  isMissingSignalPriceStatus,
+  OPPORTUNITY_PRICE_FOOTER,
+  resolveLatestPrice,
+  resolveLiveChangeRate,
+  resolveSignalFields,
+  resolveSnapshotChange,
+  signalPriceTooltipForStatus,
+  vsSignalReturnMissingHint,
+} from '../utils/opportunityListMetrics.js'
+import {
+  buildNonTradingDaySnapshotTip,
+  buildSnapshotHistoryLabel,
+  buildSnapshotMetaDisplay,
+} from '../utils/snapshotDisplay.js'
+import {
+  formatOpportunityListCountLabel,
+  OPPORTUNITY_LIST_PAGINATE_THRESHOLD,
+  shouldPaginateOpportunityList,
+  sliceOpportunityPage,
+} from '../utils/opportunityListPagination.js'
+import { fetchOpportunityList, postOpportunityAction, OPPORTUNITY_ACTION } from '../api/opportunities.ts'
+import { fetchOpportunityProjections } from '../api/opportunityProjection.ts'
+import {
+  buildDecisionBadgeView,
+  buildProjectionMap,
+  OPPORTUNITY_DECISION_FOOTER,
+  resolveProjectionBatchLimit,
+} from '../utils/opportunityDecisionBadgeDisplay.js'
+import {
+  buildSignalSnapshotDisplayProjection,
+  formatOpportunityTableCell,
+  opportunitySourceChipMeta,
+  resolveOpportunityReasonSummary,
+  resolveOpportunityStrategyLabel,
+} from '../utils/opportunityExplanationColumns.js'
+import {
+  buildIgnoreActionPayload,
+  buildWatchActionPayload,
+  indexOpportunityEntriesBySecucode,
+  isOpportunityWatched,
+  resolveOpportunityEntryForRow,
+} from '../utils/opportunityUserAction.js'
+import {
+  isSignalScanTaskActiveStatus,
+  resolveSignalScanTaskPollOutcome,
+  resolveStockScreenTableLoading,
+} from '../utils/signalScanTaskLoading.js'
+import {
+  collectQuoteCodesFromRows,
+  mergeQuoteIntoCache,
+  parseLiveQuoteResponse,
+  planQuoteRefresh,
+  shouldRefreshSnapshotQuotes,
+} from '../utils/opportunityQuoteRefresh.js'
 
 const notify = useNotification()
 const message = useMessage()
@@ -52,7 +122,7 @@ onBeforeMount(() => {
     applyScreenStrategiesFromConfig(result?.signalParams)
     loadSnapshotHistoryOptions()
     refreshSnapshotBanner()
-    if (!hasSignalFilter.value) {
+    if (shouldRunLivePageSignalScan()) {
       scanPageSignals(dataRef.value)
     }
   })
@@ -85,8 +155,8 @@ onMounted(() => {
   EventsOn('signalScanProgress', onBackendSignalScanProgress)
   EventsOn('signalScanDone', onBackendSignalScanDone)
   refreshScanTaskView().then((task) => {
-    const st = String(task?.status || '').toLowerCase()
-    if (st === 'running' || st === 'pending') {
+    const st = String(task?.status || '')
+    if (isSignalScanTaskActiveStatus(st)) {
       backendScanLoading.value = true
       signalScanLoading.value = true
       signalScanStatus.value = '后台扫描进行中...'
@@ -104,8 +174,12 @@ onBeforeUnmount(() => {
 
 const dataRef = ref([])
 const loadingRef = ref(false)
+/** Phase14-H1: table spinner follows user fetch only, not background/page signal scan. */
+const tableLoading = computed(() => resolveStockScreenTableLoading(loadingRef.value))
 const dataRefreshKey = ref(0)
 const signalByCode = ref(new Map())
+/** Phase14-P0: invalidates in-flight live scanPageSignals when snapshot search applies. */
+const signalScanGeneration = ref(0)
 const signalScanLoading = ref(false)
 const signalScanStatus = ref('')
 const signalScanProgress = ref({ phase: '', done: 0, total: 0 })
@@ -115,6 +189,12 @@ let scanTaskPollTimer = null
 const SIGNAL_SCAN_CONCURRENCY = 24
 const SIGNAL_PAGE_SCAN_CONCURRENCY = 12
 const signalFilteredRows = ref([])
+const liveQuoteByCode = ref(new Map())
+/** Codes with an active GetStockRealTimePrice request (Phase14-H2.1 dedupe). */
+const quoteFetchInFlight = new Set()
+const showOpportunityColumns = computed(
+  () => signalDataSource.value === 'snapshot' || hasSignalFilter.value,
+)
 const snapshotSession = ref('close')
 const snapshotTradeDate = ref('')
 const selectedSnapshotHistoryValue = ref(null)
@@ -125,6 +205,13 @@ const backendScanLoading = ref(false)
 const snapshotHistoryOptions = ref([])
 const selectableSnapshotHistoryOptions = computed(() => snapshotHistoryOptions.value.filter((item) => item?.value))
 const followedStockCodes = ref(new Set())
+const opportunityEntryBySecucode = ref(Object.create(null))
+const decisionProjectionByCode = ref(new Map())
+const decisionProjectionLoading = ref(false)
+const decisionProjectionError = ref(false)
+let decisionProjectionLoadToken = 0
+let decisionProjectionDebounceTimer = null
+const opportunityWatchSaving = ref(false)
 const starBacktestVisible = ref(false)
 const starBacktestLoading = ref(false)
 const starBacktestError = ref('')
@@ -164,6 +251,22 @@ const signalFilterPassOptions = computed(() => ({
   maxRsi: reboundScreenMaxRsi.value,
 }))
 
+/** snapshot = 盘后快照 hits；live_scan / live = 页内 K 线扫描（默认浏览） */
+function isSnapshotSignalSource() {
+  return signalDataSource.value === 'snapshot'
+}
+
+/** 机会表数据源：快照 hits 或信号筛选结果（非 live 分页 dataRef） */
+const usesOpportunityRowSource = computed(
+  () => hasSignalFilter.value || isSnapshotSignalSource(),
+)
+
+function shouldRunLivePageSignalScan() {
+  if (isSnapshotSignalSource()) return false
+  if (hasSignalFilter.value) return false
+  return true
+}
+
 function applyScreenStrategiesFromConfig(raw) {
   const settings = parseSignalParams(raw)
   screenStrategySettings.value = settings
@@ -178,10 +281,9 @@ const scanProgressPercent = computed(() => {
   return Math.min(100, Math.round((done / total) * 100))
 })
 
-const snapshotMetaLabel = computed(() => {
-  if (!snapshotMeta.value) return ''
-  const s = snapshotMeta.value.session === 'midday' ? '午盘' : '盘后'
-  return `${snapshotMeta.value.tradeDate} ${s} · 扫 ${snapshotMeta.value.scannedTotal} 只 · 命中 ${snapshotMeta.value.hitTotal} 只`
+const snapshotMetaDisplay = computed(() => {
+  if (!snapshotMeta.value) return null
+  return buildSnapshotMetaDisplay(snapshotMeta.value)
 })
 
 const scanTaskStatusLabel = computed(() => {
@@ -483,37 +585,88 @@ async function runStarBacktest() {
 }
 
 function hitToSummary(hit) {
-  return {
-    ok: true,
+  return enrichHitToSummary({
+    ...hit,
     tag: normalizeScreenSignalTag(hit.tag),
-    recentSignalDaysAgo: hit.recentSignalDaysAgo ?? hit.daysAgo ?? null,
-    statusText: hit.statusText,
-    sortRank: hit.sortRank ?? 0,
-    latestStatus: { rsi: hit.rsi ?? null },
-  }
+  })
 }
 
-function hitToRow(hit) {
-  return {
-    SECUCODE: hit.SECUCODE,
-    SECURITY_CODE: hit.SECURITY_CODE,
-    SECURITY_NAME_ABBR: hit.SECURITY_NAME_ABBR,
-    NEW_PRICE: hit.NEW_PRICE,
-    CHANGE_RATE: hit.CHANGE_RATE,
-    HIGH_PRICE: hit.HIGH_PRICE,
-    LOW_PRICE: hit.LOW_PRICE,
-    PRE_CLOSE_PRICE: hit.PRE_CLOSE_PRICE,
-    VOLUME: hit.VOLUME,
-    DEAL_AMOUNT: hit.DEAL_AMOUNT,
-    TURNOVERRATE: hit.TURNOVERRATE,
-    VOLUME_RATIO: hit.VOLUME_RATIO,
-    INDUSTRY: hit.INDUSTRY,
-    CONCEPT: hit.CONCEPT,
-    MARKET: hit.MARKET,
+function hitToRow(hit, snapTradeDate = '') {
+  return enrichHitToRow(hit, snapTradeDate || snapshotTradeDate.value || snapshotMeta.value?.tradeDate || '')
+}
+
+function getRowStockCodeForQuote(row) {
+  return resolveStrategyRowCode(row) || row?.SECUCODE || ''
+}
+
+function getLiveQuote(row) {
+  const code = getRowStockCodeForQuote(row)
+  return code ? liveQuoteByCode.value.get(code) : null
+}
+
+function renderPctCell(rate, { muted = false } = {}) {
+  if (rate == null || !Number.isFinite(Number(rate))) {
+    return h(NText, { depth: 3 }, { default: () => '—' })
+  }
+  const n = Number(rate)
+  const type = muted ? undefined : (n >= 0 ? 'error' : 'success')
+  return h(NText, { type }, { default: () => formatPctWithSign(n) })
+}
+
+function renderSnapshotPctCell(row) {
+  if (signalDataSource.value !== 'snapshot') {
+    return h(NText, { depth: 3 }, { default: () => '—' })
+  }
+  const snap = resolveSnapshotChange(row, snapshotMeta.value?.tradeDate)
+  if (snap.rate == null) {
+    return h(NText, { depth: 3 }, { default: () => '—' })
+  }
+  return h('div', { class: 'opp-pct-cell' }, [
+    renderPctCell(snap.rate),
+    snap.date
+      ? h(NText, { depth: 3, class: 'opp-pct-cell__date' }, { default: () => `(${snap.date})` })
+      : null,
+  ])
+}
+
+async function refreshLiveQuotesForRows(rows) {
+  const codes = collectQuoteCodesFromRows(rows, getRowStockCodeForQuote)
+  const { toFetch } = planQuoteRefresh(codes, liveQuoteByCode.value, quoteFetchInFlight)
+  if (!toFetch.length) return
+
+  const concurrency = 8
+  let next = liveQuoteByCode.value
+  let updated = false
+  for (let i = 0; i < toFetch.length; i += concurrency) {
+    const batch = toFetch.slice(i, i + concurrency)
+    await Promise.all(
+      batch.map(async (code) => {
+        if (quoteFetchInFlight.has(code)) return
+        quoteFetchInFlight.add(code)
+        try {
+          const quote = await GetStockRealTimePrice(code)
+          const entry = parseLiveQuoteResponse(quote)
+          if (entry) {
+            next = mergeQuoteIntoCache(next, code, entry)
+            updated = true
+          }
+        } catch {
+          /* ignore single quote failure */
+        } finally {
+          quoteFetchInFlight.delete(code)
+        }
+      }),
+    )
+  }
+  if (updated) {
+    liveQuoteByCode.value = next
+    dataRefreshKey.value++
   }
 }
 
 function applySnapshotPayload(payload, snap) {
+  signalScanGeneration.value++
+  const prevSnapId = snapshotMeta.value?.id
   lastSnapshotPayload.value = payload || null
   const mapObj = {}
   for (const hit of payload?.items || []) {
@@ -525,7 +678,7 @@ function applySnapshotPayload(payload, snap) {
   const industry = filterIndustry.value || ''
   let rows = (payload?.items || [])
     .filter((hit) => hit?.SECUCODE && SCREEN_SNAPSHOT_SIGNAL_TAG_SET.has(normalizeScreenSignalTag(hit.tag)))
-    .map(hitToRow)
+    .map((hit) => hitToRow(hit, snap?.tradeDate || payload?.tradeDate || ''))
   rows = filterRowsByMarketSegment(rows)
   if (industry) {
     rows = rows.filter((r) => r.INDUSTRY === industry)
@@ -539,8 +692,120 @@ function applySnapshotPayload(payload, snap) {
   paginationReactive.itemCount = signalFilteredRows.value.length
   paginationReactive.pageCount = Math.max(1, Math.ceil(signalFilteredRows.value.length / paginationReactive.pageSize))
   snapshotMeta.value = snap
+  if (snap?.id != null && snap.id !== prevSnapId) {
+    liveQuoteByCode.value = new Map()
+  }
   signalDataSource.value = 'snapshot'
   dataRefreshKey.value++
+  loadOpportunityUserActions()
+  scheduleDecisionProjectionReload()
+}
+function scheduleDecisionProjectionReload() {
+  if (decisionProjectionDebounceTimer) {
+    clearTimeout(decisionProjectionDebounceTimer)
+  }
+  decisionProjectionDebounceTimer = setTimeout(() => {
+    decisionProjectionDebounceTimer = null
+    loadDecisionProjectionsForTable()
+  }, 300)
+}
+async function loadDecisionProjectionsForTable() {
+  if (!showOpportunityColumns.value) {
+    decisionProjectionByCode.value = new Map()
+    decisionProjectionLoading.value = false
+    decisionProjectionError.value = false
+    return
+  }
+  const tradeDate = snapshotMeta.value?.tradeDate || snapshotTradeDate.value
+  if (!tradeDate) {
+    decisionProjectionByCode.value = new Map()
+    decisionProjectionLoading.value = false
+    decisionProjectionError.value = false
+    return
+  }
+  const token = ++decisionProjectionLoadToken
+  decisionProjectionLoading.value = true
+  decisionProjectionError.value = false
+  try {
+    const limit = resolveProjectionBatchLimit(
+      signalFilteredRows.value.length,
+      paginationReactive.pageSize,
+    )
+    const strategyId = selectedScreenStrategyId.value
+    const result = await fetchOpportunityProjections({
+      tradeDate,
+      limit,
+      strategyId: strategyId && strategyId !== 'default' ? strategyId : undefined,
+    })
+    if (token !== decisionProjectionLoadToken) return
+    decisionProjectionByCode.value = buildProjectionMap(result.items)
+    decisionProjectionError.value = false
+    dataRefreshKey.value++
+  } catch {
+    if (token !== decisionProjectionLoadToken) return
+    decisionProjectionByCode.value = new Map()
+    decisionProjectionError.value = true
+    dataRefreshKey.value++
+  } finally {
+    if (token === decisionProjectionLoadToken) {
+      decisionProjectionLoading.value = false
+    }
+  }
+}
+async function loadOpportunityUserActions() {
+  if (!showOpportunityColumns.value || !snapshotMeta.value?.id) {
+    opportunityEntryBySecucode.value = Object.create(null)
+    return
+  }
+  try {
+    const pool = await fetchOpportunityList({
+      tradeDate: snapshotMeta.value.tradeDate,
+      session: snapshotMeta.value.session || snapshotSession.value,
+      strategyId: selectedScreenStrategyId.value,
+      includeUserAction: true,
+    })
+    opportunityEntryBySecucode.value = indexOpportunityEntriesBySecucode(pool.entries)
+    dataRefreshKey.value++
+  } catch {
+    opportunityEntryBySecucode.value = Object.create(null)
+  }
+}
+
+async function watchOpportunityRow(row) {
+  if (opportunityWatchSaving.value) return
+  const entry = resolveOpportunityEntryForRow(row, opportunityEntryBySecucode.value)
+  const watched = isOpportunityWatched(entry)
+  const payload = watched
+    ? buildIgnoreActionPayload({
+        snap: snapshotMeta.value,
+        row,
+        signalSummary: signalByCode.value.get(row.SECUCODE),
+      })
+    : buildWatchActionPayload({
+        snap: snapshotMeta.value,
+        row,
+        signalSummary: signalByCode.value.get(row.SECUCODE),
+      })
+  if (!payload.scanBatchKey) {
+    message.warning(watched ? '当前无扫描批次，无法取消跟踪' : '当前无扫描批次，无法跟踪')
+    return
+  }
+  opportunityWatchSaving.value = true
+  try {
+    await postOpportunityAction({
+      scanBatchKey: payload.scanBatchKey,
+      secucode: payload.secucode,
+      signalTime: payload.signalTime,
+      signalTag: payload.signalTag,
+      action: watched ? OPPORTUNITY_ACTION.IGNORE : OPPORTUNITY_ACTION.WATCH,
+    })
+    await loadOpportunityUserActions()
+    message.success(watched ? '已取消跟踪' : '已加入跟踪')
+  } catch (e) {
+    message.error(e?.message || String(e))
+  } finally {
+    opportunityWatchSaving.value = false
+  }
 }
 async function refreshSnapshotBanner() {
   try {
@@ -575,7 +840,7 @@ async function loadSnapshotHistoryOptions() {
   try {
     const res = await ListSignalScanSnapshots({ page: 1, pageSize: 30, session: snapshotSession.value, strategyId: selectedScreenStrategyId.value })
     const opts = (res?.data || []).map((s) => {
-      const label = `${s.tradeDate} ${s.session === 'midday' ? '午盘' : '盘后'}${s.strategyName ? ` · ${s.strategyName}` : ''} (${s.hitTotal}只)`
+      const label = buildSnapshotHistoryLabel(s)
       return { label, value: `${s.tradeDate}|${s.session}` }
     })
     snapshotHistoryOptions.value = opts
@@ -614,6 +879,8 @@ function onScreenStrategyChange() {
   if (hasSignalFilter.value) {
     refreshStocks(1)
   } else {
+    signalDataSource.value = 'live_scan'
+    signalScanGeneration.value++
     scanPageSignals(dataRef.value)
   }
 }
@@ -681,21 +948,27 @@ async function refreshScanTaskView() {
   }
 }
 
+function applySignalScanTaskPollOutcome(taskStatus) {
+  const outcome = resolveSignalScanTaskPollOutcome(taskStatus)
+  if (!outcome.shouldStopPoll) return false
+  stopScanTaskPoll()
+  if (outcome.releaseBackendLoading) {
+    backendScanLoading.value = false
+  }
+  if (outcome.releaseSignalScanLoading) {
+    signalScanLoading.value = false
+  }
+  if (outcome.clearScanStatus) {
+    signalScanStatus.value = ''
+  }
+  return true
+}
+
 function startScanTaskPoll() {
   stopScanTaskPoll()
   scanTaskPollTimer = setInterval(async () => {
     const task = await refreshScanTaskView()
-    const st = String(task?.status || '').toLowerCase()
-    if (st === 'completed' || st === 'failed' || !st) {
-      stopScanTaskPoll()
-      if (st !== 'running' && st !== 'pending') {
-        backendScanLoading.value = false
-        if (st !== 'completed') {
-          signalScanLoading.value = false
-          signalScanStatus.value = ''
-        }
-      }
-    }
+    applySignalScanTaskPollOutcome(task?.status)
   }, 2000)
 }
 
@@ -718,6 +991,11 @@ async function onBackendSignalScanDone(ev) {
     snapshotSession.value = session
     await tryLoadSignalSnapshot()
     message.success(`快照完成：命中 ${ev?.hitTotal ?? scanTaskView.value?.hitTotal ?? 0} 只有信号`)
+    const tip = buildNonTradingDaySnapshotTip({
+      tradeDate,
+      createdAt: snapshotMeta.value?.createdAt || new Date(),
+    })
+    if (tip) message.info(tip)
   } else if (signalDataSource.value === 'snapshot' || hasSignalFilter.value) {
     message.success('全市场信号快照已更新')
   }
@@ -795,6 +1073,8 @@ async function loadLiveSignalScan() {
   signalDataSource.value = 'live'
   signalFilteredRows.value = []
   signalByCode.value = new Map()
+  liveQuoteByCode.value = new Map()
+  quoteFetchInFlight.clear()
   if (hasSignalFilter.value) {
     message.info('已退出快照视图。按信号筛选请选择历史快照或先「生成快照」。')
   }
@@ -809,7 +1089,8 @@ async function loadLiveSignalScan() {
       paginationReactive.page = 1
       paginationReactive.pageCount = Math.max(1, Math.ceil((res.result.count || rows.length) / pageSize))
       paginationReactive.itemCount = res.result.count ?? rows.length
-      if (rows.length && !hasSignalFilter.value) {
+      if (rows.length && shouldRunLivePageSignalScan()) {
+        signalScanGeneration.value++
         scanPageSignals(rows)
       }
     }
@@ -824,13 +1105,10 @@ const vipLevel = ref('')
 const vipStartTime=ref("");
 const vipEndTime=ref("");
 const expired=ref(false)
-const isValidVip=ref(false) // 鏄惁鏄細鍛?
-const columnsRef = ref([
-  // {
-  //   title: '鏁版嵁鏃堕棿',
-  //   key: 'MAX_TRADE_DATE',
-  //   width: 120,
-  // },
+const isValidVip=ref(false) // 鏄惁鏄細鍛?
+
+function buildCodeNameSignalTrendColumns() {
+  return [
   {
     title: '股票代码',
     key: 'SECUCODE',
@@ -842,10 +1120,15 @@ const columnsRef = ref([
   {
     title: '股票名称',
     key: 'SECURITY_NAME_ABBR',
-    width: 100,
+    width: 160,
     fixed: 'left',
     render(row) {
       const topPick = isSnapshotTopPick(row)
+      const model = toStockDisplayModel({
+        stock_code: toFollowCodeFromRow(row),
+        stock_name: resolveStrategyRowName(row),
+      })
+      const label = `${topPick ? '★ ' : ''}${model.displayText || resolveStrategyRowName(row) || '—'}`
       return h(
         NButton,
         {
@@ -854,7 +1137,7 @@ const columnsRef = ref([
           style: 'font-weight: 600',
           onClick: () => showKline(row),
         },
-        { default: () => `${topPick ? '★ ' : ''}${row.SECURITY_NAME_ABBR}` },
+        { default: () => label },
       )
     }
   },
@@ -922,6 +1205,505 @@ const columnsRef = ref([
       )
     }
   },
+  ]
+}
+
+/** Phase16.19-B2: Opportunity identity → StockLink → existing StockKlineModal. */
+function renderOpportunityStockCell(row) {
+  const topPick = isSnapshotTopPick(row)
+  const model = toStockDisplayModel({
+    stock_code: toFollowCodeFromRow(row),
+    stock_name: resolveStrategyRowName(row),
+  })
+  const prefix = topPick
+    ? h(NText, { type: 'warning', style: 'margin-right: 2px' }, { default: () => '★' })
+    : null
+  if (!model.klineKey) {
+    return h('span', null, [
+      prefix,
+      h(NText, null, { default: () => model.displayText || resolveStrategyRowName(row) || '—' }),
+    ])
+  }
+  return h('span', { class: 'opp-stock-cell', style: 'display:inline-flex;align-items:center;gap:2px;max-width:100%' }, [
+    prefix,
+    h(StockLink, {
+      model,
+      onOpen: () => showKline(row),
+    }),
+  ])
+}
+
+function buildOpportunitySignalColumn() {
+  return {
+    title: '信号',
+    key: 'signal',
+    width: 72,
+    render(row) {
+      const s = signalByCode.value.get(row.SECUCODE)
+      if (signalScanLoading.value && !s) {
+        return h(NText, { depth: 3 }, { default: () => '…' })
+      }
+      if (!s?.ok) {
+        return h(NText, { depth: 3 }, { default: () => '—' })
+      }
+      if (s.tag) {
+        const label = formatSignalTagLabel(s.tag, s.sellPositionPct)
+        const tagEl = h(
+          NTag,
+          {
+            size: 'small',
+            bordered: true,
+            color: getSignalTagColor(s.tag),
+            style: 'cursor: pointer',
+            onClick: () => showKline(row, s.tag),
+          },
+          { default: () => label },
+        )
+        if (s.statusText) {
+          return h(NTooltip, { trigger: 'hover' }, {
+            trigger: () => tagEl,
+            default: () => s.statusText,
+          })
+        }
+        return tagEl
+      }
+      return h(NText, { depth: 3 }, { default: () => '—' })
+    },
+  }
+}
+
+function buildOpportunityScoreColumn() {
+  return {
+    title: () =>
+      h(
+        NTooltip,
+        { trigger: 'hover' },
+        {
+          trigger: () => h('span', { class: 'col-tip' }, '评分'),
+          default: () => '趋势综合分（筛选参考），非交易计划 item.score',
+        },
+      ),
+    key: 'trendScore',
+    width: 64,
+    render(row) {
+      if (signalScanLoading.value && !signalByCode.value.get(row.SECUCODE)) {
+        return h(NText, { depth: 3 }, { default: () => '…' })
+      }
+      const s = signalByCode.value.get(row.SECUCODE)
+      const score = calcTrendCompositeScore(row, s, technicalIndicatorReactive)
+      if (!Number.isFinite(Number(score.total))) {
+        return h(NText, { depth: 3 }, { default: () => '—' })
+      }
+      const text = h(
+        NText,
+        { style: { cursor: 'help', ...getTrendScoreStyle(score.total) } },
+        { default: () => String(score.total) },
+      )
+      return h(
+        NTooltip,
+        { trigger: 'hover' },
+        {
+          trigger: () => text,
+          default: () =>
+            `${score.tooltip}\n综合权重：信号 45% · 动能 20% · 流动 20% · 形态 15%\n仅供趋势/突破筛选参考，非投资建议`,
+        },
+      )
+    },
+  }
+}
+
+function buildOpportunityRiskColumn() {
+  return {
+    title: '风险',
+    key: 'risk',
+    width: 120,
+    ellipsis: { tooltip: true },
+    render(row) {
+      const code = toFollowCodeFromRow(row)
+      const proj = code ? decisionProjectionByCode.value.get(code) : undefined
+      if (decisionProjectionLoading.value && !proj) {
+        return h(NText, { depth: 3 }, { default: () => '…' })
+      }
+      const riskCode = String(proj?.decision?.risk_code || '').trim()
+      if (riskCode) {
+        return h(NText, null, { default: () => riskCode })
+      }
+      const s = signalByCode.value.get(row.SECUCODE)
+      const rowSignalTag = s?.tag ? formatSignalTagLabel(s.tag, s.sellPositionPct) : ''
+      const view = buildDecisionBadgeView(proj, rowSignalTag, {
+        loading: decisionProjectionLoading.value,
+        error: decisionProjectionError.value,
+      })
+      // Fallback: decision tier as risk-context when risk_code absent (no blank/undefined).
+      return h(NTooltip, { trigger: 'hover' }, {
+        trigger: () =>
+          h(NTag, { size: 'small', type: view.tagType, bordered: false }, { default: () => view.tagLabel || '—' }),
+        default: () => view.tooltipLines.join('\n'),
+      })
+    },
+  }
+}
+
+function buildOpportunityActionColumn() {
+  return {
+    title: '操作',
+    key: 'actions',
+    width: 268,
+    fixed: 'right',
+    render(row) {
+      const entry = resolveOpportunityEntryForRow(row, opportunityEntryBySecucode.value)
+      const watched = isOpportunityWatched(entry)
+      const followed = isRowFollowed(row)
+      return h(NFlex, { size: 4 }, {
+        default: () => [
+          h(
+            NButton,
+            {
+              secondary: true,
+              size: 'small',
+              type: 'info',
+              onClick: () => openProjectionDrawer(row),
+            },
+            { default: () => '查看解释' },
+          ),
+          h(
+            NButton,
+            {
+              secondary: true,
+              size: 'small',
+              type: watched ? 'default' : 'primary',
+              disabled: opportunityWatchSaving.value,
+              loading: opportunityWatchSaving.value,
+              onClick: () => watchOpportunityRow(row),
+            },
+            { default: () => (watched ? '取消跟踪' : '跟踪') },
+          ),
+          h(
+            NButton,
+            {
+              secondary: true,
+              size: 'small',
+              type: followed ? 'default' : 'tertiary',
+              disabled: followed,
+              onClick: () => followRow(row),
+            },
+            { default: () => (followed ? '已自选' : '加入自选') },
+          ),
+        ],
+      })
+    },
+  }
+}
+
+function projectionForOpportunityRow(row) {
+  const code = toFollowCodeFromRow(row)
+  const fromApi = code ? decisionProjectionByCode.value.get(code) : undefined
+  if (fromApi) return fromApi
+  // Snapshot hits not in CandidatePool batch → still show Strategy/理由 from in-memory signal.
+  const summary = row?.SECUCODE ? signalByCode.value.get(row.SECUCODE) : null
+  return buildSignalSnapshotDisplayProjection(
+    summary,
+    selectedScreenStrategy.value?.name || '',
+  ) || undefined
+}
+
+function buildOpportunitySourceColumn() {
+  return {
+    title: '来源',
+    key: 'explainSource',
+    width: 88,
+    render(row) {
+      const proj = projectionForOpportunityRow(row)
+      if (decisionProjectionLoading.value && !proj) {
+        return h(NText, { depth: 3 }, { default: () => '…' })
+      }
+      const chip = opportunitySourceChipMeta(proj)
+      return h(
+        NTag,
+        { size: 'tiny', bordered: false, type: chip.type },
+        { default: () => chip.label },
+      )
+    },
+  }
+}
+
+function buildOpportunityStrategyColumn() {
+  return {
+    title: '策略',
+    key: 'explainStrategy',
+    width: 110,
+    ellipsis: { tooltip: true },
+    render(row) {
+      const proj = projectionForOpportunityRow(row)
+      if (decisionProjectionLoading.value && !proj) {
+        return h(NText, { depth: 3 }, { default: () => '…' })
+      }
+      return formatOpportunityTableCell(resolveOpportunityStrategyLabel(proj))
+    },
+  }
+}
+
+function buildOpportunityReasonColumn() {
+  return {
+    title: '入选理由',
+    key: 'explainReason',
+    width: 140,
+    ellipsis: { tooltip: true },
+    render(row) {
+      const proj = projectionForOpportunityRow(row)
+      if (decisionProjectionLoading.value && !proj) {
+        return h(NText, { depth: 3 }, { default: () => '…' })
+      }
+      const summary = resolveOpportunityReasonSummary(proj)
+      if (!summary) {
+        return h(NText, { depth: 3 }, { default: () => '—' })
+      }
+      return h(
+        NTooltip,
+        { trigger: 'hover' },
+        {
+          trigger: () => h(NText, null, { default: () => summary }),
+          default: () =>
+            str(proj?.signal?.trigger_reason) ||
+            str(proj?.signal?.signal_tag) ||
+            summary,
+        },
+      )
+    },
+  }
+}
+
+function str(v) {
+  if (v == null) return ''
+  return String(v).trim()
+}
+
+function buildActionColumn() {
+  return {
+    title: '操作',
+    key: 'actions',
+    width: 120,
+    fixed: 'right',
+    render(row) {
+      const followed = isRowFollowed(row)
+      return h(NFlex, { size: 4 }, {
+        default: () => [
+          h(
+            NButton,
+            {
+              secondary: true,
+              size: 'small',
+              type: 'warning',
+              onClick: () => showKline(row),
+            },
+            { default: () => '日K' },
+          ),
+          h(
+            NButton,
+            {
+              secondary: true,
+              size: 'small',
+              type: followed ? 'default' : 'primary',
+              disabled: followed,
+              onClick: () => followRow(row),
+            },
+            { default: () => followed ? '已关注' : '关注' },
+          ),
+        ],
+      })
+    }
+  }
+}
+
+const opportunityPriceColumns = [
+  {
+    title: priceColumnTitle(PRICE_KIND.signal),
+    key: 'SIGNAL_PRICE',
+    width: 110,
+    render(row) {
+      const s = signalByCode.value.get(row.SECUCODE)
+      const { signalPrice, signalPriceStatus } = resolveSignalFields(row, s)
+      if (signalPrice == null) {
+        const label = isMissingSignalPriceStatus(signalPriceStatus) ? '未记录' : '—'
+        return h(
+          NTooltip,
+          { trigger: 'hover' },
+          {
+            trigger: () => h(NText, { depth: 3 }, { default: () => label }),
+            default: () => vsSignalReturnMissingHint(signalPrice, signalPriceStatus) || label,
+          },
+        )
+      }
+      const derived = isDerivedSignalPriceStatus(signalPriceStatus)
+      const ctx = formatPriceWithContext(signalPrice, PRICE_KIND.signal, {
+        digits: 2,
+        extraTooltip: signalPriceTooltipForStatus(signalPriceStatus),
+      })
+      return h(
+        NTooltip,
+        { trigger: 'hover' },
+        {
+          trigger: () =>
+            h(
+              NSpace,
+              { size: 4, align: 'center', wrap: false },
+              {
+                default: () => [
+                  h(NText, { type: 'info' }, { default: () => ctx.value }),
+                  derived
+                    ? h(NTag, { size: 'tiny', type: 'warning', bordered: false }, { default: () => '推算' })
+                    : null,
+                ],
+              },
+            ),
+          default: () => ctx.tooltip,
+        },
+      )
+    },
+  },
+  {
+    title: '信号时间',
+    key: 'SIGNAL_TIME',
+    width: 108,
+    render(row) {
+      const s = signalByCode.value.get(row.SECUCODE)
+      const { signalTime, signalDaysAgo } = resolveSignalFields(row, s)
+      if (signalTime) {
+        return h(NText, { depth: 2 }, { default: () => signalTime })
+      }
+      if (signalDaysAgo != null && signalDaysAgo > 0) {
+        return h(NText, { depth: 3 }, { default: () => `${signalDaysAgo} 日前信号` })
+      }
+      return h(NText, { depth: 3 }, { default: () => '—' })
+    },
+  },
+  {
+    title: priceColumnTitle(PRICE_KIND.last),
+    key: 'LIVE_PRICE',
+    width: 110,
+    render(row) {
+      const live = getLiveQuote(row)
+      const price = resolveLatestPrice(row, live, { preferLive: signalDataSource.value === 'snapshot' })
+      if (price == null) {
+        return h(NText, { depth: 3 }, { default: () => '—' })
+      }
+      const loading = signalDataSource.value === 'snapshot' && !live?.price
+      const ctx = formatPriceWithContext(price, PRICE_KIND.last, {
+        digits: 2,
+        extraTooltip: loading ? '快照视图：最新行情价刷新中（*）' : undefined,
+      })
+      return h(NText, { type: 'info', depth: loading ? 3 : undefined }, {
+        default: () => (loading ? `${ctx.value}*` : ctx.value),
+      })
+    },
+  },
+  {
+    title: '信号以来涨跌',
+    key: 'SIGNAL_RETURN',
+    width: 108,
+    render(row) {
+      const s = signalByCode.value.get(row.SECUCODE)
+      const { signalPrice, signalPriceStatus } = resolveSignalFields(row, s)
+      const live = getLiveQuote(row)
+      const latest = resolveLatestPrice(row, live, { preferLive: true })
+      const ret = calcReturnSinceSignal(latest, signalPrice)
+      const missingHint = vsSignalReturnMissingHint(signalPrice, signalPriceStatus)
+      if (ret == null && missingHint) {
+        return h(
+          NTooltip,
+          { trigger: 'hover' },
+          {
+            trigger: () => h(NText, { depth: 3 }, { default: () => '—' }),
+            default: () => missingHint,
+          },
+        )
+      }
+      return renderPctCell(ret)
+    },
+  },
+  {
+    title: '快照涨幅',
+    key: 'SNAPSHOT_CHANGE',
+    width: 118,
+    render(row) {
+      return renderSnapshotPctCell(row)
+    },
+  },
+  {
+    title: '实时涨跌',
+    key: 'LIVE_CHANGE',
+    width: 92,
+    render(row) {
+      const live = getLiveQuote(row)
+      const rate = resolveLiveChangeRate(row, live, { isSnapshotView: signalDataSource.value === 'snapshot' })
+      return renderPctCell(rate)
+    },
+  },
+  buildOpportunityActionColumn(),
+]
+
+const opportunityColumns = [
+  {
+    title: '股票',
+    key: 'stock',
+    width: 160,
+    fixed: 'left',
+    ellipsis: { tooltip: true },
+    render(row) {
+      return renderOpportunityStockCell(row)
+    },
+  },
+  buildOpportunitySourceColumn(),
+  buildOpportunityStrategyColumn(),
+  buildOpportunitySignalColumn(),
+  buildOpportunityReasonColumn(),
+  buildOpportunityScoreColumn(),
+  buildOpportunityRiskColumn(),
+  buildDecisionTierColumn(),
+  ...opportunityPriceColumns,
+]
+
+function buildDecisionTierColumn() {
+  return {
+    title: '决策',
+    key: 'decisionTier',
+    width: 80,
+    render(row) {
+      const code = toFollowCodeFromRow(row)
+      const proj = code ? decisionProjectionByCode.value.get(code) : undefined
+      const s = signalByCode.value.get(row.SECUCODE)
+      const rowSignalTag = s?.tag ? formatSignalTagLabel(s.tag, s.sellPositionPct) : ''
+      const view = buildDecisionBadgeView(proj, rowSignalTag, {
+        loading: decisionProjectionLoading.value,
+        error: decisionProjectionError.value,
+      })
+      const tagEl = h(
+        NTag,
+        {
+          size: 'small',
+          type: view.tagType,
+          bordered: false,
+          style: view.clickable ? 'cursor: pointer' : undefined,
+          onClick: () => {
+            if (view.retry) {
+              loadDecisionProjectionsForTable()
+              return
+            }
+            if (view.clickable) openProjectionDrawer(row)
+          },
+        },
+        { default: () => view.tagLabel },
+      )
+      return h(NTooltip, { trigger: 'hover' }, {
+        trigger: () => tagEl,
+        default: () => view.tooltipLines.join('\n'),
+      })
+    },
+  }
+}
+
+const baseColumns = [
+  ...buildCodeNameSignalTrendColumns(),
   {
     title: '最新价',
     key: 'NEW_PRICE',
@@ -1052,53 +1834,56 @@ const columnsRef = ref([
   //     return h(NTag, { type: "warning", size: "small" }, { default: () => row.MARKET })
   //   }
   // },
-  {
-    title: '操作',
-    key: 'actions',
-    width: 120,
-    fixed: 'right',
-    render(row) {
-      const followed = isRowFollowed(row)
-      return h(NFlex, { size: 4 }, {
-        default: () => [
-          h(
-            NButton,
-            {
-              secondary: true,
-              size: 'small',
-              type: 'warning',
-              onClick: () => showKline(row),
-            },
-            { default: () => '日K' },
-          ),
-          h(
-            NButton,
-            {
-              secondary: true,
-              size: 'small',
-              type: followed ? 'default' : 'primary',
-              disabled: followed,
-              onClick: () => followRow(row),
-            },
-            { default: () => followed ? '已关注' : '关注' },
-          ),
-        ],
-      })
-    }
-  },
-])
+  buildActionColumn(),
+]
+
+const tableColumns = computed(() => (showOpportunityColumns.value ? opportunityColumns : baseColumns))
 
 const paginationReactive = reactive({
   keyword:"",
   page: 1,
   pageCount: 1,
   pageSize: 20,
-  pageSizes: [10, 20, 30, 50, 100, 200, 300, 500],
+  /** Phase16.20-A Beta RC: cap UI pageSize to avoid 200–500 DOM jank (audit H2). */
+  pageSizes: [10, 20, 30, 50],
   showSizePicker: true,
   itemCount: 0,
   prefix({ itemCount }) {
-    return `${itemCount} 只股票`
+    return formatOpportunityListCountLabel(itemCount)
   },
+})
+
+/** Phase16.26-B: opportunity/snapshot — paginate only when N > 50 (single local pager). */
+const opportunityNeedsPagination = computed(() =>
+  usesOpportunityRowSource.value &&
+  shouldPaginateOpportunityList(signalFilteredRows.value.length, OPPORTUNITY_LIST_PAGINATE_THRESHOLD),
+)
+
+/** Table pagination: live = remote server; opportunity N≤50 = off; N>50 = local only (no pre-slice). */
+const tablePagination = computed(() => {
+  if (!usesOpportunityRowSource.value) {
+    return paginationReactive
+  }
+  const n = signalFilteredRows.value.length
+  if (!shouldPaginateOpportunityList(n, OPPORTUNITY_LIST_PAGINATE_THRESHOLD)) {
+    return false
+  }
+  return {
+    page: paginationReactive.page,
+    pageSize: paginationReactive.pageSize,
+    pageSizes: paginationReactive.pageSizes,
+    showSizePicker: true,
+    itemCount: n,
+    prefix({ itemCount }) {
+      return formatOpportunityListCountLabel(itemCount)
+    },
+  }
+})
+
+const opportunityListCountLabel = computed(() => {
+  if (!usesOpportunityRowSource.value) return ''
+  if (opportunityNeedsPagination.value) return ''
+  return formatOpportunityListCountLabel(signalFilteredRows.value.length)
 })
 const optionsReactive= reactive([
   {
@@ -1189,12 +1974,15 @@ async function fetchAllStocksMatchingFilters(onProgress) {
 
 async function scanPageSignals(rows) {
   if (!rows?.length) return
+  if (!shouldRunLivePageSignalScan()) return
+  const gen = signalScanGeneration.value
   signalScanLoading.value = true
   try {
     const mapObj = await scanRowsLastBarSignals(rows, {
       concurrency: SIGNAL_PAGE_SCAN_CONCURRENCY,
       signalSettings: selectedScreenStrategyParams.value,
     })
+    if (!shouldRunLivePageSignalScan() || gen !== signalScanGeneration.value) return
     signalByCode.value = new Map(Object.entries(mapObj))
     dataRefreshKey.value++
   } finally {
@@ -1270,13 +2058,62 @@ function sortRowsByTrendScore(rows) {
 }
 
 const displayData = computed(() => {
-  if (hasSignalFilter.value) {
-    const start = (paginationReactive.page - 1) * paginationReactive.pageSize
-    const sorted = sortRowsByTrendScore(signalFilteredRows.value)
-    return sorted.slice(start, start + paginationReactive.pageSize)
+  void dataRefreshKey.value
+  if (usesOpportunityRowSource.value) {
+    // Phase16.26-B: pass FULL sorted rows. Naive local-paginates when N>50;
+    // when N≤50 pagination is off. Do NOT pre-slice here (dual-pagination bug).
+    return sortRowsByTrendScore(signalFilteredRows.value)
   }
   return sortRowsByTrendScore(dataRef.value || [])
 })
+
+/** Quote refresh target: current page only when opportunity list is paginated. */
+function opportunityQuoteTargetRows() {
+  const sorted = sortRowsByTrendScore(signalFilteredRows.value)
+  return sliceOpportunityPage(sorted, {
+    page: paginationReactive.page,
+    pageSize: paginationReactive.pageSize,
+    paginate: opportunityNeedsPagination.value,
+  })
+}
+
+watch(
+  () => [
+    paginationReactive.page,
+    paginationReactive.pageSize,
+    signalDataSource.value,
+    signalFilteredRows.value.length,
+    snapshotMeta.value?.id,
+  ],
+  () => {
+    if (
+      shouldRefreshSnapshotQuotes({
+        signalDataSource: signalDataSource.value,
+        filteredRowCount: signalFilteredRows.value.length,
+      })
+    ) {
+      const rows = usesOpportunityRowSource.value
+        ? opportunityQuoteTargetRows()
+        : displayData.value
+      refreshLiveQuotesForRows(rows)
+    }
+  },
+)
+
+watch(
+  () => [
+    showOpportunityColumns.value,
+    snapshotMeta.value?.tradeDate,
+    snapshotMeta.value?.session,
+    snapshotTradeDate.value,
+    signalFilteredRows.value.length,
+    selectedScreenStrategyId.value,
+  ],
+  () => {
+    if (!showOpportunityColumns.value) return
+    scheduleDecisionProjectionReload()
+  },
+)
 
 async function loadStocks(page, pageSize) {
   if((vipLevel.value===""|| Number(vipLevel.value) <=0)){
@@ -1290,9 +2127,13 @@ async function loadStocks(page, pageSize) {
       await ensureSnapshotForSignalFilter()
       return
     }
+    const res = await GetAllStocks(page, pageSize, paginationReactive.keyword, filterIndustry.value || '', '', '', technicalIndicatorReactive)
+    if (hasSignalFilter.value || isSnapshotSignalSource()) {
+      return
+    }
     signalFilteredRows.value = []
     signalByCode.value = new Map()
-    const res = await GetAllStocks(page, pageSize, paginationReactive.keyword, filterIndustry.value || '', '', '', technicalIndicatorReactive)
+    signalDataSource.value = 'live_scan'
     if (res?.result) {
       const rows = filterRowsByMarketSegment(Array.isArray(res.result.data) ? res.result.data : [])
       dataRef.value = rows
@@ -1300,8 +2141,8 @@ async function loadStocks(page, pageSize) {
       paginationReactive.page = page
       paginationReactive.pageCount = Math.max(1, Math.ceil((res.result.count || rows.length) / pageSize))
       paginationReactive.itemCount = res.result.count ?? rows.length
-      if (rows.length) {
-        // 鍒楄〃鍏堝睍绀猴紝淇″彿/K 绾垮湪鍚庡彴鎵紙閬垮厤閫夎涓氬悗鏁撮〉鍗′綇锛?
+      if (rows.length && shouldRunLivePageSignalScan()) {
+        signalScanGeneration.value++
         scanPageSignals(rows)
       } else if (filterIndustry.value) {
         message.warning('未查到符合条件的股票，请稍后重试或更换行业')
@@ -1336,7 +2177,7 @@ function handleCheckedChange(checked) {
   }
 }
 function handlePageChange(currentPage) {
-  if (hasSignalFilter.value) {
+  if (usesOpportunityRowSource.value) {
     paginationReactive.page = currentPage
     return
   }
@@ -1344,13 +2185,19 @@ function handlePageChange(currentPage) {
 }
 
 function handlePageSizeChange(pageSize) {
-  paginationReactive.pageSize = pageSize
-  if (hasSignalFilter.value) {
+  const MAX_UI_PAGE_SIZE = 50
+  const next = Math.min(Math.max(1, Number(pageSize) || 20), MAX_UI_PAGE_SIZE)
+  paginationReactive.pageSize = next
+  if (usesOpportunityRowSource.value) {
     paginationReactive.page = 1
-    paginationReactive.pageCount = Math.max(1, Math.ceil(signalFilteredRows.value.length / pageSize))
+    paginationReactive.itemCount = signalFilteredRows.value.length
+    paginationReactive.pageCount = Math.max(
+      1,
+      Math.ceil(signalFilteredRows.value.length / next) || 1,
+    )
     return
   }
-  loadStocks(1, pageSize)
+  loadStocks(1, next)
 }
 function handleSearch() {
   loadStocks(1, paginationReactive.pageSize)
@@ -1413,29 +2260,62 @@ function handleUpdateVal(value) {
     })
   }
 }
+const projectionDrawerVisible = ref(false)
+const projectionDrawerRow = ref(null)
+
+function openProjectionDrawer(row) {
+  const stockCode = toFollowCodeFromRow(row)
+  if (!stockCode) {
+    message.warning('无法解析股票代码')
+    return
+  }
+  projectionDrawerRow.value = {
+    stockCode,
+    stockName: resolveStrategyRowName(row),
+    tradeDate: snapshotTradeDate.value || snapshotMeta.value?.tradeDate || '',
+  }
+  projectionDrawerVisible.value = true
+}
+
 const modalDataRef = reactive({
   visible: false,
   title: "",
   content: "",
   riskRemarks: "",
   stockCode: "",
+  chartCode: "",
   stockName: "",
+  narrativeCode: "",
   remarks: "",
   focusSignal: "",
 })
 function showKline(row, focusTag = '') {
-  const code = resolveStrategyRowCode(row)
-  const name = resolveStrategyRowName(row)
-  if (!code) {
-    message.warning('无法识别股票代码，请检查该行是否包含 SECUCODE')
+  const model = toStockDisplayModel({
+    stock_code: toFollowCodeFromRow(row),
+    stock_name: resolveStrategyRowName(row),
+  })
+  if (!model.klineKey) {
+    // Fallback: legacy resolve (should rarely hit for A-share rows).
+    const code = resolveStrategyRowCode(row)
+    const name = resolveStrategyRowName(row)
+    if (!code) {
+      message.warning('无法识别股票代码，请检查该行是否包含 SECUCODE')
+      return
+    }
+    const em = toEastMoneyCode(code)
+    modalDataRef.stockCode = em
+    modalDataRef.stockName = name
+    modalDataRef.narrativeCode = toFollowCodeFromRow(row)
+    modalDataRef.focusSignal = focusTag || signalByCode.value.get(row.SECUCODE)?.tag || ''
+    modalDataRef.title = `${name || em} ${em} — 多周期K线`
+    modalDataRef.visible = true
     return
   }
-  const em = toEastMoneyCode(code)
-  modalDataRef.stockCode = em
-  modalDataRef.stockName = name
+  applyStockClickAction(model, modalDataRef)
+  modalDataRef.narrativeCode = model.code
   modalDataRef.focusSignal = focusTag || signalByCode.value.get(row.SECUCODE)?.tag || ''
-  modalDataRef.title = `${name} ${em} - 日K`
-  modalDataRef.visible = true
+  // StockKlineModal binds :code="modalDataRef.stockCode" historically — map chartCode → stockCode.
+  modalDataRef.stockCode = modalDataRef.chartCode || model.klineKey
 }
 const technicalIndicatorReactive = reactive({
   MACD_GOLDEN_FORK: false,
@@ -1688,7 +2568,7 @@ const toNumber = (value, defaultValue = 0) => {
         v-model:value="selectedSnapshotHistoryValue"
         placeholder="历史快照"
         :options="selectableSnapshotHistoryOptions"
-        style="width: 168px"
+        style="width: 280px"
         clearable
         @update:value="onSnapshotHistoryChange"
       />
@@ -1709,9 +2589,30 @@ const toNumber = (value, defaultValue = 0) => {
         星标回测
       </n-button>
       <n-button v-if="signalDataSource === 'snapshot' && snapshotMeta" quaternary @click="loadLiveSignalScan">退出快照</n-button>
-      <n-tag v-if="snapshotMeta && signalDataSource === 'snapshot'" type="success" size="small" :bordered="false">
-        {{ snapshotMetaLabel }}
-      </n-tag>
+      <div
+        v-if="snapshotMetaDisplay && signalDataSource === 'snapshot'"
+        class="snapshot-meta-banner"
+      >
+        <n-text type="success" strong class="snapshot-meta-line">
+          {{ snapshotMetaDisplay.marketLine }}
+        </n-text>
+        <n-text depth="3" class="snapshot-meta-line">
+          {{ snapshotMetaDisplay.generatedLine }} · {{ snapshotMetaDisplay.statsLine }}
+        </n-text>
+        <n-text
+          v-if="snapshotMetaDisplay.nonTradingTip"
+          depth="3"
+          class="snapshot-meta-line snapshot-meta-tip"
+        >
+          {{ snapshotMetaDisplay.nonTradingTip }}
+        </n-text>
+      </div>
+      <n-text v-if="snapshotMeta && signalDataSource === 'snapshot'" depth="3" class="snapshot-hint">
+        信号触发价=出信号 K 线收盘；快照涨幅含扫描日；实时涨跌与最新行情价独立刷新
+      </n-text>
+      <n-text v-else-if="showOpportunityColumns" depth="3" class="snapshot-hint">
+        机会视图：信号触发价与最新行情价分离展示；实时涨跌相对今昨收
+      </n-text>
       <n-text v-else depth="3" class="snapshot-hint">点击生成盘后快照（后台执行）；按信号筛选须先有快照</n-text>
     </div>
 
@@ -1756,7 +2657,7 @@ const toNumber = (value, defaultValue = 0) => {
         @select="(value) => { paginationReactive.keyword = value; handleSearch() }"
       />
       <n-button type="primary" ghost :loading="loadingRef" @click="handleSearch">搜索</n-button>
-      <n-button tertiary type="info" :loading="loadingRef || signalScanLoading" @click="refreshStocks()">刷新</n-button>
+      <n-button tertiary type="info" :loading="loadingRef" @click="refreshStocks()">刷新</n-button>
       <n-button @click="handleReset">重置</n-button>
     </div>
     </div>
@@ -1770,33 +2671,67 @@ const toNumber = (value, defaultValue = 0) => {
       <n-text depth="3" class="signal-scan-progress__text">{{ signalScanStatus }}</n-text>
     </div>
     <div class="stock-screen-table">
+    <n-text
+      v-if="opportunityListCountLabel"
+      depth="3"
+      class="opportunity-list-count"
+    >
+      {{ opportunityListCountLabel }}
+    </n-text>
     <n-data-table
-      :remote="!hasSignalFilter"
+      :remote="!usesOpportunityRowSource"
       size="small"
-      :columns="columnsRef"
+      :columns="tableColumns"
       :data="displayData"
-      :loading="loadingRef || signalScanLoading"
-      :pagination="paginationReactive"
+      :loading="tableLoading"
+      :pagination="tablePagination"
       :row-key="(rowData) => rowData.SECUCODE"
       flex-height
-      :scroll-x="2100"
+      :scroll-x="showOpportunityColumns ? 1480 : 2100"
       style="height: 100%"
       @update:page="handlePageChange"
       @update:page-size="handlePageSizeChange"
     />
+    <n-text v-if="showOpportunityColumns" depth="3" class="opportunity-price-footer">
+      {{ OPPORTUNITY_PRICE_FOOTER }}
+    </n-text>
+    <n-text v-if="showOpportunityColumns" depth="3" class="opportunity-price-footer">
+      {{ OPPORTUNITY_DECISION_FOOTER }}
+    </n-text>
+    <n-alert
+      v-if="showOpportunityColumns && decisionProjectionError"
+      type="warning"
+      :bordered="false"
+      closable
+      class="opportunity-decision-alert"
+      @close="decisionProjectionError = false"
+    >
+      决策态批量加载失败。
+      <n-button text type="primary" size="small" @click="loadDecisionProjectionsForTable">刷新决策态</n-button>
+    </n-alert>
     </div>
+
+  <OpportunityProjectionDrawer
+    v-model:show="projectionDrawerVisible"
+    :row="projectionDrawerRow"
+  />
 
   <stock-kline-modal
     v-model:show="modalDataRef.visible"
     :title="modalDataRef.title"
-    :chart-key="'screen-kline-' + modalDataRef.stockCode + '-' + modalDataRef.focusSignal"
-    :code="modalDataRef.stockCode"
+    :chart-key="'screen-kline-' + (modalDataRef.chartCode || modalDataRef.stockCode) + '-' + modalDataRef.focusSignal"
+    :code="modalDataRef.chartCode || modalDataRef.stockCode"
     :stock-name="modalDataRef.stockName"
     :dark-theme="editorDataRef.darkTheme"
     :strategy-signals="true"
     :signal-strategy-id="selectedScreenStrategyId"
     :focus-signal-tag="modalDataRef.focusSignal"
-  />
+  >
+    <template v-if="modalDataRef.narrativeCode" #append>
+      <n-divider style="margin: 16px 0 12px" />
+      <InvestmentNarrativePanel :stock-code="modalDataRef.narrativeCode" embedded />
+    </template>
+  </stock-kline-modal>
   <n-modal v-model:show="starBacktestVisible" preset="card" title="星标回测" style="width: 760px" :bordered="false">
     <n-spin :show="starBacktestLoading">
       <n-alert v-if="starBacktestError" type="error" :bordered="false" style="margin-bottom: 12px">
@@ -1925,6 +2860,13 @@ const toNumber = (value, defaultValue = 0) => {
   display: flex;
   flex-direction: column;
 }
+.opportunity-list-count {
+  display: block;
+  flex-shrink: 0;
+  margin: 0 0 4px 2px;
+  font-size: 12px;
+  text-align: left;
+}
 .stock-screen-table :deep(.n-data-table) {
   flex: 1;
   min-height: 0;
@@ -1967,6 +2909,21 @@ const toNumber = (value, defaultValue = 0) => {
   background: rgba(34, 197, 94, 0.06);
   border: 1px solid rgba(34, 197, 94, 0.22);
 }
+.snapshot-meta-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.28);
+  max-width: min(420px, 100%);
+}
+.snapshot-meta-line {
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: nowrap;
+}
 .toolbar-section-label {
   font-size: 12px;
   white-space: nowrap;
@@ -1974,6 +2931,13 @@ const toNumber = (value, defaultValue = 0) => {
 }
 .snapshot-hint {
   font-size: 12px;
+}
+.opportunity-price-footer {
+  display: block;
+  margin-top: 8px;
+  padding: 0 2px 4px;
+  font-size: 12px;
+  line-height: 1.5;
 }
 .signal-scan-progress {
   flex-shrink: 0;
@@ -2012,6 +2976,15 @@ const toNumber = (value, defaultValue = 0) => {
 }
 .bt-down {
   color: #26a69a;
+}
+.opp-pct-cell {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  gap: 2px;
+}
+.opp-pct-cell__date {
+  font-size: 11px;
 }
 </style>
 

@@ -71,8 +71,20 @@ func TestPaperObservation_AssetMiddleware_DoesNotCaptureRun(t *testing.T) {
 
 	calledNext = false
 	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/papertrading/observation/positions/attribution", nil))
+	require.False(t, calledNext, "attribution path must be handled by observation middleware")
+	require.NotEqual(t, http.StatusTeapot, rec.Code)
+
+	calledNext = false
+	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/papertrading/observation/holdings/evaluation", nil))
 	require.False(t, calledNext, "holdings evaluation path must be handled by observation middleware")
+	require.NotEqual(t, http.StatusTeapot, rec.Code)
+
+	calledNext = false
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/papertrading/observation/holdings/exit-evaluation", nil))
+	require.False(t, calledNext, "exit evaluation path must be handled by observation middleware")
 	require.NotEqual(t, http.StatusTeapot, rec.Code)
 
 	calledNext = false

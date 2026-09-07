@@ -8,12 +8,17 @@ import (
 	"go-stock/backend/broker"
 	"go-stock/backend/data"
 	"go-stock/backend/db"
+
+	// Wire QuantityPolicy Submit hooks (Validate-only when Flag ON).
+	_ "go-stock/backend/tradingrule"
 )
 
 // paperTradingAPI PaperBroker 对现有纸面交易 API 的最小依赖（便于单测注入）。
 type paperTradingAPI interface {
 	SubmitPaperOrder(req data.PaperSubmitOrderReq) (*data.PaperOrder, error)
 	FillPaperOrder(orderID uint, fillPrice float64) error
+	FillPaperOrderQty(orderID uint, fillPrice float64, fillQty int64) error
+	RejectPaperOrderSim(orderID uint, reason, message string) error
 	CancelPaperOrder(orderID uint) error
 }
 
@@ -65,6 +70,32 @@ func (b *PaperBroker) Fill(ctx context.Context, orderID string, fillPrice float6
 		return fmt.Errorf("execution: invalid order id %q: %w", orderID, err)
 	}
 	return b.api.FillPaperOrder(uint(id), fillPrice)
+}
+
+// FillQty wraps FillPaperOrderQty (partial or full remaining).
+func (b *PaperBroker) FillQty(ctx context.Context, orderID string, fillPrice float64, fillQty int64) error {
+	_ = ctx
+	if b == nil || b.api == nil {
+		return fmt.Errorf("execution: nil PaperBroker")
+	}
+	id, err := strconv.ParseUint(orderID, 10, 64)
+	if err != nil {
+		return fmt.Errorf("execution: invalid order id %q: %w", orderID, err)
+	}
+	return b.api.FillPaperOrderQty(uint(id), fillPrice, fillQty)
+}
+
+// RejectSim marks pending zero-fill order rejected (price|liquidity|broker).
+func (b *PaperBroker) RejectSim(ctx context.Context, orderID, reason, message string) error {
+	_ = ctx
+	if b == nil || b.api == nil {
+		return fmt.Errorf("execution: nil PaperBroker")
+	}
+	id, err := strconv.ParseUint(orderID, 10, 64)
+	if err != nil {
+		return fmt.Errorf("execution: invalid order id %q: %w", orderID, err)
+	}
+	return b.api.RejectPaperOrderSim(uint(id), reason, message)
 }
 
 // QueryOrder 按本地纸面订单 ID 查询（只读包装，不改状态机）。

@@ -7,6 +7,7 @@ import (
 	"go-stock/backend/data"
 	"go-stock/backend/db"
 	"go-stock/backend/logger"
+	"go-stock/backend/tradingevent"
 )
 
 // SettlementResult summarizes the EOD mark-to-market job.
@@ -38,6 +39,7 @@ func SettlementJob(tradeDate string, price PriceProvider, weekdayCheck bool) (*S
 	if tradeDate == "" {
 		tradeDate = time.Now().Format("2006-01-02")
 	}
+	now := time.Now()
 	out := &SettlementResult{Enabled: IsEnabled(), TradeDate: tradeDate}
 	if !IsEnabled() {
 		out.Message = "enablePaperTrading=false"
@@ -50,9 +52,16 @@ func SettlementJob(tradeDate string, price PriceProvider, weekdayCheck bool) (*S
 		return out, nil
 	}
 	if db.Dao == nil {
-		return nil, fmt.Errorf("papertrading: db not initialized")
+		err := fmt.Errorf("papertrading: db not initialized")
+		tradingevent.EmitSettlement(
+			tradingevent.EventSettlementFailed, tradeDate, tradingevent.StatusFail, err.Error(), 0, now,
+		)
+		return nil, err
 	}
 	if err := EnsureSchema(db.Dao); err != nil {
+		tradingevent.EmitSettlement(
+			tradingevent.EventSettlementFailed, tradeDate, tradingevent.StatusFail, err.Error(), 0, now,
+		)
 		return nil, err
 	}
 	if price == nil {
@@ -61,6 +70,9 @@ func SettlementJob(tradeDate string, price PriceProvider, weekdayCheck bool) (*S
 
 	acc, err := GetDefaultAccount()
 	if err != nil {
+		tradingevent.EmitSettlement(
+			tradingevent.EventSettlementFailed, tradeDate, tradingevent.StatusFail, err.Error(), 0, now,
+		)
 		return nil, err
 	}
 	if acc == nil {
@@ -71,11 +83,13 @@ func SettlementJob(tradeDate string, price PriceProvider, weekdayCheck bool) (*S
 
 	positions, err := GetPositions(acc.ID)
 	if err != nil {
+		tradingevent.EmitSettlement(
+			tradingevent.EventSettlementFailed, tradeDate, tradingevent.StatusFail, err.Error(), out.AccountID, now,
+		)
 		return nil, err
 	}
 
 	marker, _ := price.(MarkPricer)
-	now := time.Now()
 	for i := range positions {
 		p := &positions[i]
 		mark, ok := 0.0, false
@@ -96,6 +110,9 @@ func SettlementJob(tradeDate string, price PriceProvider, weekdayCheck bool) (*S
 		p.UpdatedAt = now
 		if err := db.Dao.Model(&PaperSimPosition{}).Where("id = ?", p.ID).
 			Updates(map[string]any{"mark_price": mark, "updated_at": now}).Error; err != nil {
+			tradingevent.EmitSettlement(
+				tradingevent.EventSettlementFailed, tradeDate, tradingevent.StatusFail, err.Error(), out.AccountID, now,
+			)
 			return nil, err
 		}
 		out.PositionsUpdated++
@@ -105,6 +122,9 @@ func SettlementJob(tradeDate string, price PriceProvider, weekdayCheck bool) (*S
 	// Revalue account from updated marks (do not unlock).
 	broker := NewPaperBroker(price)
 	if err := broker.revalueAccount(acc.ID); err != nil {
+		tradingevent.EmitSettlement(
+			tradingevent.EventSettlementFailed, tradeDate, tradingevent.StatusFail, err.Error(), out.AccountID, now,
+		)
 		return nil, err
 	}
 	acc2, _ := GetDefaultAccount()
@@ -131,5 +151,8 @@ func SettlementJob(tradeDate string, price PriceProvider, weekdayCheck bool) (*S
 		logger.SugaredLogger.Infof("PaperDailyReport after settlement generated=%v skipped=%v message=%s",
 			rpt.Generated, rpt.Skipped, rpt.Message)
 	}
+	tradingevent.EmitSettlement(
+		tradingevent.EventSettlementCompleted, tradeDate, tradingevent.StatusPass, "SETTLEMENT_OK", out.AccountID, now,
+	)
 	return out, nil
 }

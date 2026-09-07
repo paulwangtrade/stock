@@ -3,6 +3,8 @@ package data
 import (
 	"strings"
 	"time"
+
+	"go-stock/backend/tradingcalendar"
 )
 
 var shanghaiLoc = time.FixedZone("CST", 8*3600)
@@ -62,7 +64,27 @@ func ResolveSignalLastBarIndex(dayKeys []string, now time.Time) int {
 	return last
 }
 
+// EffectiveSignalTradeDate returns the business trade_date for a signal snapshot.
+// Phase16.25: always a real A-share trading day (tradingcalendar), never a weekend/holiday calendar day.
+// - If now falls on a trading day → that day
+// - Otherwise → previous trading day (PrevTradingDay)
+// created_at remains the wall-clock generation time and must not be used as trade_date.
 func EffectiveSignalTradeDate(session string, now time.Time) string {
 	_ = session
-	return chinaTodayKey(now)
+	now = now.In(shanghaiLoc)
+	cal := tradingcalendar.Calendar{Location: shanghaiLoc}
+	if cal.IsTradingDay(now) {
+		return chinaTodayKey(now)
+	}
+	prev, err := cal.PrevTradingDay(now)
+	if err != nil {
+		return chinaTodayKey(now)
+	}
+	return prev.In(shanghaiLoc).Format(tradingcalendar.DateLayout)
+}
+
+// SignalTradeDateAdjusted reports whether EffectiveSignalTradeDate differs from the calendar day of now
+// (i.e. generation happened on a non-trading day and trade_date was rolled back).
+func SignalTradeDateAdjusted(session string, now time.Time) bool {
+	return EffectiveSignalTradeDate(session, now) != chinaTodayKey(now)
 }

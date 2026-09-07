@@ -78,7 +78,7 @@ const isStreamLoad = ref(false);
 const chatRef = ref(null);
 const isShowToBottom = ref(false);
 
-const icon = ref('https://raw.githubusercontent.com/ArvinLovegood/go-stock/master/build/appicon.png');
+const icon = ref('');
 import {darkTheme, NFlex, NImage,NSelect} from "naive-ui";
 import {ChatWithAgent, GetAiConfigs, GetConfig, GetSponsorInfo, GetVersionInfo} from "../../wailsjs/go/main/App";
 import {EventsOff, EventsOn} from '../../wailsjs/runtime'

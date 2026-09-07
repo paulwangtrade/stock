@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/schema"
-	"github.com/duke-git/lancet/v2/convertor"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -346,29 +345,38 @@ func (a *App) GetAllConcepts() []string {
 }
 
 func (a *App) GetStockRealTimePrice(stockCode string) map[string]any {
-	stockDatas, err := data.NewStockDataApi().GetStockCodeRealTimeData(stockCode)
-	if err != nil || stockDatas == nil || len(*stockDatas) == 0 {
+	if a == nil || a.marketData == nil {
 		return map[string]any{
 			"code":    -1,
 			"message": "获取股票价格失败",
 			"price":   0,
 		}
 	}
-	stock := (*stockDatas)[0]
-	price, _ := convertor.ToFloat(stock.Price)
+	q, err := a.marketData.GetQuote(stockCode)
+	if err != nil || q == nil {
+		return map[string]any{
+			"code":    -1,
+			"message": "获取股票价格失败",
+			"price":   0,
+		}
+	}
+	// 行为对齐旧链路：Price → A1P(Ask) → B1P(Bid) → PreClose
+	price := q.Price
 	if price == 0 {
-		price, _ = convertor.ToFloat(stock.A1P)
+		price = q.Ask
 	}
 	if price == 0 {
-		price, _ = convertor.ToFloat(stock.B1P)
+		price = q.Bid
 	}
 	if price == 0 {
-		price, _ = convertor.ToFloat(stock.PreClose)
+		price = q.PreClose
 	}
 	return map[string]any{
-		"code":    0,
-		"message": "success",
-		"price":   price,
-		"name":    stock.Name,
+		"code":          0,
+		"message":       "success",
+		"price":         price,
+		"name":          q.Name,
+		"preClose":      q.PreClose,
+		"changePercent": q.ChangePercent,
 	}
 }

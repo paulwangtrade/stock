@@ -7,9 +7,11 @@ import (
 
 	"go-stock/backend/data"
 	"go-stock/backend/db"
+	"go-stock/backend/instrument"
 	"go-stock/backend/models"
 	"go-stock/backend/papertrading"
 	"go-stock/backend/stockname"
+	"go-stock/backend/tradingrule"
 
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
@@ -54,6 +56,8 @@ func seedFrozenPlan(t *testing.T, tradeDate string, items []models.TradePlanItem
 		TradeDate:      tradeDate,
 		GeneratedAt:    now,
 		Status:         models.TradePlanStatusReady,
+		ApprovedAt:     &now,
+		ApprovedBy:     "test",
 		FreezeAt:       &now,
 		FreezeBy:       "test",
 		PlanVersion:    1,
@@ -220,6 +224,75 @@ func TestPaperBroker_T1_LockThenSettle(t *testing.T) {
 	require.Equal(t, int64(0), positions[0].LockedVolume)
 }
 
+// Phase10-C.6-N: CN equity → locked increases (T1).
+func TestPaperBroker_FillBuy_Equity_Locks(t *testing.T) {
+	setupTestDB(t)
+	enablePaperTrading(t)
+
+	plan := seedFrozenPlan(t, "2026-08-14", []models.TradePlanItem{buyItem("sh600519", "贵州茅台", 100)})
+	broker := papertrading.NewPaperBroker(papertrading.StaticPriceProvider{
+		Quotes: map[string]papertrading.Quote{"sh600519": {Open: 1800.0, LimitUp: 2000.0}},
+	})
+	res, err := broker.RunForPlan(plan.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, res.FilledCount)
+
+	acc, err := papertrading.GetDefaultAccount()
+	require.NoError(t, err)
+	pos, err := papertrading.GetPositions(acc.ID)
+	require.NoError(t, err)
+	require.Len(t, pos, 1)
+	require.Equal(t, int64(100), pos[0].TotalVolume)
+	require.Equal(t, int64(100), pos[0].LockedVolume)
+	require.Equal(t, int64(0), pos[0].AvailableVolume)
+}
+
+// Phase10-C.6-N: CN ETF → available increases (T0).
+func TestPaperBroker_FillBuy_ETF_Available(t *testing.T) {
+	setupTestDB(t)
+	enablePaperTrading(t)
+
+	plan := seedFrozenPlan(t, "2026-08-14", []models.TradePlanItem{buyItem("sh510300", "沪深300ETF", 1000)})
+	broker := papertrading.NewPaperBroker(papertrading.StaticPriceProvider{
+		Quotes: map[string]papertrading.Quote{"sh510300": {Open: 4.0, LimitUp: 0}},
+	})
+	res, err := broker.RunForPlan(plan.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, res.FilledCount)
+
+	acc, err := papertrading.GetDefaultAccount()
+	require.NoError(t, err)
+	pos, err := papertrading.GetPositions(acc.ID)
+	require.NoError(t, err)
+	require.Len(t, pos, 1)
+	require.Equal(t, int64(1000), pos[0].TotalVolume)
+	require.Equal(t, int64(0), pos[0].LockedVolume)
+	require.Equal(t, int64(1000), pos[0].AvailableVolume)
+}
+
+// Phase10-C.6-N: Resolver failure → fail-closed T1 lock.
+func TestPaperBroker_FillBuy_ResolverFail_FailClosedT1(t *testing.T) {
+	setupTestDB(t)
+	enablePaperTrading(t)
+
+	plan := seedFrozenPlan(t, "2026-08-14", []models.TradePlanItem{buyItem("sh510300", "沪深300ETF", 500)})
+	broker := papertrading.NewPaperBroker(papertrading.StaticPriceProvider{
+		Quotes: map[string]papertrading.Quote{"sh510300": {Open: 4.0}},
+	})
+	broker.Rules = errRuleResolver{}
+	res, err := broker.RunForPlan(plan.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, res.FilledCount)
+
+	acc, err := papertrading.GetDefaultAccount()
+	require.NoError(t, err)
+	pos, err := papertrading.GetPositions(acc.ID)
+	require.NoError(t, err)
+	require.Len(t, pos, 1)
+	require.Equal(t, int64(500), pos[0].LockedVolume, "resolver error must lock like CN equity T1")
+	require.Equal(t, int64(0), pos[0].AvailableVolume)
+}
+
 // Guard: non-frozen plan must not produce orders.
 func TestPaperBroker_NotFrozen_Error(t *testing.T) {
 	setupTestDB(t)
@@ -288,4 +361,10 @@ func TestPaperBroker_EmptyStockName_ResolverFail_SentinelStillFills(t *testing.T
 	require.Len(t, positions, 1)
 	require.Equal(t, stockname.UnknownName, positions[0].StockName)
 	require.NotEmpty(t, positions[0].StockName)
+}
+
+type errRuleResolver struct{}
+
+func (errRuleResolver) Resolve(id instrument.InstrumentIdentity, asOf string) (tradingrule.TradingRuleProfile, error) {
+	return tradingrule.TradingRuleProfile{}, fmt.Errorf("forced resolver failure")
 }

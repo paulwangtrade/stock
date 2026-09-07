@@ -15,7 +15,9 @@ import (
 // without changing their on-disk formats.
 //
 // Priority for Phase6.5 / H.4 business values:
-//   paper_open_buy / after_close_plan / paper_trading_mvp  (authoritative files)
+//
+//	paper_open_buy / after_close_plan / paper_trading_mvp  (authoritative files)
+//
 // Automation is loaded for observability only and must not override Phase6 values.
 type LegacyAdapter struct {
 	risk *LegacyRiskConfigAdapter
@@ -46,13 +48,18 @@ func (a *LegacyAdapter) Load() Resolved {
 		a.risk = &LegacyRiskConfigAdapter{}
 	}
 	return Resolved{
-		Position:   a.loadPosition(),
-		Workflow:   a.loadWorkflow(),
-		Execution:  a.loadExecution(),
-		PaperMVP:   a.loadPaperMVP(),
-		Risk:       a.risk.Load(),
-		Automation: a.loadAutomation(),
+		Position:       a.loadPosition(),
+		Workflow:       a.loadWorkflow(),
+		Execution:      a.loadExecution(),
+		PaperMVP:       a.loadPaperMVP(),
+		Risk:           a.risk.Load(),
+		Automation:     a.loadAutomation(),
+		ProviderShadow: defaultProviderShadowView(),
 	}
+}
+
+func defaultProviderShadowView() ProviderShadowView {
+	return ProviderShadowView{Enabled: false, Source: SourceCompileDefault}
 }
 
 func (a *LegacyAdapter) loadPosition() PositionView {
@@ -98,6 +105,7 @@ func (a *LegacyAdapter) loadPaperMVP() PaperMVPView {
 		if strings.TrimSpace(v.FillMode) == "" {
 			v.FillMode = DefaultFillMode
 		}
+		v.PositionSizerMode = NormalizePositionSizerMode(v.PositionSizerMode)
 		return v
 	}
 	return loadPaperMVPFromJSONFile()
@@ -108,6 +116,7 @@ func loadPaperMVPFromJSONFile() PaperMVPView {
 		EnablePaperTrading: false,
 		InitialCash:        DefaultPaperInitialCash,
 		FillMode:           DefaultFillMode,
+		PositionSizerMode:  DefaultPositionSizerMode,
 		Source:             SourceLegacyPaperMVP,
 	}
 	raw, err := os.ReadFile(filepath.Join("data", "paper_trading_mvp.json"))
@@ -118,6 +127,13 @@ func loadPaperMVPFromJSONFile() PaperMVPView {
 		EnablePaperTrading bool    `json:"enablePaperTrading"`
 		InitialCash        float64 `json:"initialCash"`
 		FillMode           string  `json:"fillMode"`
+		PositionSizerMode  string  `json:"positionSizerMode"`
+		PortfolioAware     *struct {
+			MaxExposure             float64 `json:"maxExposure"`
+			MaxSinglePositionWeight float64 `json:"maxSinglePositionWeight"`
+			ReserveCashRatio        float64 `json:"reserveCashRatio"`
+			MinOrderAmount          float64 `json:"minOrderAmount"`
+		} `json:"portfolioAware"`
 	}
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		return out
@@ -131,6 +147,15 @@ func loadPaperMVPFromJSONFile() PaperMVPView {
 		out.FillMode = "B"
 	} else {
 		out.FillMode = DefaultFillMode
+	}
+	out.PositionSizerMode = NormalizePositionSizerMode(parsed.PositionSizerMode)
+	if parsed.PortfolioAware != nil {
+		out.PortfolioAware = PortfolioAwareView{
+			MaxExposure:             parsed.PortfolioAware.MaxExposure,
+			MaxSinglePositionWeight: parsed.PortfolioAware.MaxSinglePositionWeight,
+			ReserveCashRatio:        parsed.PortfolioAware.ReserveCashRatio,
+			MinOrderAmount:          parsed.PortfolioAware.MinOrderAmount,
+		}
 	}
 	return out
 }

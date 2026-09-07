@@ -2,15 +2,21 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	assistantweb "go-stock/ai-assistant-web"
 	"go-stock/backend/data"
+	"go-stock/backend/database"
 	"go-stock/backend/db"
 	log "go-stock/backend/logger"
+	"go-stock/backend/healthcheck"
 	"go-stock/backend/models"
+	"go-stock/backend/version"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -27,6 +33,8 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"go-stock/backend/api"
+	goruntime "go-stock/backend/runtime"
+	"go-stock/backend/strategysnapshot"
 )
 
 //go:embed frontend/dist
@@ -39,15 +47,6 @@ var icon []byte
 var icon2 []byte
 
 var mainAppCtx context.Context
-
-//go:embed build/screenshot/alipay.jpg
-var alipay []byte
-
-//go:embed build/screenshot/wxpay.jpg
-var wxpay []byte
-
-//go:embed build/screenshot/扫码_搜索联合传播样式-白色版.png
-var wxgzh []byte
 
 //go:embed build/stock_basic.json
 var stocksBin []byte
@@ -65,28 +64,131 @@ var VersionCommit string
 var OFFICIAL_STATEMENT string
 var BuildKey string
 
+const defaultRuntimeDBDSN = "data/stock.db?_busy_timeout=10000&_journal_mode=WAL&_synchronous=NORMAL&_cache_size=-524288"
+
+type runtimeDataBindingInfo struct {
+	WorkingDirectory string
+	DatabasePath     string
+	DatabaseExists   bool
+	DatabaseSize     int64
+	DatabaseHash8    string
+}
+
+func runtimeDataBindingSnapshot(dsn string) runtimeDataBindingInfo {
+	wd, err := os.Getwd()
+	if err != nil {
+		wd = "<unknown>"
+	}
+	rawPath := strings.TrimSpace(dsn)
+	if rawPath == "" {
+		rawPath = defaultRuntimeDBDSN
+	}
+	dbPath := rawPath
+	if i := strings.Index(dbPath, "?"); i >= 0 {
+		dbPath = dbPath[:i]
+	}
+	if !filepath.IsAbs(dbPath) {
+		dbPath = filepath.Join(wd, dbPath)
+	}
+	absPath, err := filepath.Abs(dbPath)
+	if err == nil {
+		dbPath = absPath
+	}
+
+	info := runtimeDataBindingInfo{
+		WorkingDirectory: wd,
+		DatabasePath:     dbPath,
+	}
+	st, err := os.Stat(dbPath)
+	if err != nil || st.IsDir() {
+		return info
+	}
+	info.DatabaseExists = true
+	info.DatabaseSize = st.Size()
+
+	content, err := os.ReadFile(dbPath)
+	if err != nil {
+		return info
+	}
+	sum := sha256.Sum256(content)
+	info.DatabaseHash8 = strings.ToUpper(hex.EncodeToString(sum[:])[:8])
+	return info
+}
+
+func logRuntimeDataBinding(info runtimeDataBindingInfo) {
+	log.SugaredLogger.Info("Runtime Data Binding:")
+	log.SugaredLogger.Info("Working Directory: ", info.WorkingDirectory)
+	log.SugaredLogger.Info("Database: ", info.DatabasePath)
+	log.SugaredLogger.Infof("Database File Exists: %v", info.DatabaseExists)
+	log.SugaredLogger.Infof("Database File Size: %d", info.DatabaseSize)
+	log.SugaredLogger.Info("Database Fingerprint: ", info.DatabaseHash8)
+}
+
 func main() {
 	defer func() {
 		if r := recover(); r != nil {
+			stack := string(debug.Stack())
 			log.SugaredLogger.Error("panic: ", r)
-			log.SugaredLogger.Error("stack: ", string(debug.Stack()))
+			log.SugaredLogger.Error("stack: ", stack)
+			log.SugaredLogger.Infof("release identity: %s", version.LogLine())
+			if path, err := version.WriteCrashReport(r, stack); err != nil {
+				log.SugaredLogger.Errorf("crash report write failed: %v", err)
+			} else {
+				log.SugaredLogger.Infof("crash report written: %s", path)
+			}
 		}
 	}()
 
+	// Phase16.16-B: Runtime Storage Layer — anchors all paths to exe directory.
+	rtProfile, rtErr := goruntime.Init("", Version)
+	if rtErr != nil {
+		// Non-fatal: fall back to legacy cwd-relative paths.
+		log.SugaredLogger.Warnf("runtime.Init failed (falling back to cwd paths): %v", rtErr)
+	} else {
+		// Reinitialise logger to use the runtime-resolved log directory.
+		log.InitWithDir(rtProfile.LogDir)
+		for _, line := range rtProfile.LogLines() {
+			log.SugaredLogger.Info(line)
+		}
+	}
+
+	// checkDir kept for backward-compat (tests / legacy); runtime.Init already
+	// called MkdirAll for data/, logs/, runtime/.
 	checkDir("data")
 	data.SponsorDecryptKeyHex = BuildKey
-	db.Init("")
-	data.InitAnalyzeSentiment()
-	// Sync migrate before Wails startup/cron to avoid 9:20 schema races.
-	AutoMigrate()
 
+	// Pass absolute database path from RuntimeProfile when available.
+	var dbPath string
+	if rtProfile != nil {
+		dbPath = rtProfile.DatabasePath + "?_busy_timeout=10000&_journal_mode=WAL&_synchronous=NORMAL&_cache_size=-524288"
+	}
+	db.Init(dbPath)
+	binding := runtimeDataBindingSnapshot(dbPath)
+	logRuntimeDataBinding(binding)
+	// Phase10-H.3: backup → integrity_check before migrate / trading init.
+	safety := database.Default().RunAtStartup(binding.DatabasePath, db.Dao)
+	database.SetLastResult(safety)
+	data.InitAnalyzeSentiment()
+	if !safety.OK {
+		log.SugaredLogger.Errorf("DATABASE_SAFETY_FAILED ok=false trading_blocked=true err=%s", safety.Error)
+		log.SugaredLogger.Errorf("DATABASE_SAFETY_RECOVERY: %s", safety.RecoveryHint)
+		log.SugaredLogger.Errorf("DATABASE_SAFETY: skipping AutoMigrate; UI may start but trading cron/init stays blocked")
+	} else {
+		log.SugaredLogger.Infof("DATABASE_SAFETY_OK integrity=%s backup=%s", safety.Integrity, safety.BackupPath)
+		// Sync migrate before Wails startup/cron to avoid 9:20 schema races.
+		AutoMigrate()
+		// Phase16.18-B3: persist StrategySnapshot for historical Explain recovery.
+		strategysnapshot.InitDefaultStore(db.Dao)
+	}
 	//db.Dao.Model(&data.Group{}).Where("id = ?", 0).FirstOrCreate(&data.Group{
 	//	Name: "默认分组",
 	//	Sort: 0,
 	//})
 
 	log.SugaredLogger.Info("starting...")
-	log.SugaredLogger.Infof("version: %s  commit: %s", Version, VersionCommit)
+	_ = version.Bootstrap(Version, VersionCommit)
+	wireDiagnosticProviders()
+	log.SugaredLogger.Infof("release identity: %s", version.LogLine())
 	//log.SugaredLogger.Infof("build key: %s", BuildKey)
 
 	// 程序启动时预缓存东财 Cookie
@@ -128,8 +230,7 @@ func main() {
 	//FileMenu.AddText("退出", keys.CmdOrCtrl("q"), func(_ *menu.CallbackData) {
 	//	runtime.Quit(app.ctx)
 	//})
-	log.SugaredLogger.Info("version: " + Version)
-	log.SugaredLogger.Info("commit: " + VersionCommit)
+	log.SugaredLogger.Infof("release identity: %s", version.LogLine())
 	// 根据屏幕分辨率自适应窗口尺寸
 	width, height, _, _, err := getScreenResolution()
 	if err != nil {
@@ -190,11 +291,22 @@ func main() {
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 			Middleware: api.ChainAssetMiddleware(
+				api.StrategyIntentsAssetMiddleware,  // Phase13-B1-A: Strategy Intent read-only
+				api.StrategySchemasAssetMiddleware, // Phase13-B3-A: Strategy Schema read-only
+				api.ResearchCandidatesAssetMiddleware, // Phase13-A5 MVP-1: Research Candidate Pool
 				api.CandidatePoolAssetMiddleware,
 				api.RealOrdersAssetMiddleware,
 				api.TradePlansAssetMiddleware,
 				api.PaperTradingAssetMiddleware, // Phase10-C.2-A: observation + POST /run
+				api.ExitReviewAssetMiddleware,   // Phase14-D3: POST /api/exit-review/outcome
+				api.OpportunitiesAssetMiddleware, // Phase14-G1.1: opportunity user actions
+				api.WatchlistAssetMiddleware,     // Phase16.26-C2.1: GET /api/watchlist
+				api.PortfolioDashboardAssetMiddleware, // Phase11-B.2: GET /api/portfolio/dashboard
+				api.TradingDayMonitorAssetMiddleware,  // Phase11-C: GET /api/trading/day-monitor
+				api.DailyInvestmentSummaryAssetMiddleware, // Phase11-E: GET /api/investment/daily-summary
 				api.OpsTradingDayAssetMiddleware,
+				api.RecoveryReadinessAssetMiddleware,
+				api.BrokerReconcileAssetMiddleware,
 				api.ProductCapabilitiesAssetMiddleware, // Phase13-D: FeatureGate / Explain / Risk / Usage
 			),
 		},
@@ -290,6 +402,7 @@ func AutoMigrate() {
 	} else {
 		log.SugaredLogger.Infof("startup schema validation READY version=%d", validation.CurrentVersion)
 	}
+	logDatabaseHealthCheck()
 	// Wire readonly TradingDayStatus schema provider (re-validates on each query; no trading side effects).
 	data.SetTradingDaySchemaStatusProvider(func() data.TradingDaySchemaView {
 		v := validateApplicationSchema()
@@ -314,6 +427,24 @@ func AutoMigrate() {
 func runSchemaMigrations() error {
 	_, err := applyApplicationMigrations()
 	return err
+}
+
+// logDatabaseHealthCheck runs read-only DB probes at startup (no repair).
+func logDatabaseHealthCheck() {
+	if db.Dao == nil {
+		return
+	}
+	res := healthcheck.Run(db.Dao)
+	if res.Failed() {
+		log.SugaredLogger.Errorf("DB_HEALTH_CHECK %s: %s", res.Status, res.Summary())
+		for _, c := range res.Checks {
+			if !c.Skipped && !c.OK {
+				log.SugaredLogger.Errorf("DB_HEALTH_CHECK check=%s detail=%s", c.Name, c.Detail)
+			}
+		}
+		return
+	}
+	log.SugaredLogger.Infof("DB_HEALTH_CHECK %s: %s", res.Status, res.Summary())
 }
 
 // initGlobalStockIndexCacheTask 检查并创建 global_stock_index_cache 定时任务
@@ -485,10 +616,17 @@ func checkDir(dir string) {
 	}
 }
 
-// PanicHandler 捕获 panic 的包装函数
+// PanicHandler 捕获 panic 的包装函数（写入本地 crash report，含统一 VersionInfo）。
 func PanicHandler() {
 	if r := recover(); r != nil {
+		stack := string(debug.Stack())
 		fmt.Printf("Recovered from panic: %v\n", r)
+		fmt.Printf("release identity: %s\n", version.LogLine())
 		debug.PrintStack()
+		if path, err := version.WriteCrashReport(r, stack); err != nil {
+			fmt.Printf("crash report write failed: %v\n", err)
+		} else {
+			fmt.Printf("crash report written: %s\n", path)
+		}
 	}
 }

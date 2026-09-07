@@ -6,6 +6,49 @@ import (
 	"time"
 )
 
+// ---------- Phase4：标准券商适配器（可替换 Stub / 未来真通道）----------
+
+// SubmitRequest OMS → 券商通道的报单请求。
+type SubmitRequest struct {
+	ClientOrderID string  `json:"clientOrderId"`
+	AccountID     string  `json:"accountId"`
+	StockCode     string  `json:"stockCode"`
+	StockName     string  `json:"stockName"`
+	Side          string  `json:"side"`
+	Price         float64 `json:"price"`
+	Volume        int64   `json:"volume"`
+}
+
+// SubmitResponse 券商通道受理结果（Stub：通常仍为 pending，broker_order_id 可空直至 ACK）。
+type SubmitResponse struct {
+	ClientOrderID string `json:"clientOrderId"`
+	BrokerOrderID string `json:"brokerOrderId"`
+	Status        string `json:"status"`
+	Message       string `json:"message"`
+}
+
+// OrderStatus 券商侧订单状态快照（与 OMS TradeOrder 分离）。
+type OrderStatus struct {
+	ClientOrderID  string  `json:"clientOrderId"`
+	BrokerOrderID  string  `json:"brokerOrderId"`
+	Status         string  `json:"status"`
+	FilledVolume   int64   `json:"filledVolume"`
+	LeavesQuantity int64   `json:"leavesQuantity"`
+	AvgPrice       float64 `json:"avgPrice"`
+}
+
+// BrokerAdapter 标准券商适配器接口（Phase4）。
+// RealBroker 依赖此接口；StubAdapter 为当前唯一实现。本阶段不接真券商 API。
+type BrokerAdapter interface {
+	Submit(ctx context.Context, req *SubmitRequest) (*SubmitResponse, error)
+	Cancel(ctx context.Context, clientOrderID string) error
+	Query(ctx context.Context, clientOrderID string) (*OrderStatus, error)
+	Connect(ctx context.Context) error
+	Disconnect(ctx context.Context) error
+}
+
+// ---------- 遗留：人工确认 Adapter（与 BrokerAdapter 并存，互不影响）----------
+
 // OrderRequest 人工确认后的下单请求
 type OrderRequest struct {
 	StockCode string  `json:"stockCode"`
@@ -32,7 +75,7 @@ type Position struct {
 	AvgCost   float64 `json:"avgCost"`
 }
 
-// Adapter 券商适配器接口（Phase4：人工确认后送单，禁止无人值守全自动默认开启）
+// Adapter 券商适配器接口（人工确认后送单，禁止无人值守全自动默认开启）
 type Adapter interface {
 	Name() string
 	PlaceOrder(ctx context.Context, req OrderRequest) (*OrderResult, error)

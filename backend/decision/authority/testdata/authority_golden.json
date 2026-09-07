@@ -1,0 +1,113 @@
+{
+  "cases": [
+    {
+      "id": "A_UI_CARD_read",
+      "role": "UI_CARD",
+      "expect": "allowed",
+      "allowed": true,
+      "reason": "ALLOWED: read-only Decision consumer"
+    },
+    {
+      "id": "B_ALERT_read",
+      "role": "ALERT",
+      "expect": "allowed",
+      "allowed": true,
+      "reason": "ALLOWED: read-only Decision consumer"
+    },
+    {
+      "id": "C_EXECUTION_access",
+      "role": "EXECUTION_FORBIDDEN",
+      "expect": "denied",
+      "allowed": false,
+      "reason": "DENIED: execution/trade path must not use Decision as authority"
+    },
+    {
+      "id": "D_TradePlan_future_read_only",
+      "role": "TRADEPLAN_DRAFT_FUTURE",
+      "expect": "read_only",
+      "allowed": true,
+      "reason": "ALLOWED: read-only Decision consumer"
+    },
+    {
+      "id": "E_Decision_mutation",
+      "expect": "blocked",
+      "mutationDetected": true,
+      "reason": "mutation_detected: Action.Code changed"
+    },
+    {
+      "id": "E0_Decision_read_ok",
+      "expect": "ok",
+      "mutationDetected": false,
+      "reason": "OK: read-only usage matches sealed snapshot"
+    }
+  ],
+  "harness": "quant-decision-authority-boundary",
+  "matrix": {
+    "ALERT": {
+      "readDecision": true,
+      "writeDecision": false,
+      "modifyAction": false,
+      "createTrade": false,
+      "createCandidate": false
+    },
+    "EXECUTION_FORBIDDEN": {
+      "readDecision": false,
+      "writeDecision": false,
+      "modifyAction": false,
+      "createTrade": false,
+      "createCandidate": false
+    },
+    "KLINE": {
+      "readDecision": true,
+      "writeDecision": false,
+      "modifyAction": false,
+      "createTrade": false,
+      "createCandidate": false
+    },
+    "OBSERVABILITY": {
+      "readDecision": true,
+      "writeDecision": false,
+      "modifyAction": false,
+      "createTrade": false,
+      "createCandidate": false
+    },
+    "SHADOW_COMPARE": {
+      "readDecision": true,
+      "writeDecision": false,
+      "modifyAction": false,
+      "createTrade": false,
+      "createCandidate": false
+    },
+    "TRADEPLAN_CANDIDATE_SHADOW": {
+      "readDecision": true,
+      "writeDecision": false,
+      "modifyAction": false,
+      "createTrade": false,
+      "createCandidate": true
+    },
+    "TRADEPLAN_DRAFT_FUTURE": {
+      "readDecision": true,
+      "writeDecision": false,
+      "modifyAction": false,
+      "createTrade": false,
+      "createCandidate": false
+    },
+    "UI_CARD": {
+      "readDecision": true,
+      "writeDecision": false,
+      "modifyAction": false,
+      "createTrade": false,
+      "createCandidate": false
+    }
+  },
+  "phase": "Phase3-D",
+  "rules": {
+    "createTradeAlwaysDenied": true,
+    "decisionIsFactNotAuthorization": true,
+    "forbiddenImporters": [
+      "backend/execution",
+      "backend/broker",
+      "backend/strategy/rank"
+    ]
+  }
+}

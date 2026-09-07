@@ -11,19 +11,52 @@ import {
 import { STOCK_MARKET_SEGMENTS, STOCK_MARKET_SEGMENT_ORDER } from '../utils/stockMarketSegment'
 import { buildAccountOverview } from '../utils/accountOverview'
 import { toDisplayTradingLevel } from '../utils/tradingLevelRules'
+import { withTimeout } from '../utils/withTimeout'
 
 defineProps({
   darkTheme: { type: Boolean, default: false },
 })
 
+/** 顶栏首刷兜底：避免 Wails/chromedp 长时间不返回导致永久 spinner */
+const MARKET_STATUS_UI_TIMEOUT_MS = 15_000
+
 const router = useRouter()
 const snapshot = ref(null)
 const accountOverview = ref(null)
 const loading = ref(false)
+const loadError = ref('')
+/** 顶栏账户概览最近刷新时间（独立于行情 snapshot.updatedAt） */
+const accountUpdatedAt = ref(0)
 let timer = null
 let sessionTimer = null
 
 const sessionLabel = computed(() => snapshot.value?.session?.label || resolveMarketSessionLabel().label)
+
+const dataUpdatedAtLabel = computed(() => {
+  const ts = accountUpdatedAt.value || snapshot.value?.updatedAt || 0
+  if (!ts) return ''
+  try {
+    return new Date(ts).toLocaleString('zh-CN', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    })
+  } catch {
+    return ''
+  }
+})
+
+const riskStatusLabel = computed(() => {
+  if (!accountOverview.value) return ''
+  return accountOverview.value.overCap ? '警告' : '正常'
+})
+
+const riskStatusType = computed(() => (accountOverview.value?.overCap ? 'error' : 'success'))
 
 const sessionTagType = computed(() => {
   const key = snapshot.value?.session?.key
@@ -69,15 +102,17 @@ const positionCapDisplay = computed(() => {
 
 const barTitle = computed(() => {
   const cap = snapshot.value?.positionCap
-  const parts = ['点击查看重大指数']
+  const parts = ['市场级别依据（仅信息；点「重大指数」跳转）']
   const reason = snapshot.value?.mode?.reason
   if (reason) parts.push(`级别依据：${reason}`)
   for (const tag of segmentTags.value) parts.push(tag.title.replace('\n', '：'))
   if (cap?.hint) parts.push(cap.hint)
+  if (accountOverview.value?.hint) parts.push(accountOverview.value.hint)
   return parts.join('\n')
 })
 
-function goMarket() {
+function goMarket(e) {
+  e?.stopPropagation?.()
   router.push({ name: 'market', query: { name: '重大指数', indexTab: '上证指数' } })
   EventsEmit('changeActiveMenuKey', 'market')
   EventsEmit('changeMarketTab', { ID: 0, name: '重大指数', indexTab: '上证指数' })
@@ -96,14 +131,19 @@ function scheduleRefresh() {
 
 async function refresh(showLoading = true) {
   if (showLoading && !snapshot.value) loading.value = true
+  loadError.value = ''
   try {
-    const next = await fetchMarketStatusSnapshot()
+    const next = await withTimeout(
+      fetchMarketStatusSnapshot(),
+      MARKET_STATUS_UI_TIMEOUT_MS,
+      'marketStatusSnapshot',
+    )
     snapshot.value = {
       ...next,
       session: next.session || resolveMarketSessionLabel(),
     }
     try {
-      const follows = (await GetFollowList(0)) || []
+      const follows = (await withTimeout(GetFollowList(0), 8_000, 'GetFollowList')) || []
       const rows = (Array.isArray(follows) ? follows : []).map((f) => ({
         costVolume: f.Volume ?? f.volume ?? 0,
         costPrice: f.CostPrice ?? f.costPrice ?? 0,
@@ -112,8 +152,22 @@ async function refresh(showLoading = true) {
       accountOverview.value = buildAccountOverview(rows, {
         marketModeKey: next?.mode?.key,
       })
+      accountUpdatedAt.value = Date.now()
     } catch {
       accountOverview.value = null
+    }
+  } catch (e) {
+    loadError.value = e?.message || String(e)
+    if (!snapshot.value) {
+      snapshot.value = {
+        ok: false,
+        session: resolveMarketSessionLabel(),
+        markets: {},
+        mode: { key: 'unknown', label: '数据不足', reason: loadError.value },
+        positionCap: null,
+        error: loadError.value,
+        updatedAt: Date.now(),
+      }
     }
   } finally {
     loading.value = false
@@ -148,22 +202,24 @@ onBeforeUnmount(() => {
 
 <template>
   <div
-    class="market-status-bar msb-clickable"
+    class="market-status-bar"
     :class="{ 'market-status-bar--dark': darkTheme }"
     :title="barTitle"
-    @click="goMarket"
   >
     <n-flex align="center" justify="center" :size="6" :wrap="true" class="msb-inner">
-      <n-tag size="small" :type="sessionTagType" :bordered="false">
+      <n-button size="tiny" secondary type="primary" class="msb-action" @click="goMarket">
+        重大指数
+      </n-button>
+      <n-tag size="small" :type="sessionTagType" :bordered="false" class="msb-static">
         {{ sessionLabel }}
       </n-tag>
       <span class="msb-divider">|</span>
-      <n-tag size="small" :type="modeTagType" :bordered="false">
+      <n-tag size="small" :type="modeTagType" :bordered="false" class="msb-static">
         {{ snapshot?.mode?.label || '—' }}
       </n-tag>
       <n-tooltip v-for="item in segmentTags" :key="item.key" trigger="hover">
         <template #trigger>
-          <n-tag size="small" :type="item.type" :bordered="true">
+          <n-tag size="small" :type="item.type" :bordered="true" class="msb-static">
             {{ item.label }}
           </n-tag>
         </template>
@@ -171,7 +227,7 @@ onBeforeUnmount(() => {
       </n-tooltip>
       <template v-if="positionCapDisplay">
         <span class="msb-divider">|</span>
-        <n-tag size="small" type="info" :bordered="false">
+        <n-tag size="small" type="info" :bordered="false" class="msb-static">
           {{ positionCapDisplay }}
         </n-tag>
       </template>
@@ -181,12 +237,31 @@ onBeforeUnmount(() => {
           size="small"
           :type="accountOverview.overCap ? 'error' : 'default'"
           :bordered="false"
+          class="msb-static"
           :title="accountOverview.hint"
         >
-          持仓 {{ accountOverview.exposurePctDisplay }}% · 可用 {{ accountOverview.roomPctDisplay }}%
+          股票仓位 {{ accountOverview.exposurePctDisplay }}% · 仓位余量 {{ accountOverview.roomPctDisplay }}%
+        </n-tag>
+        <n-tag size="small" :type="riskStatusType" :bordered="false" class="msb-static">
+          风险 {{ riskStatusLabel }}
         </n-tag>
       </template>
+      <template v-if="dataUpdatedAtLabel">
+        <span class="msb-divider">|</span>
+        <n-text depth="3" class="msb-updated">更新 {{ dataUpdatedAtLabel }}</n-text>
+      </template>
       <n-spin v-if="loading" size="small" class="msb-spin" />
+      <n-button
+        v-else-if="loadError"
+        size="tiny"
+        secondary
+        type="warning"
+        class="msb-action"
+        :title="loadError"
+        @click.stop="refresh(true)"
+      >
+        重试
+      </n-button>
     </n-flex>
   </div>
 </template>
@@ -203,6 +278,7 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(6px);
   --wails-draggable: no-drag;
+  cursor: default;
 }
 
 .msb-inner {
@@ -214,18 +290,26 @@ onBeforeUnmount(() => {
 .msb-divider {
   opacity: 0.35;
   user-select: none;
+  pointer-events: none;
 }
 
 .msb-spin {
   margin-left: 4px;
 }
 
-.msb-clickable {
+.msb-action {
   cursor: pointer;
 }
 
-.msb-clickable:hover {
-  opacity: 0.88;
+.msb-static {
+  cursor: default;
+}
+
+.msb-updated {
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
 }
 
 .market-status-bar--dark {

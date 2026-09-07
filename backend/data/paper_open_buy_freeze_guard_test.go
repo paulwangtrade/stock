@@ -30,6 +30,8 @@ func a62SeedReadyPlan(t *testing.T, freeze bool) *models.TradePlan {
 		now := time.Now()
 		plan.FreezeAt = &now
 		plan.FreezeBy = "a62-test"
+		plan.ApprovedAt = &now
+		plan.ApprovedBy = "a62-test"
 	}
 	require.NoError(t, NewTradePlanRepo().CreatePlanWithItems(plan, []models.TradePlanItem{{
 		TradeDate: tradeDate,

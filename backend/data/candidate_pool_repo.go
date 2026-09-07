@@ -2,6 +2,7 @@ package data
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"go-stock/backend/db"
@@ -95,4 +96,37 @@ func (r *CandidatePoolRepo) ListByTradeDate(tradeDate string, limit int) ([]mode
 	var list []models.CandidatePool
 	err := db.Dao.Where("trade_date = ?", tradeDate).Order("id DESC").Limit(limit).Find(&list).Error
 	return list, err
+}
+
+// UpdateItemProvenance sets signal_snapshot_id and signal_tag when not already linked.
+func (r *CandidatePoolRepo) UpdateItemProvenance(itemID uint, snapshotID uint, tag string) (updated bool, err error) {
+	if db.Dao == nil {
+		return false, fmt.Errorf("数据库未初始化")
+	}
+	if itemID == 0 || snapshotID == 0 {
+		return false, nil
+	}
+	tag = strings.TrimSpace(tag)
+	res := db.Dao.Model(&models.CandidatePoolItem{}).
+		Where("id = ? AND (signal_snapshot_id IS NULL OR signal_snapshot_id = 0)", itemID).
+		Updates(map[string]any{
+			"signal_snapshot_id": snapshotID,
+			"signal_tag":         tag,
+		})
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
+}
+
+// UpdatePoolConfigJSON persists observability metadata on an existing pool.
+func (r *CandidatePoolRepo) UpdatePoolConfigJSON(poolID uint, configJSON string) error {
+	if db.Dao == nil {
+		return fmt.Errorf("数据库未初始化")
+	}
+	if poolID == 0 {
+		return fmt.Errorf("pool id required")
+	}
+	return db.Dao.Model(&models.CandidatePool{}).Where("id = ?", poolID).
+		Update("config_json", configJSON).Error
 }

@@ -41,8 +41,12 @@ type HoldingEvalStockRow struct {
 	EvalState          string              `json:"eval_state"`
 	Lots               []HoldingEvalLotRow `json:"lots"`
 	ReconcileStatus    string              `json:"reconcile_status,omitempty"`
-	FirstBuyDate       string              `json:"first_buy_date,omitempty"`
-	DisplayName        SecurityDisplayName `json:"display_name"`
+	FirstBuyDate       string                         `json:"first_buy_date,omitempty"`
+	DisplayName        SecurityDisplayName            `json:"display_name"`
+	// Explanation is Phase17-C2 read-only explainability (optional; no trade actions).
+	Explanation *PositionEvaluationExplanation `json:"explanation,omitempty"`
+	// HealthScore is Phase17-C3 position quality score (optional; not a sell signal).
+	HealthScore *HoldingHealthScore `json:"health_score,omitempty"`
 }
 
 // HoldingEvalLotRow is one attributed fill lot for Observation expand UI.

@@ -438,16 +438,19 @@ func isTransientKLineHTTPError(err error) bool {
 		strings.Contains(s, "connection reset") ||
 		strings.Contains(s, "connection refused") ||
 		strings.Contains(s, "timeout") ||
-		strings.Contains(s, "broken pipe")
+		strings.Contains(s, "broken pipe") ||
+		strings.Contains(s, "wsarecv") ||
+		strings.Contains(s, "wsasend") ||
+		strings.Contains(s, "forcibly closed")
 }
 
 // fetchKLineJSONBytesByHTTP 每次调用均发起真实 GET，不缓存 K 线响应；cookieHeader 仅来自 chromedp 缓存或当次刷新。
 // 由于 Transport 设置了 DisableCompression=true，需要手动处理 gzip 解压。
 func (receiver *EastMoneyKLineApi) fetchKLineJSONBytesByHTTP(reqURL string) ([]byte, error) {
 	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
+	for attempt := 0; attempt < 4; attempt++ {
 		if attempt > 0 {
-			time.Sleep(time.Duration(250*attempt) * time.Millisecond)
+			time.Sleep(time.Duration(300*attempt) * time.Millisecond)
 		}
 		body, err := receiver.fetchKLineJSONBytesByHTTPOne(reqURL)
 		if err == nil {
@@ -463,7 +466,14 @@ func (receiver *EastMoneyKLineApi) fetchKLineJSONBytesByHTTP(reqURL string) ([]b
 }
 
 func (receiver *EastMoneyKLineApi) fetchKLineJSONBytesByHTTPOne(reqURL string) ([]byte, error) {
-	req := receiver.client.SetTimeout(time.Duration(receiver.config.CrawlTimeOut) * time.Second).R()
+	timeout := 8 * time.Second
+	if receiver.config != nil && receiver.config.Settings != nil && receiver.config.CrawlTimeOut > 0 {
+		timeout = time.Duration(receiver.config.CrawlTimeOut) * time.Second
+		if timeout > 15*time.Second {
+			timeout = 15 * time.Second
+		}
+	}
+	req := receiver.client.SetTimeout(timeout).R()
 	setEastMoneyKlineBrowserHeaders(req, "https://quote.eastmoney.com")
 	if receiver.config != nil {
 		if cookieHeader := EastMoneyCookieHeaderForPush2his(receiver.config); cookieHeader != "" {
@@ -700,6 +710,15 @@ func (receiver *EastMoneyKLineApi) GetKLineDataBefore(stockCode, kLineType, adju
 
 	if cached := klineCacheGet(secid, kLineType, adjustFlag, end, limit); cached != nil && len(*cached) > 0 {
 		return cached
+	}
+	// Phase17-B.1 IDLE：有本地 bars 则直接返回，不主动打 latest HTTP。
+	// Phase17.1：latest 且 last_bar_day 落后于期望交易日时禁止 IDLE stale 短路。
+	if isLatestKLineEnd(end) && !klineMarketSessionLive(time.Now()) {
+		if stale := klineCacheGetStale(secid, kLineType, adjustFlag, end, limit); stale != nil && len(*stale) > 0 {
+			if klineLatestCalendarFresh(lastKLineDay(*stale), time.Now()) {
+				return receiver.finalizeKLines(stale)
+			}
+		}
 	}
 	if supportsIncrementalLatestKLine(kLineType, adjustFlag) && isLatestKLineEnd(end) {
 		if stale := klineCacheGetStale(secid, kLineType, adjustFlag, end, limit); stale != nil && len(*stale) >= limit {

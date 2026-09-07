@@ -8,6 +8,7 @@ import (
 	"go-stock/backend/data"
 	"go-stock/backend/logger"
 	"go-stock/backend/models"
+	"go-stock/backend/tradingconfig"
 )
 
 // FreezeTradePlan promotes an approved Draft TradePlan to ready and writes freeze
@@ -17,12 +18,19 @@ func FreezeTradePlan(plan *models.TradePlan, freezeBy, freezeReason string) (*mo
 	if plan == nil {
 		return nil, fmt.Errorf("trade plan is nil")
 	}
-	if plan.ID == 0 {
+	return FreezeTradePlanAt(plan.ID, freezeBy, freezeReason, time.Now())
+}
+
+// FreezeTradePlanAt is the clock-injectable freeze entry for Simulator and tests.
+// Production FreezeTradePlan keeps wall-clock semantics (time.Now()).
+// Zero freezeTime falls back to time.Now().
+func FreezeTradePlanAt(planID uint, freezeBy, freezeReason string, freezeTime time.Time) (*models.TradePlan, error) {
+	if planID == 0 {
 		return nil, fmt.Errorf("trade plan id is required")
 	}
 
 	repo := data.NewTradePlanRepo()
-	current, err := repo.GetByID(plan.ID)
+	current, err := repo.GetByID(planID)
 	if err != nil {
 		return nil, err
 	}
@@ -46,9 +54,11 @@ func FreezeTradePlan(plan *models.TradePlan, freezeBy, freezeReason string) (*mo
 	}
 	freezeReason = strings.TrimSpace(freezeReason)
 
-	cfg := data.GetPaperOpenBuyConfig()
-	at := time.Now()
-	ok, err := repo.PromoteDraftToFrozen(current.ID, freezeBy, freezeReason, at, cfg.EnablePaperOpenBuy)
+	at := freezeTime
+	if at.IsZero() {
+		at = time.Now()
+	}
+	ok, err := repo.PromoteDraftToFrozen(current.ID, freezeBy, freezeReason, at, tradingconfig.Default().EnablePaperOpenBuy())
 	if err != nil {
 		return nil, err
 	}

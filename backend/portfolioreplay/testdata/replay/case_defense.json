@@ -1,0 +1,55 @@
+{
+  "schema_version": "replay_case.v1",
+  "case_id": "fx-2026-08-19-defense",
+  "decision_time": "2026-08-19T15:30:00+08:00",
+  "trade_date": "2026-08-19",
+  "source": "manual_scenario",
+  "versions": {
+    "selection_version": "selection@e6-1",
+    "constraint_version": "constraint@f2-1",
+    "allocation_version": "allocation@f1-v1-equal",
+    "simulation_version": "simulation@f8-1"
+  },
+  "snapshot": {
+    "account_id": 1,
+    "as_of": "2026-08-19T15:30:00+08:00",
+    "found": true,
+    "equity": 1000000,
+    "cash": 800000,
+    "available_cash": 800000,
+    "reserved_cash": 0,
+    "market_value": 200000,
+    "exposure": 200000,
+    "position_count": 1,
+    "positions": [
+      {
+        "stock_code": "sz000001",
+        "volume": 100,
+        "market_value": 200000,
+        "weight": 0.2
+      }
+    ]
+  },
+  "candidates": {
+    "selection_limit": 2,
+    "ranked_candidates": [
+      { "stock_code": "sz000002", "rank": 1, "score": 90 },
+      { "stock_code": "sz000003", "rank": 2, "score": 80 }
+    ]
+  },
+  "constraints": {
+    "risk": {
+      "market_level": 1,
+      "max_gross_exposure_pct": 0.85,
+      "max_single_name_pct": 0.2,
+      "block_new_entries": true
+    }
+  },
+  "budget": null,
+  "filter": {
+    "skip_compatibility_check": false,
+    "scan_limit": 0,
+    "max_names": 0
+  },
+  "notes": "market defense: potential filter blocked"
+}

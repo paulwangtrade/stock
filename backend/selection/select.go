@@ -5,24 +5,23 @@ import (
 	"strings"
 )
 
-// Select ranks candidates and keeps at most MaxSelectedNames.
-// E.2 also skips already-held names, duplicate symbols, and cash-limit overflow.
-// Rank ascending (1 best), then Score descending. Does not load DB or call Portfolio APIs.
-func Select(candidates []Candidate, ctx SelectionContext) *SelectedCandidates {
-	out := &SelectedCandidates{
-		Selected: []CandidateDecision{},
-		Skipped:  []CandidateDecision{},
-	}
-	if len(candidates) == 0 {
-		return out
-	}
-
+// Select ranks candidates and annotates an in-basket prefix of SelectionLimit.
+// E.6: Rank ascending (1 best), then Score descending; drop empty codes; drop
+// duplicate symbols (keep better Rank). Does not skip holdings, cash, or risk.
+// Does not load DB or call Portfolio APIs. Does not replace PlanFilter.
+func Select(candidates []Candidate, ctx SelectionContext) *CandidateSelectionResult {
 	maxN := ctx.MaxSelectedNames
 	if maxN <= 0 {
 		maxN = DefaultMaxSelectedNames
 	}
-	held := holdingSet(ctx.ExistingPositions)
-	cashOn := ctx.EstimatedAmountPerName > 0
+	out := &CandidateSelectionResult{
+		RankedCandidates:   []Candidate{},
+		SelectionLimit:     maxN,
+		CandidateDecisions: []CandidateDecision{},
+	}
+	if len(candidates) == 0 {
+		return out
+	}
 
 	indexed := make([]Candidate, 0, len(candidates))
 	for _, c := range candidates {
@@ -37,51 +36,39 @@ func Select(candidates []Candidate, ctx SelectionContext) *SelectedCandidates {
 	for _, c := range indexed {
 		key := normalizeCode(c.StockCode)
 		if key == "" {
-			out.Skipped = append(out.Skipped, skippedDecision(c, ReasonInvalidCandidate))
+			out.CandidateDecisions = append(out.CandidateDecisions, skippedDecision(c, ReasonInvalidCandidate))
 			continue
 		}
-		if seen[key] {
-			out.Skipped = append(out.Skipped, skippedDecision(c, ReasonDuplicateSymbol))
+		if DeduplicateSymbols && seen[key] {
+			out.CandidateDecisions = append(out.CandidateDecisions, skippedDecision(c, ReasonDuplicateSymbol))
 			continue
 		}
 		seen[key] = true
-		if held[key] {
-			out.Skipped = append(out.Skipped, skippedDecision(c, ReasonAlreadyHolding))
+		out.RankedCandidates = append(out.RankedCandidates, c)
+		if taken < maxN {
+			taken++
+			out.CandidateDecisions = append(out.CandidateDecisions, CandidateDecision{
+				Candidate:       c,
+				Selected:        true,
+				Rank:            c.Rank,
+				SelectionReason: ReasonRankTop,
+				SelectionRank:   taken,
+			})
 			continue
 		}
-		if taken >= maxN {
-			out.Skipped = append(out.Skipped, skippedDecision(c, ReasonOverNameLimit))
-			continue
-		}
-		if cashOn && (float64(taken+1)*ctx.EstimatedAmountPerName > ctx.AvailableCash+1e-9) {
-			out.Skipped = append(out.Skipped, skippedDecision(c, ReasonCashLimit))
-			continue
-		}
-		taken++
-		out.Selected = append(out.Selected, CandidateDecision{
-			Candidate:       c,
-			Selected:        true,
-			Rank:            c.Rank,
-			SelectionReason: ReasonRankTop,
-			SelectionRank:   taken,
-		})
+		out.CandidateDecisions = append(out.CandidateDecisions, skippedDecision(c, ReasonOverNameLimit))
 	}
 	return out
+}
+
+// SelectAsSelectedCandidates is the E.1/E.2 compatibility adapter.
+// Same ranking/dedup as Select; does not apply already_holding or cash_limit.
+func SelectAsSelectedCandidates(candidates []Candidate, ctx SelectionContext) *SelectedCandidates {
+	return Select(candidates, ctx).ToSelectedCandidates()
 }
 
 func normalizeCode(code string) string {
 	return strings.ToLower(strings.TrimSpace(code))
-}
-
-func holdingSet(positions []ExistingPosition) map[string]bool {
-	out := map[string]bool{}
-	for _, p := range positions {
-		key := normalizeCode(p.StockCode)
-		if key != "" {
-			out[key] = true
-		}
-	}
-	return out
 }
 
 func cloneCandidate(c Candidate) Candidate {
@@ -110,10 +97,11 @@ func lessCandidate(a, b Candidate) bool {
 
 func skippedDecision(c Candidate, reason string) CandidateDecision {
 	return CandidateDecision{
-		Candidate:     c,
-		Selected:      false,
-		Rank:          c.Rank,
-		SkippedReason: reason,
-		SkipReason:    reason,
+		Candidate:       c,
+		Selected:        false,
+		Rank:            c.Rank,
+		SelectionReason: reason,
+		SkippedReason:   reason,
+		SkipReason:      reason,
 	}
 }

@@ -8,7 +8,6 @@ import {
   GetPromptTemplates,
   SendDingDingMessageByType,
   UpdateConfig,
-  CheckSponsorCode,
   FetchAiModels
 } from "../../wailsjs/go/main/App";
 import {NButton, NInput, NSelect, NSpace, NTag, NText, NTooltip, NIcon, useMessage} from "naive-ui";
@@ -98,7 +97,7 @@ function addScreenStrategy() {
   const current = s.screenStrategies.find((item) => item.id === s.activeScreenStrategyId) || s.screenStrategies[0]
   const item = {
     id: createStrategyId(),
-    name: `策略 ${s.screenStrategies.length + 1}`,
+    name: `参数预设 ${s.screenStrategies.length + 1}`,
     settings: extractSignalStrategySettings(current?.settings || s),
   }
   s.screenStrategies = [...s.screenStrategies, item]
@@ -122,7 +121,7 @@ function duplicateScreenStrategy() {
 function deleteScreenStrategy() {
   const s = mergeSignalSettings(signalSettingsState.value)
   if (s.screenStrategies.length <= 1) {
-    message.warning('至少保留一个策略')
+    message.warning('至少保留一个参数预设')
     return
   }
   const idx = s.screenStrategies.findIndex((item) => item.id === s.activeScreenStrategyId)
@@ -366,23 +365,10 @@ function saveConfig() {
     signalParams: serializeSignalParams(signalSettingsState.value),
   })
 
-  if (config.sponsorCode) {
-    CheckSponsorCode(config.sponsorCode).then(res => {
-      if (res.code) {
-        UpdateConfig(config).then(res => {
-          message.success(res)
-          EventsEmit("updateSettings", config);
-        })
-      } else {
-        message.error(res.msg)
-      }
-    })
-  } else {
-    UpdateConfig(config).then(res => {
-      message.success(res)
-      EventsEmit("updateSettings", config);
-    })
-  }
+  UpdateConfig(config).then(res => {
+    message.success(res)
+    EventsEmit("updateSettings", config);
+  })
 }
 
 
@@ -712,12 +698,15 @@ function deletePrompt(ID) {
                 <template #header>
                   <n-space align="center" :size="8">
                     <n-tag type="warning" :bordered="false">K线信号参数</n-tag>
-                    <n-text depth="3" style="font-size: 12px">自定义买卖点识别阈值</n-text>
+                    <n-text depth="3" style="font-size: 12px">
+                      自定义买卖点识别阈值 · 只影响未来扫描，不改历史计划与策略解释
+                    </n-text>
+                    <n-tag size="small" type="info" :bordered="false">Beta</n-tag>
                   </n-space>
                 </template>
                 <div class="screen-strategy-manager">
                   <n-space align="center" :size="[8, 8]" wrap>
-                    <n-text depth="3">当前策略</n-text>
+                    <n-text depth="3">当前参数预设</n-text>
                     <n-select
                       v-model:value="activeStrategyId"
                       :options="strategyOptions"
@@ -725,13 +714,13 @@ function deletePrompt(ID) {
                     />
                     <n-input
                       v-model:value="activeStrategyName"
-                      placeholder="策略名称"
+                      placeholder="参数预设名称"
                       style="width: 180px"
                     />
-                    <n-button size="small" tertiary type="primary" @click="addScreenStrategy">新建</n-button>
+                    <n-button size="small" tertiary type="primary" @click="addScreenStrategy">新建预设</n-button>
                     <n-button size="small" tertiary @click="duplicateScreenStrategy">复制</n-button>
                     <n-button size="small" tertiary type="error" @click="deleteScreenStrategy">删除</n-button>
-                    <n-text depth="3" style="font-size: 12px">股票筛选页可按策略筛选或生成快照</n-text>
+                    <n-text depth="3" style="font-size: 12px">信号参数预设（非交易 Strategy）；股票筛选页可按预设筛选或生成快照</n-text>
                   </n-space>
                 </div>
                 <SignalSettingsPanel v-model="activeStrategySettings" :show-display="false" />

@@ -21,7 +21,7 @@ func TestPaperTradingReportsDaily_GET(t *testing.T) {
 	now := time.Now()
 	plan := &models.TradePlan{
 		TradeDate: "2026-07-30", GeneratedAt: now, Status: models.TradePlanStatusReady,
-		FreezeAt: &now, FreezeBy: "test", PlanVersion: 1, Side: "buy", AmountPerStock: 100_000,
+		FreezeAt: &now, FreezeBy: "test", ApprovedAt: &now, ApprovedBy: "test", PlanVersion: 1, Side: "buy", AmountPerStock: 100_000,
 	}
 	require.NoError(t, data.NewTradePlanRepo().CreatePlanWithItems(plan, []models.TradePlanItem{
 		{StockCode: "sz000001", StockName: "平安银行", Side: "buy", Status: models.TradePlanItemPending, TargetVolume: 1000, LimitPrice: 10},

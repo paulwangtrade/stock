@@ -18,10 +18,20 @@ type CrawlerApi struct {
 	pool            *BrowserPool
 }
 
-func (c *CrawlerApi) NewTimeOutCrawler(timeout int, crawlerBaseInfo CrawlerBaseInfo) CrawlerApi {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
-	defer cancel()
-	return c.NewCrawler(ctx, crawlerBaseInfo)
+func (c *CrawlerApi) NewTimeOutCrawler(
+	timeout int,
+	crawlerBaseInfo CrawlerBaseInfo,
+) CrawlerApi {
+
+	ctx, _ := context.WithTimeout(
+		context.Background(),
+		time.Duration(timeout)*time.Second,
+	)
+
+	return c.NewCrawler(
+		ctx,
+		crawlerBaseInfo,
+	)
 }
 func (c *CrawlerApi) NewCrawler(ctx context.Context, crawlerBaseInfo CrawlerBaseInfo) CrawlerApi {
 	return CrawlerApi{
@@ -31,11 +41,52 @@ func (c *CrawlerApi) NewCrawler(ctx context.Context, crawlerBaseInfo CrawlerBase
 	}
 }
 func (c *CrawlerApi) GetHtml(url, waitVisible string, headless bool) (string, bool) {
-	page, err := c.pool.FetchPage(url, waitVisible)
-	if err != nil {
-		return "", false
+
+	logger.SugaredLogger.Infof(
+		"crawler start url=%s wait=%s",
+		url,
+		waitVisible,
+	)
+
+	var lastErr error
+
+	for i := 0; i < 1; i++ {
+
+		page, err := c.pool.FetchPage(url, waitVisible)
+
+		if err == nil && page != "" {
+
+			logger.SugaredLogger.Infof(
+				"crawler success url=%s try=%d",
+				url,
+				i+1,
+			)
+
+			return page, true
+		}
+
+
+		lastErr = err
+
+		logger.SugaredLogger.Warnf(
+			"crawler retry url=%s try=%d error=%v",
+			url,
+			i+1,
+			err,
+		)
+
+		time.Sleep(time.Second * 2)
 	}
-	return page, true
+
+
+	logger.SugaredLogger.Errorf(
+		"crawler failed url=%s error=%v",
+		url,
+		lastErr,
+	)
+
+
+	return "", false
 }
 func (c *CrawlerApi) GetHtml_old(url, waitVisible string, headless bool) (string, bool) {
 	htmlContent := ""

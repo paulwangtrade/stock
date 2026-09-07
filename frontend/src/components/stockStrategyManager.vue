@@ -127,6 +127,10 @@ const darkTheme = ref(false)
 /** 行代码 → 冰点/买点扫描结果 */
 const signalByCode = ref(new Map())
 const scanBuyLoading = ref(false)
+const scanProgressDone = ref(0)
+const scanProgressTotal = ref(0)
+const resultStrategySummary = ref('')
+const resultHistoryLoading = ref(false)
 const showBuyOnly = ref(false)
 const showSignalHitsOnly = ref(false)
 const filterSignalTags = ref([])
@@ -575,13 +579,14 @@ async function fetchLiveSignalAsOfDay() {
   }
 }
 
-async function runPool(tasks, concurrency = 4) {
+async function runPool(tasks, concurrency = 4, onItemDone) {
   const results = []
   let i = 0
   async function worker() {
     while (i < tasks.length) {
       const idx = i++
       results[idx] = await tasks[idx]()
+      if (typeof onItemDone === 'function') onItemDone(idx, results[idx])
     }
   }
   const workers = Array.from({ length: Math.min(concurrency, tasks.length) }, () => worker())
@@ -596,6 +601,8 @@ async function scanBuySignals() {
     return
   }
   scanBuyLoading.value = true
+  scanProgressDone.value = 0
+  scanProgressTotal.value = rows.length
   signalByCode.value = new Map()
   const replayDay = resultReplayDayKey.value
   liveSignalAsOfDay.value = replayDay || ''
@@ -604,6 +611,7 @@ async function scanBuySignals() {
       liveSignalAsOfDay.value = await fetchLiveSignalAsOfDay()
     }
     const indexMa20ByDay = await ensureIndexMa20ByDay(replayDay)
+    const map = new Map()
     const tasks = rows.map((row) => async () => {
       const key = rowKey(row)
       if (!key) {
@@ -633,8 +641,13 @@ async function scanBuySignals() {
       }
       return [key, { ok: true, ...summary }]
     })
-    const pairs = await runPool(tasks, 4)
-    const map = new Map()
+    const pairs = await runPool(tasks, 4, (_idx, pair) => {
+      scanProgressDone.value += 1
+      if (pair && pair[0]) {
+        map.set(pair[0], pair[1])
+        signalByCode.value = new Map(map)
+      }
+    })
     for (const pair of pairs) {
       if (pair && pair[0]) map.set(pair[0], pair[1])
     }
@@ -930,10 +943,38 @@ function buildTechnicalColumns() {
   ]
 }
 
+const resultRunAtLabel = computed(() => {
+  const raw = String(resultView.value?.runAt || '').trim()
+  if (raw) return raw
+  return ''
+})
+
+const resultConditionSummary = computed(() => {
+  const trace = String(resultView.value?.traceInfo || '').trim()
+  if (trace) return trace
+  const sum = String(resultStrategySummary.value || '').trim()
+  if (sum) return sum
+  const msg = String(resultView.value?.message || '').trim()
+  if (msg && msg !== 'success') return msg
+  return ''
+})
+
+const klineSignalStatusLabel = computed(() => {
+  if (scanBuyLoading.value) {
+    return `○ 扫描中… 已完成 ${scanProgressDone.value} / ${scanProgressTotal.value} 股票`
+  }
+  if (signalByCode.value.size > 0) {
+    return '✓ 已基于行情重新计算（非运行当时入库快照）'
+  }
+  return '○ 当前未计算'
+})
+
 function showRunResult(view, replayDayKey = '') {
   resultView.value = view
   resultReplayDayKey.value = replayDayKey || parseRunDayKey(view?.runAt) || ''
   signalByCode.value = new Map()
+  scanProgressDone.value = 0
+  scanProgressTotal.value = 0
   showBuyOnly.value = false
   showSignalHitsOnly.value = false
   filterSignalTags.value = []
@@ -942,6 +983,7 @@ function showRunResult(view, replayDayKey = '') {
   referencePatternLabel.value = ''
   indexMa20ByDayCache = null
   indexMa20FetchPromise = null
+  resultStrategySummary.value = ''
   if (view.queryType === 'eastmoney_nl') {
     resultColumns.value = buildNlColumns(view.columns || [])
     if (!resultColumns.value.find((c) => c.key === 'actions')) {
@@ -962,7 +1004,17 @@ function showRunResult(view, replayDayKey = '') {
     resultData.value = view.dataList || []
   }
   showResult.value = true
-  scanBuySignals()
+  // P0: 不自动 scanBuySignals —— 名单来自 result_json 快照，信号需用户主动「重新扫描」
+  const sid = Number(view?.strategyId || view?.strategy_id || 0)
+  if (sid > 0) {
+    GetStockStrategySummary(sid)
+      .then((s) => {
+        resultStrategySummary.value = String(s || '').trim()
+      })
+      .catch(() => {
+        resultStrategySummary.value = ''
+      })
+  }
 }
 
 function followRow(row) {
@@ -1020,14 +1072,19 @@ function formatRunTime(createdAt) {
 }
 
 async function viewRun(run) {
-  const view = await GetStockStrategyRunDetail(run.id)
-  if (!view) {
-    message.error('加载失败')
-    return
+  resultHistoryLoading.value = true
+  try {
+    const view = await GetStockStrategyRunDetail(run.id)
+    if (!view) {
+      message.error('加载失败')
+      return
+    }
+    showHistory.value = false
+    const replayDay = parseRunDayKey(view.runAt || run.createdAt)
+    showRunResult(view, replayDay)
+  } finally {
+    resultHistoryLoading.value = false
   }
-  showHistory.value = false
-  const replayDay = parseRunDayKey(view.runAt || run.createdAt)
-  showRunResult(view, replayDay)
 }
 
 function remove(row) {
@@ -1230,9 +1287,17 @@ onBeforeUnmount(() => {
     </n-modal>
 
     <n-modal v-model:show="showResult" preset="card" :title="resultModalTitle" style="width: 92vw; max-width: 1200px">
-      <n-text v-if="resultView?.traceInfo" type="info" style="display: block; margin-bottom: 8px">
-        条件：{{ resultView.traceInfo }}
-      </n-text>
+      <n-alert type="info" :bordered="false" style="margin-bottom: 8px" title="数据来源说明">
+        <div style="font-size: 13px; line-height: 1.55">
+          <div>历史选股结果：✓ 来自策略运行快照（stock_strategy_runs.result_json）</div>
+          <div v-if="resultRunAtLabel">运行时间：{{ resultRunAtLabel }}</div>
+          <div v-if="resultConditionSummary">策略条件摘要：{{ resultConditionSummary }}</div>
+          <div>K线信号分析：{{ klineSignalStatusLabel }}</div>
+          <div v-if="!signalByCode.size && !scanBuyLoading" style="opacity: 0.85; margin-top: 4px">
+            点击「重新扫描K线信号」后，将基于行情重新计算 RSI/冰点等指标（非运行当时入库的信号快照）。
+          </div>
+        </div>
+      </n-alert>
       <n-alert
         v-if="resultReplayDayKey"
         type="warning"
@@ -1240,13 +1305,16 @@ onBeforeUnmount(() => {
         style="margin-bottom: 8px"
         :title="'历史回放 · 截止 ' + resultReplayDayKey"
       >
-        表格价格为执行当时快照；买点/K 线按该日及之前 K 线回放，不含之后行情。
+        表格价格为执行当时快照；若重新扫描，买点/K 线按该日及之前 K 线回放计算，不含之后行情。
       </n-alert>
       <n-space vertical :size="8" style="margin-bottom: 8px">
         <n-space wrap align="center">
           <n-button size="small" type="primary" :loading="scanBuyLoading" @click="scanBuySignals">
-            扫描K线信号
+            重新扫描K线信号
           </n-button>
+          <n-text v-if="scanBuyLoading" depth="3" style="font-size: 13px">
+            扫描中… 已完成 {{ scanProgressDone }} / {{ scanProgressTotal }} 股票
+          </n-text>
           <n-select
             v-model:value="filterSignalTags"
             :options="signalFilterOptions"
@@ -1309,7 +1377,7 @@ onBeforeUnmount(() => {
       <n-data-table
         :columns="resultColumns"
         :data="displayResultData"
-        :loading="scanBuyLoading"
+        :loading="false"
         :pagination="{ pageSize: 15 }"
         size="small"
         :scroll-x="900"
@@ -1335,7 +1403,7 @@ onBeforeUnmount(() => {
         size="small"
         :columns="historyColumns"
         :data="historyRuns"
-        :loading="historyLoading"
+        :loading="historyLoading || resultHistoryLoading"
         :pagination="historyPagination"
         :row-key="(row) => row.id"
         :scroll-x="520"

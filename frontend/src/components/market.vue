@@ -38,7 +38,7 @@ import SelectStock from "./SelectStock.vue";
 import Stockhotmap from "./stockhotmap.vue";
 
 const route = useRoute()
-const icon = ref('https://raw.githubusercontent.com/ArvinLovegood/go-stock/master/build/appicon.png');
+const icon = ref('');
 
 /** 列表展示去重（历史库中可能已有重复记录） */
 function dedupeTelegraphList(list) {

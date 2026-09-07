@@ -6,9 +6,12 @@ import (
 	"strings"
 
 	"go-stock/backend/data"
+	"go-stock/backend/instrument"
 	"go-stock/backend/logger"
 	"go-stock/backend/models"
+	"go-stock/backend/portfolio"
 	"go-stock/backend/tradingconfig"
+	"go-stock/backend/tradingrule"
 )
 
 const (
@@ -26,14 +29,14 @@ const (
 )
 
 // MorningAccountSnapshot is a read-only cash/position view for position materialization.
-// Tests inject mocks; production may load from PaperTradingApi.GetSnapshot.
+// Tests inject mocks; production loads from portfolio.Snapshot (paper_sim_*).
 type MorningAccountSnapshot struct {
-	Cash              float64
-	Equity            float64
-	LongMarketValue   float64
-	ShortMarketValue  float64
-	NameMarketValue   map[string]float64 // code → MV
-	PositionVolumes   map[string]int64   // code → shares (conflict check)
+	Cash             float64
+	Equity           float64
+	LongMarketValue  float64
+	ShortMarketValue float64
+	NameMarketValue  map[string]float64 // code → MV
+	PositionVolumes  map[string]int64   // code → shares (conflict check)
 }
 
 // MorningRiskLimits is a read-only exposure cap view (does not mutate Risk config).
@@ -51,14 +54,16 @@ type MorningPositionMaterializeOpts struct {
 
 // MorningPositionMaterializeResult is the outcome of limit_price → target_volume materialization.
 type MorningPositionMaterializeResult struct {
-	PlanID        uint   `json:"planId"`
-	NoOp          bool   `json:"noOp"`
-	NoOpReason    string `json:"noOpReason,omitempty"`
-	PricingStage  string `json:"pricingStage,omitempty"`
-	SizedCount    int    `json:"sizedCount"`
-	SizeSkipCount int    `json:"sizeSkipCount"`
-	IdempotentSkip int   `json:"idempotentSkip"`
-	SkippedOther  int    `json:"skippedOther"`
+	PlanID         uint   `json:"planId"`
+	NoOp           bool   `json:"noOp"`
+	NoOpReason     string `json:"noOpReason,omitempty"`
+	PricingStage   string `json:"pricingStage,omitempty"`
+	SizedCount     int    `json:"sizedCount"`
+	SizeSkipCount  int    `json:"sizeSkipCount"`
+	IdempotentSkip int    `json:"idempotentSkip"`
+	SkippedOther   int    `json:"skippedOther"`
+	// QuantityShadows: Phase12-M2.2.5 read-only Policy vs legacy compare (does not affect target_volume).
+	QuantityShadows []QuantityShadowObservation `json:"quantityShadows,omitempty"`
 }
 
 // MaterializeMorningTargetVolumes materializes priced Intent → target_volume for a draft plan.
@@ -134,7 +139,10 @@ func MaterializeMorningTargetVolumes(planID uint, opts *MorningPositionMateriali
 		beforeRiskCode := it.RiskCode
 		beforeRiskMsg := it.RiskMessage
 
-		action, binding := materializeMorningItemVolume(plan, it, snap, limits, remainingCash, committedExtra, baseGross, equity, opts.Force)
+		action, binding, shadow := materializeMorningItemVolume(plan, it, snap, limits, remainingCash, committedExtra, baseGross, equity, opts.Force)
+		if shadow != nil {
+			out.QuantityShadows = append(out.QuantityShadows, *shadow)
+		}
 
 		// Hard rules: never mutate price/budget/risk audit via this path.
 		it.LimitPrice = beforeLimit
@@ -211,22 +219,23 @@ func materializeMorningItemVolume(
 	limits *MorningRiskLimits,
 	remainingCash, committedExtra, baseGross, equity float64,
 	force bool,
-) (action string, binding string) {
+) (action string, binding string, shadow *QuantityShadowObservation) {
 	if it == nil {
-		return morningPosActionNone, ""
+		return morningPosActionNone, "", nil
 	}
 	if strings.TrimSpace(it.IntentStatus) != morningIntentStatusPriced {
-		return morningPosActionSkip, ""
+		return morningPosActionSkip, "", nil
 	}
 	side := strings.ToLower(strings.TrimSpace(it.Side))
 	if side != "" && side != "buy" {
-		return morningPosActionSkip, ""
+		return morningPosActionSkip, "", nil
 	}
 	if it.LimitPrice <= 0 {
-		return morningPosActionSkip, ""
+		return morningPosActionSkip, "", nil
 	}
-	if !force && it.TargetVolume >= morningLotSize {
-		return morningPosActionIdempotent, morningBindIdempotent
+	minLot := morningBuyMinLot(it.StockCode)
+	if !force && it.TargetVolume >= minLot {
+		return morningPosActionIdempotent, morningBindIdempotent, nil
 	}
 
 	code := strings.ToLower(strings.TrimSpace(it.StockCode))
@@ -236,7 +245,7 @@ func materializeMorningItemVolume(
 		if vol := snap.PositionVolumes[code]; vol != 0 {
 			it.IntentStatus = morningIntentStatusSizeSkip
 			it.TargetVolume = 0
-			return morningPosActionSizeSkip, morningBindPositionConflict
+			return morningPosActionSizeSkip, morningBindPositionConflict, nil
 		}
 	}
 
@@ -247,7 +256,7 @@ func materializeMorningItemVolume(
 	if budget <= 0 {
 		it.IntentStatus = morningIntentStatusSizeSkip
 		it.TargetVolume = 0
-		return morningPosActionSizeSkip, morningBindNoBudget
+		return morningPosActionSizeSkip, morningBindNoBudget, nil
 	}
 
 	nameMV := 0.0
@@ -273,19 +282,24 @@ func materializeMorningItemVolume(
 	if effective <= 0 {
 		it.IntentStatus = morningIntentStatusSizeSkip
 		it.TargetVolume = 0
-		return morningPosActionSizeSkip, binding
+		return morningPosActionSizeSkip, binding, nil
 	}
 
-	vol := calcMorningLotVolume(effective, it.LimitPrice)
-	if vol < morningLotSize {
+	// Phase12-M2.2.5: shadow compare always (Flag stays off in production; does not drive volume).
+	obs := ObserveQuantityPolicyShadow(it.StockCode, effective, it.LimitPrice)
+	logQuantityPolicyShadow(obs)
+	shadow = &obs
+
+	vol := calcMorningTargetVolume(it.StockCode, effective, it.LimitPrice)
+	if vol < minLot {
 		it.IntentStatus = morningIntentStatusSizeSkip
 		it.TargetVolume = 0
-		return morningPosActionSizeSkip, morningBindLot
+		return morningPosActionSizeSkip, morningBindLot, shadow
 	}
 
 	it.IntentStatus = morningIntentStatusPriced
 	it.TargetVolume = vol
-	return morningPosActionSized, binding
+	return morningPosActionSized, binding, shadow
 }
 
 func minPositiveConstraint(budget, cash, singleName, gross float64) (effective float64, binding string) {
@@ -307,11 +321,48 @@ func minPositiveConstraint(budget, cash, singleName, gross float64) (effective f
 }
 
 // calcMorningLotVolume floors to A-share lot (100). Uses limit_price (Order Spec), not live quote.
+// Legacy path — used when EnableQuantityPolicy is false.
 func calcMorningLotVolume(effectiveAmount, limitPrice float64) int64 {
 	if effectiveAmount <= 0 || limitPrice <= 0 {
 		return 0
 	}
 	return int64(math.Floor(effectiveAmount/limitPrice/float64(morningLotSize)) * float64(morningLotSize))
+}
+
+// calcMorningTargetVolume selects legacy /100 or QuantityPolicy (Flag).
+//
+//	Flag OFF → calcMorningLotVolume (unchanged)
+//	Flag ON  → raw = floor(amount/price) → NormalizeBuyQuantity → target_volume
+func calcMorningTargetVolume(stockCode string, effectiveAmount, limitPrice float64) int64 {
+	if !tradingrule.EnableQuantityPolicy() {
+		return calcMorningLotVolume(effectiveAmount, limitPrice)
+	}
+	if effectiveAmount <= 0 || limitPrice <= 0 {
+		return 0
+	}
+	rawQty := int64(math.Floor(effectiveAmount / limitPrice))
+	meta := morningQuantityMeta(stockCode)
+	return tradingrule.NormalizeBuyQuantity(meta, rawQty).NormalizedQty
+}
+
+// morningBuyMinLot is the idempotent / size_skip threshold for buy volume.
+func morningBuyMinLot(stockCode string) int64 {
+	if !tradingrule.EnableQuantityPolicy() {
+		return morningLotSize
+	}
+	return tradingrule.PolicyFromInstrumentMeta(morningQuantityMeta(stockCode)).MinBuyQty()
+}
+
+// morningQuantityMeta resolves M1 template meta from code (no DB; fail-closed MAIN).
+func morningQuantityMeta(stockCode string) instrument.QuantityMeta {
+	id, err := instrument.Classify(stockCode)
+	if err != nil {
+		return instrument.TemplateQuantityMeta(instrument.SecurityUnknown, instrument.BoardUNKNOWN)
+	}
+	meta := instrument.TemplateQuantityMeta(id.SecurityType, id.MarketSegment)
+	meta.Symbol = id.Symbol
+	meta.IdentitySource = id.Source
+	return meta
 }
 
 func normalizeMorningRiskLimits(l *MorningRiskLimits) {
@@ -340,32 +391,24 @@ func loadMorningAccountSnapshotDefault() *MorningAccountSnapshot {
 		NameMarketValue: map[string]float64{},
 		PositionVolumes: map[string]int64{},
 	}
-	paper := data.NewPaperTradingApi()
-	snap, err := paper.GetSnapshot(0)
-	if err != nil || snap == nil {
-		logger.SugaredLogger.Warnf("morning position materialize: snapshot unavailable: %v", err)
+	snap, err := portfolio.NewService().Snapshot(portfolio.SnapshotOptions{})
+	if err != nil || snap == nil || !snap.Found {
+		logger.SugaredLogger.Warnf("morning position materialize: portfolio snapshot unavailable: %v", err)
 		return out
 	}
-	out.Cash = snap.Account.Cash
-	out.Equity = snap.Account.Equity
-	longMV := 0.0
+	out.Cash = snap.Cash
+	out.Equity = snap.TotalEquity
+	out.LongMarketValue = snap.MarketValue
 	for _, p := range snap.Positions {
-		px := p.MarkPrice
-		if px <= 0 {
-			px = p.AvgCost
-		}
-		mv := px * float64(p.Volume)
-		longMV += mv
 		code := strings.ToLower(strings.TrimSpace(p.StockCode))
-		if code == "" {
+		if code == "" || p.Volume <= 0 {
 			continue
 		}
-		out.NameMarketValue[code] = mv
+		out.NameMarketValue[code] = p.MarketValue
 		out.PositionVolumes[code] = p.Volume
 	}
-	out.LongMarketValue = longMV
 	if out.Equity <= 0 {
-		out.Equity = out.Cash + longMV
+		out.Equity = out.Cash + out.LongMarketValue
 	}
 	return out
 }

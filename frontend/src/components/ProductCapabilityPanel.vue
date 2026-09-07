@@ -1,9 +1,11 @@
 <script setup>
 /**
- * Phase13-D/H: shared capability panel with Locked experience + Upgrade CTA.
+ * Phase13-D/H + V2 polish: Locked Pro capability panel + Upgrade CTA.
+ * Frontend-only; does not change FeatureGate / UsageMetrics / trading chain.
  */
-import { computed, onMounted, ref, watch } from 'vue'
-import { NButton, NSpace, NTag, NText, NSelect } from 'naive-ui'
+import { computed, h, onMounted, ref, watch } from 'vue'
+import { NButton, NSpace, NTag, NText, NSelect, NIcon, NEmpty } from 'naive-ui'
+import { LockClosedOutline, LockOpenOutline, SparklesOutline } from '@vicons/ionicons5'
 import {
   getProductFeatureGate,
   gateAllowed,
@@ -60,6 +62,10 @@ const tierOptions = [
   { label: 'Free（基础）', value: 'free' },
   { label: 'Pro（高级入口）', value: 'pro' },
 ]
+
+function renderSparklesIcon() {
+  return h(NIcon, { size: 16, component: SparklesOutline })
+}
 
 async function refreshGate() {
   gateLoading.value = true
@@ -137,11 +143,20 @@ defineExpose({ tier, allowed, refreshGate })
   <div class="product-cap-panel" :class="{ locked: !allowed }">
     <n-space justify="space-between" align="center" :wrap="true" style="margin-bottom: 8px">
       <n-space align="center" :wrap="true">
-        <n-text strong>{{ title }}</n-text>
-        <n-tag size="small" :type="allowed ? 'success' : 'warning'" :bordered="false">
-          {{ allowed ? 'Pro 可用' : 'Locked' }}
+        <n-text strong class="panel-title">{{ title }}</n-text>
+        <n-tag
+          size="small"
+          :type="allowed ? 'success' : 'warning'"
+          :bordered="false"
+          :class="allowed ? 'status-tag' : 'status-tag status-tag--locked'"
+        >
+          <n-space :size="4" align="center">
+            <n-icon v-if="!allowed" :component="LockClosedOutline" :size="14" class="lock-icon" />
+            <n-icon v-else :component="LockOpenOutline" :size="14" class="lock-icon lock-icon--open" />
+            <span>{{ allowed ? 'Pro 可用' : 'Locked' }}</span>
+          </n-space>
         </n-tag>
-        <n-tag size="small" :bordered="false">{{ feature }}</n-tag>
+        <n-tag size="small" :bordered="false" class="feature-tag">{{ feature }}</n-tag>
       </n-space>
       <n-space align="center" :wrap="true">
         <n-select
@@ -164,9 +179,12 @@ defineExpose({ tier, allowed, refreshGate })
         </n-button>
         <n-button
           v-else
-          size="small"
-          type="primary"
+          class="upgrade-cta"
+          size="medium"
+          type="warning"
+          strong
           :loading="upgradeLoading"
+          :render-icon="renderSparklesIcon"
           @click="onUpgrade"
         >
           升级到 Pro（演示）
@@ -176,25 +194,50 @@ defineExpose({ tier, allowed, refreshGate })
 
     <template v-if="!allowed">
       <div class="locked-box">
-        <n-text strong style="display: block; margin-bottom: 4px">功能说明</n-text>
-        <n-text depth="3" style="display: block; font-size: 12px; margin-bottom: 8px">
+        <div class="locked-box__head">
+          <n-icon :component="LockClosedOutline" :size="20" class="locked-box__icon" />
+          <n-text strong class="locked-box__title">Pro 功能已锁定</n-text>
+        </div>
+        <n-text class="locked-box__label">功能说明</n-text>
+        <n-text class="locked-box__body">
           {{ defaultDescription }}
         </n-text>
-        <n-text strong style="display: block; margin-bottom: 4px">价值说明</n-text>
-        <n-text depth="3" style="display: block; font-size: 12px; margin-bottom: 8px">
+        <n-text class="locked-box__label">价值说明</n-text>
+        <n-text class="locked-box__body">
           {{ defaultValueHint }}
         </n-text>
-        <n-text strong style="display: block; margin-bottom: 4px">升级提示</n-text>
-        <n-text depth="3" style="display: block; font-size: 12px">
-          此功能属于 Pro。点击「升级到 Pro（演示）」切换本地档位即可体验（无支付 / 无账号）。
+        <n-text class="locked-box__label">升级提示</n-text>
+        <n-text class="locked-box__body locked-box__body--last">
+          此功能属于 Pro。使用下方主按钮切换本地演示档位即可体验（无支付 / 无账号）。
           <template v-if="gateReason && gateReason !== 'OK'">
             · Gate: {{ gateReason }}
           </template>
         </n-text>
+        <n-button
+          class="upgrade-cta upgrade-cta--in-box"
+          block
+          type="warning"
+          strong
+          :loading="upgradeLoading"
+          :render-icon="renderSparklesIcon"
+          @click="onUpgrade"
+        >
+          升级到 Pro（演示）
+        </n-button>
+      </div>
+
+      <div class="locked-empty">
+        <n-empty size="small" description="内容已锁定，升级 Pro 后可查看">
+          <template #icon>
+            <n-icon :component="LockClosedOutline" :size="36" class="locked-empty__icon" />
+          </template>
+        </n-empty>
       </div>
     </template>
 
-    <slot :allowed="allowed" :tier="tier" />
+    <div v-show="allowed" class="panel-slot">
+      <slot :allowed="allowed" :tier="tier" />
+    </div>
   </div>
 </template>
 
@@ -207,13 +250,94 @@ defineExpose({ tier, allowed, refreshGate })
   background: var(--n-color);
 }
 .product-cap-panel.locked {
-  border-style: dashed;
-  border-color: rgba(240, 160, 32, 0.45);
+  border-style: solid;
+  border-width: 1px;
+  border-color: #c47a12;
+  background: linear-gradient(180deg, #fff8eb 0%, #fff3dc 100%);
 }
+.panel-title {
+  color: #1f1f1f;
+}
+.status-tag--locked {
+  font-weight: 600;
+}
+.lock-icon {
+  color: #b45309;
+  opacity: 1;
+}
+.lock-icon--open {
+  color: #15803d;
+}
+.feature-tag {
+  opacity: 0.9;
+}
+
 .locked-box {
-  padding: 10px 12px;
-  margin-bottom: 8px;
-  border-radius: 6px;
-  background: rgba(240, 160, 32, 0.08);
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(180, 83, 9, 0.35);
+  background: #fffaf0;
+  color: #292524;
+}
+.locked-box__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.locked-box__icon {
+  color: #b45309;
+  flex-shrink: 0;
+}
+.locked-box__title {
+  color: #9a3412;
+  font-size: 14px;
+}
+.locked-box__label {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 12px;
+  font-weight: 650;
+  color: #7c2d12;
+}
+.locked-box__body {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #44403c;
+}
+.locked-box__body--last {
+  margin-bottom: 12px;
+}
+
+.upgrade-cta {
+  font-weight: 650;
+  box-shadow: 0 1px 0 rgba(180, 83, 9, 0.18);
+}
+.upgrade-cta--in-box {
+  margin-top: 2px;
+}
+
+.locked-empty {
+  padding: 6px 0 2px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.55);
+}
+.locked-empty__icon {
+  color: #b45309;
+  opacity: 1;
+}
+.locked-empty :deep(.n-empty__icon) {
+  opacity: 1;
+  color: #b45309;
+}
+.locked-empty :deep(.n-empty__description) {
+  color: #57534e;
+  opacity: 1;
+}
+.panel-slot {
+  min-height: 0;
 }
 </style>

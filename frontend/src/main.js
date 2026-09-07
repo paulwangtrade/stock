@@ -2,8 +2,13 @@ import {createApp} from 'vue'
 import naive from 'naive-ui'
 import App from './App.vue'
 import router from './router/router'
+import { markAppBootStart } from './services/performanceMetrics'
+// Phase16.26-A design tokens (brand / market up-down / opportunity)
+import './styles/designTokens.css'
 // 引入组件库的少量全局样式变量
 import 'tdesign-vue-next/es/style/index.css';
+
+markAppBootStart()
 
 const app = createApp(App)
 

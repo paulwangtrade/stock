@@ -1,5 +1,7 @@
 <script setup>
 import { GetStockEastMoneyKLine, GetStockEastMoneyKLinePage } from '../../wailsjs/go/main/App'
+import { getOrFetch, klineCacheKey } from '../utils/klineCache'
+import { isKlineMarketLive } from '../utils/tradingSession.js'
 import {
   CandlestickSeries,
   createChart,
@@ -28,7 +30,12 @@ import {
   getScreenStrategyOptions,
   signalSettingsState,
 } from '../utils/signalSettingsStore'
+import {
+  ICE_SIGNAL_UNSUPPORTED_HINT,
+  isIceSignalVisibleOnKlt,
+} from '../utils/signalTimeframe'
 import { buildBarSignalHint, formatSignalActionTooltip } from '../utils/signalActionHint'
+import { quantDecisionFor } from '../utils/quantAutomationStore'
 import { resolveSignalLastBarIndexForReplay } from '../utils/tradingSession'
 import { eastMoneyCodeVariants, toEastMoneyCode } from '../utils/stockCode'
 import {
@@ -131,8 +138,13 @@ const showOBV = ref(false)
 const showMACD = ref(false)
 const showKDJ = ref(false)
 const showRSI = ref(false)
-/** 冰点 / 买卖点 / MA20 支撑 */
+/** 冰点 / 买卖点 / MA20 支撑 — 用户开关（切周期不清除） */
 const showIceSignals = ref(false)
+/** 冰点 markers 仅日 K（Phase17.4）；DAILY_LIKE 仍用于时间轴/分钟判断，勿混用 */
+const iceSignalCompatible = computed(() => isIceSignalVisibleOnKlt(activeKlt.value))
+const iceSignalGateHint = computed(() =>
+  showIceSignals.value && !iceSignalCompatible.value ? ICE_SIGNAL_UNSUPPORTED_HINT : '',
+)
 const signalStatus = ref(null)
 const selectedSignalStrategyId = ref('')
 /** 日 K 信号标记 → 操作提示（barIndex → hint） */
@@ -165,6 +177,7 @@ let chart = null
 let candleSeries = null
 let volSeries = null
 let pollTimer = null
+let pollGateTimer = null
 /** 已合并的后端原始 K 线（按时间升序） */
 let mergedRawRows = []
 const hasMoreOlder = ref(true)
@@ -271,7 +284,12 @@ async function ensureIndexMa20ByDay() {
   if (indexMa20FetchPromise && !asOf) return indexMa20FetchPromise
   indexMa20FetchPromise = (async () => {
     try {
-      const raw = await GetStockEastMoneyKLine('000001.SH', '上证指数', '101', 800)
+      const raw = await getOrFetch(
+        klineCacheKey('000001.sh', '101'),
+        () => GetStockEastMoneyKLine('000001.SH', '上证指数', '101', 800),
+        undefined,
+        { shouldCache: (data) => Array.isArray(data) && data.length > 0 },
+      )
       const list = Array.isArray(raw) ? raw : []
       const closeByDay = new Map()
       for (const r of list) {
@@ -838,14 +856,23 @@ async function syncStrategySignals() {
     clearStrategyOverlays()
     return
   }
-  if (!DAILY_LIKE_KLT.has(activeKlt.value)) {
+  // Phase17.4：保留 showIceSignals 用户意图；周期不匹配只隐藏 markers
+  if (!isIceSignalVisibleOnKlt(activeKlt.value)) {
     signalStatus.value = {
-      text: '冰点/买卖点仅适用于日K、周K、月K等周期',
+      text: ICE_SIGNAL_UNSUPPORTED_HINT,
       type: 'warning',
       rsi: null,
       ma20: null,
     }
     detachStrategyMarkers()
+    if (ma20SupportPriceLine && candleSeries) {
+      try {
+        candleSeries.removePriceLine(ma20SupportPriceLine)
+      } catch {
+        /* ignore */
+      }
+      ma20SupportPriceLine = null
+    }
     return
   }
 
@@ -953,13 +980,15 @@ async function syncStrategySignals() {
     if (i >= times.length) return
     const st = markerStyle(tag, isFocus)
     markers.push({ time: times[i], position: st.position, color: st.color, shape: st.shape, size: st.size, text: markerText(tag) })
+    const decision = quantDecisionFor(props.code)
     let hint = buildBarSignalHint({
       sig,
       bars: barPayload,
       barIndex: i,
       tag,
-      options: { ...signalOpts, ...extraOpts },
+      options: { ...signalOpts, ...extraOpts, code: props.code },
       livePrice,
+      decision,
     })
     if (hint && watchlistCostCtx && (tag === '减' || tag === '止' || tag === RUSH_REDUCE_TAG)) {
       const pct = extraOpts.rushReducePct ?? extraOpts.sellPositionPct ?? hint.sellPositionPct
@@ -974,13 +1003,15 @@ async function syncStrategySignals() {
     markers.push({ time, position: st.position, color: st.color, shape: st.shape, size: st.size, text: markerText(tag) })
     const hintIdx = hintBarIdx >= 0 ? hintBarIdx : listTargetBarIdx
     if (hintIdx >= 0 && hintIdx < times.length) {
+      const decision = quantDecisionFor(props.code)
       let hint = buildBarSignalHint({
         sig,
         bars: barPayload,
         barIndex: hintIdx,
         tag,
-        options: { ...signalOpts, ...extraOpts },
+        options: { ...signalOpts, ...extraOpts, code: props.code },
         livePrice,
+        decision,
       })
       if (hint && watchlistCostCtx && (tag === '减' || tag === '止' || tag === RUSH_REDUCE_TAG)) {
         const pct = extraOpts.rushReducePct ?? extraOpts.sellPositionPct ?? hint.sellPositionPct
@@ -2064,15 +2095,30 @@ function clearPoll() {
   }
 }
 
+function clearPollGate() {
+  if (pollGateTimer) {
+    clearInterval(pollGateTimer)
+    pollGateTimer = null
+  }
+}
+
+/** Phase17-B.1: LIVE 才 60s 拉 latest；IDLE 停轮询，每分钟重评跨盘边界。 */
 function setupPoll() {
   clearPoll()
-  if (props.realtimeIntervalMs > 0 && props.code) {
+  clearPollGate()
+  if (!(props.realtimeIntervalMs > 0 && props.code)) return
+  const syncPoll = () => {
+    clearPoll()
+    if (!isKlineMarketLive()) return
     pollTimer = setInterval(refreshLatestPoll, props.realtimeIntervalMs)
   }
+  syncPoll()
+  pollGateTimer = setInterval(syncPoll, 60_000)
 }
 
 function disposeChart() {
   clearPoll()
+  clearPollGate()
   if (loadOlderDebounceTimer) {
     clearTimeout(loadOlderDebounceTimer)
     loadOlderDebounceTimer = null
@@ -2248,7 +2294,7 @@ async function refreshLatestPoll() {
   const codeSnap = props.code
   try {
     const meta = INTERVALS.find((x) => x.klt === kltSnap) || INTERVALS[0]
-    const raw = await GetStockEastMoneyKLine(
+    const raw = await fetchEastMoneyKlineCached(
       codeSnap,
       props.stockName || '',
       meta.klt,
@@ -2343,6 +2389,17 @@ function ensureChart() {
   nextTick(() => attachLongPriceLineDragListeners())
 }
 
+/** Phase16.17-A: 个股 K 线经 klineCache.getOrFetch（禁止空数组入缓存，避免变体试错污染） */
+function fetchEastMoneyKlineCached(code, name, klt, limit) {
+  const key = klineCacheKey(code, klt)
+  return getOrFetch(
+    key,
+    () => GetStockEastMoneyKLine(code, name || '', klt, limit),
+    undefined,
+    { shouldCache: (data) => Array.isArray(data) && data.length > 0 },
+  )
+}
+
 async function loadData() {
   if (!props.code) {
     errorText.value = '未设置股票代码'
@@ -2367,7 +2424,7 @@ async function loadData() {
     let list = []
     let codeUsed = toEastMoneyCode(props.code) || props.code
     for (const tryCode of variants) {
-      const raw = await GetStockEastMoneyKLine(
+      const raw = await fetchEastMoneyKlineCached(
         tryCode,
         props.stockName || '',
         meta.klt,
@@ -2387,8 +2444,8 @@ async function loadData() {
     if (!candles.length) {
       errorText.value =
         /\.BJ$/i.test(String(codeUsed))
-          ? `暂无 K 线数据（北交所 ${codeUsed}：东财/腾讯接口支持不足，请重新编译后重试或稍后再试）`
-          : `暂无 K 线数据（代码：${codeUsed}；请确认 A 股东财代码如 601101.SH、000001.SZ）`
+          ? `暂无 K 线数据（北交所 ${codeUsed}：东财/腾讯接口支持不足，请稍后重试）`
+          : `暂无 K 线数据（代码：${codeUsed}）。网络不稳或行情源短暂失败时请稍后重试；系统已自动尝试备用源。`
       candleSeries?.setData([])
       volSeries?.setData([])
       syncIndicators()
@@ -2753,24 +2810,41 @@ watch(showLongPosition, (newVal) => {
               </NButton>
               <NButton
                 size="tiny"
-                :type="showIceSignals ? 'primary' : 'default'"
-                :secondary="!showIceSignals"
+                :type="showIceSignals && iceSignalCompatible ? 'primary' : 'default'"
+                :secondary="!(showIceSignals && iceSignalCompatible)"
+                :title="iceSignalCompatible ? '冰点/买卖点' : ICE_SIGNAL_UNSUPPORTED_HINT"
                 @click="toggleIceSignals"
               >
                 冰点/买卖点
               </NButton>
             </NFlex>
             <NFlex v-if="showIceSignals" :size="6" align="center" class="lw-kline-signal-toolbar" wrap>
-              <NText depth="3" class="lw-kline-signal-toolbar__label">策略</NText>
+              <NText depth="3" class="lw-kline-signal-toolbar__label">参数预设</NText>
               <NSelect
                 v-model:value="selectedSignalStrategyId"
                 :options="signalStrategyOptions"
                 size="tiny"
                 class="lw-kline-strategy-select"
                 :consistent-menu-width="false"
-                placeholder="选择策略"
+                placeholder="选择参数预设"
+                :disabled="!iceSignalCompatible"
               />
-              <NTag v-if="signalStatus" :type="signalStatusTagType" size="small" :bordered="false" class="lw-kline-signal-toolbar__status">
+              <NTag
+                v-if="iceSignalGateHint"
+                type="warning"
+                size="small"
+                :bordered="false"
+                class="lw-kline-signal-toolbar__status"
+              >
+                {{ iceSignalGateHint }}
+              </NTag>
+              <NTag
+                v-else-if="signalStatus"
+                :type="signalStatusTagType"
+                size="small"
+                :bordered="false"
+                class="lw-kline-signal-toolbar__status"
+              >
                 {{ signalStatus.text }}
               </NTag>
               <NPopover
@@ -2964,7 +3038,7 @@ watch(showLongPosition, (newVal) => {
                 }}</span>
               </span>
             </div>
-            <div v-if="showIceSignals" class="lw-kline-signal-hint">
+            <div v-if="showIceSignals && iceSignalCompatible" class="lw-kline-signal-hint">
               <NPopover
                 v-if="hoverSignalHint"
                 trigger="hover"

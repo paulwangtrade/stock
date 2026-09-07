@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {h} from 'vue'
-import {NTag,NImage} from 'naive-ui'
+import {NTag,NImage,NEmpty} from 'naive-ui'
 import EmbeddedUrl from "./EmbeddedUrl.vue";
 </script>
 
@@ -25,7 +25,7 @@ import EmbeddedUrl from "./EmbeddedUrl.vue";
       <embedded-url url="https://www.cls.cn/quotation"  :height="'calc(100vh - 252px)'"/>
     </n-tab-pane>
     <n-tab-pane name="消息墙" tab="消息墙">
-      <embedded-url url="https://go-stock.sparkmemory.top:16667/go-stock"  :height="'calc(100vh - 252px)'"/>
+      <n-empty description="消息墙官方服务尚未配置，该入口已停用原第三方嵌入。" style="padding: 48px 0" />
     </n-tab-pane>
     <n-tab-pane name="现货黄金" tab="现货黄金走势">
       <embedded-url url="https://www.tradinghero.com/chart?symbol=XAUUSD.GOODS"  :height="'calc(100vh - 252px)'"/>

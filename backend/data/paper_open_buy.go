@@ -3,10 +3,8 @@ package data
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -165,6 +163,13 @@ func SavePaperOpenBuyConfig(cfg PaperOpenBuyConfig) error {
 	return nil
 }
 
+// ResetPaperOpenBuyConfigCache clears the in-memory config cache (tests).
+func ResetPaperOpenBuyConfigCache() {
+	paperOpenBuyMu.Lock()
+	paperOpenBuyCached = nil
+	paperOpenBuyMu.Unlock()
+}
+
 // IsAShareSinaCode 仅允许 sz/sh + 6 位数字。
 func IsAShareSinaCode(code string) bool {
 	c := strings.ToLower(strings.TrimSpace(code))
@@ -180,22 +185,6 @@ func IsAShareSinaCode(code string) bool {
 		}
 	}
 	return true
-}
-
-func parseStockInfoPrice(info StockInfo) (float64, error) {
-	p, err := strconv.ParseFloat(strings.TrimSpace(info.Price), 64)
-	if err != nil || p <= 0 {
-		return 0, fmt.Errorf("invalid price %q", info.Price)
-	}
-	return p, nil
-}
-
-func calcOpenBuyVolume(amount, price float64) int64 {
-	if amount <= 0 || price <= 0 {
-		return 0
-	}
-	shares := math.Floor(amount / price / 100) * 100
-	return int64(shares)
 }
 
 func todayTradeDateLocal() string {
@@ -315,7 +304,8 @@ func RunPaperOpenPrepare() PaperOpenBuyResult {
 	return res
 }
 
-// RunPaperOpenBuyOnce Execution Adapter：CAS ready→executing → 行情 → 手数 → PlanItemExecutor。
+// RunPaperOpenBuyOnce Execution Adapter：CAS ready→executing → Frozen Spec → PlanItemExecutor。
+// Phase6.5.7.2.2：下单价量取自 Frozen limit_price / target_volume；禁止 live 重算覆盖 Spec。
 // 下单唯一入口：ExecutionService → ExecutionPort → PaperBroker → SubmitPaperOrder（由 execution 包注入）。
 // 禁止选股/排序/TopN。requireEnabled=true（cron）需开关开启。
 func RunPaperOpenBuyOnce(requireEnabled bool) PaperOpenBuyResult {
@@ -429,20 +419,12 @@ func runPaperOpenBuyExecuting(repo *TradePlanRepo, plan *models.TradePlan, cfg P
 		return out
 	}
 
-	amount := plan.AmountPerStock
-	if amount <= 0 {
-		amount = cfg.OpenBuyAmountPerStock
-	}
-
+	// Quotes are observational (name enrichment only). Order price/volume come from Frozen Spec.
 	quotes, qerr := fetchOpenBuyQuotes(codes...)
-	if qerr != nil {
-		finishExecutingPlan(repo, plan.ID, models.TradePlanStatusFailed, "quote failed: "+qerr.Error())
-		out.Message = "GetStockCodeRealTimeData failed: " + qerr.Error()
-		logger.SugaredLogger.Errorf("paper open buy: %s", out.Message)
-		return out
-	}
 	byCode := map[string]StockInfo{}
-	if quotes != nil {
+	if qerr != nil {
+		logger.SugaredLogger.Warnf("paper open buy: quote fetch failed (continuing Spec-only): %v", qerr)
+	} else if quotes != nil {
 		for _, q := range *quotes {
 			byCode[strings.ToLower(strings.TrimSpace(q.Code))] = q
 		}
@@ -465,42 +447,35 @@ func runPaperOpenBuyExecuting(repo *TradePlanRepo, plan *models.TradePlan, cfg P
 		}
 		item := PaperOpenBuyItemResult{StockCode: planItem.StockCode, StockName: planItem.StockName}
 
-		info, ok := lookupQuote(byCode, planItem.StockCode)
-		if !ok {
-			item.Error = "no realtime quote"
-			planItem.Status = models.TradePlanItemError
-			planItem.Error = item.Error
-			_ = repo.UpdateItemExecution(planItem)
-			out.Items = append(out.Items, item)
-			logger.SugaredLogger.Warnf("Paper Order Failed stock=%s reason=%s", planItem.StockCode, item.Error)
-			continue
+		// Phase6.5.7.2.2: Frozen Spec is the sole order price/volume source.
+		price := planItem.LimitPrice
+		vol := planItem.TargetVolume
+		stockName := planItem.StockName
+		if info, ok := lookupQuote(byCode, planItem.StockCode); ok {
+			if strings.TrimSpace(info.Name) != "" {
+				stockName = info.Name
+				planItem.StockName = info.Name
+				item.StockName = info.Name
+			}
 		}
-		item.StockName = info.Name
-		planItem.StockName = info.Name
-		price, perr := parseStockInfoPrice(info)
-		if perr != nil {
-			item.Error = perr.Error()
-			planItem.Status = models.TradePlanItemError
-			planItem.Error = item.Error
-			_ = repo.UpdateItemExecution(planItem)
-			out.Items = append(out.Items, item)
-			logger.SugaredLogger.Warnf("Paper Order Failed stock=%s reason=%s", planItem.StockCode, item.Error)
-			continue
-		}
-		item.Price = price
-		targetAmount := planItem.TargetAmount
-		if targetAmount <= 0 {
-			targetAmount = amount
-		}
-		vol := calcOpenBuyVolume(targetAmount, price)
-		item.Volume = vol
-		planItem.TargetVolume = vol
 
-		logger.SugaredLogger.Infof("stock=%s strategy=%s reason=%s price=%.4f volume=%d",
+		item.Price = price
+		item.Volume = vol
+
+		logger.SugaredLogger.Infof("stock=%s strategy=%s reason=%s frozen_limit=%.4f frozen_volume=%d",
 			planItem.StockCode, planItem.StrategyName, buildPaperOrderReason(*planItem), price, vol)
 
+		if price <= 0 {
+			item.Error = "frozen limit_price missing or invalid"
+			planItem.Status = models.TradePlanItemSkipped
+			planItem.Error = item.Error
+			_ = repo.UpdateItemExecution(planItem)
+			out.Items = append(out.Items, item)
+			logger.SugaredLogger.Warnf("Paper Order Failed stock=%s reason=%s", planItem.StockCode, item.Error)
+			continue
+		}
 		if vol < 100 {
-			item.Error = fmt.Sprintf("volume < 100 (amount=%.0f price=%.4f)", targetAmount, price)
+			item.Error = fmt.Sprintf("frozen target_volume < 100 (vol=%d)", vol)
 			planItem.Status = models.TradePlanItemSkipped
 			planItem.Error = item.Error
 			_ = repo.UpdateItemExecution(planItem)
@@ -510,12 +485,13 @@ func runPaperOpenBuyExecuting(repo *TradePlanRepo, plan *models.TradePlan, cfg P
 		}
 
 		order, serr := executor.ExecutePlanItem(*planItem, PlanItemExecOpts{
-			StockName:   info.Name,
+			StockName:   stockName,
 			Price:       price,
 			Volume:      vol,
 			Reason:      buildPaperOrderReason(*planItem),
 			StrategyTag: models.PaperStrategyTagTradePlan,
 			AutoFill:    true,
+			Plan:        plan,
 		})
 		if serr != nil {
 			item.Error = serr.Error()
@@ -548,6 +524,7 @@ func runPaperOpenBuyExecuting(repo *TradePlanRepo, plan *models.TradePlan, cfg P
 		}
 		planItem.FilledFee = order.Fee
 		planItem.Error = ""
+		// Do NOT assign planItem.TargetVolume — Frozen Spec is immutable.
 		_ = repo.UpdateItemExecution(planItem)
 		okCount++
 		logger.SugaredLogger.Infof("Paper Order Filled stock=%s order_id=%d status=%s",

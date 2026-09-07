@@ -1,0 +1,28 @@
+{
+  "draft": {
+    "actionCode": "ENTER",
+    "allowDraft": true,
+    "consumerRole": "TRADEPLAN_DRAFT_FUTURE",
+    "draftHash": "37d9821ec6fee6dcd69ba5e2276f601708ebbc65d9c9ad1e624a602f167d4042",
+    "enableExecute": false,
+    "gateReady": true,
+    "marketLevel": 3,
+    "side": "buy",
+    "snapshotHash": "83c838e9049ac6284d86d338658b26be94340c9f7cdf41faffed3979d99bb675",
+    "sourceDecisionId": "qd1:js_legacy:sz000001:2026-07-21T00:00:00Z:ENTER:可买",
+    "status": "VALIDATED",
+    "stockCode": "sz000001",
+    "targetAmount": 101000,
+    "targetShares": 1000,
+    "tradeDate": "2026-07-21"
+  },
+  "harness": "quant-decision-to-tradeplan-draft",
+  "immutableOK": true,
+  "phase": "Phase4-A",
+  "source": {
+    "actionCode": "ENTER",
+    "decisionId": "qd1:js_legacy:sz000001:2026-07-21T00:00:00Z:ENTER:可买",
+    "snapshotHash": "83c838e9049ac6284d86d338658b26be94340c9f7cdf41faffed3979d99bb675"
+  },
+  "validateSourceOK": true
+}

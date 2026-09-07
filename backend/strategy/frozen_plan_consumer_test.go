@@ -58,10 +58,12 @@ func seedPlanDirect(t *testing.T, plan *models.TradePlan, items []models.TradePl
 func TestGetFrozenTradePlan_FindsFrozenReady(t *testing.T) {
 	setupFrozenConsumerTestDB(t)
 	freezeAt := time.Date(2026, 7, 21, 16, 0, 0, 0, time.Local)
+	approvedAt := freezeAt.Add(-time.Hour)
 	seeded := seedPlanDirect(t, &models.TradePlan{
 		TradeDate:     "2026-07-22",
 		Status:        models.TradePlanStatusReady,
 		PlanVersion:   3,
+		ApprovedAt:    &approvedAt,
 		FreezeAt:      &freezeAt,
 		FreezeBy:      "alice",
 		SourceSession: models.TradePlanSourceAfterClose,
@@ -128,18 +130,19 @@ func TestGetFrozenTradePlan_MultiVersionPrefersHighestPlanVersion(t *testing.T) 
 	setupFrozenConsumerTestDB(t)
 	t1 := time.Date(2026, 7, 21, 15, 30, 0, 0, time.Local)
 	t2 := time.Date(2026, 7, 21, 16, 0, 0, 0, time.Local)
+	approvedAt := t1.Add(-time.Hour)
 
 	// Bypass CreatePlanWithItems supersede so both rows stay ready+frozen for selection test.
 	older := seedPlanDirect(t, &models.TradePlan{
 		TradeDate: "2026-07-22", Status: models.TradePlanStatusReady,
-		PlanVersion: 1, FreezeAt: &t1, FreezeBy: "v1", Side: "buy",
+		PlanVersion: 1, ApprovedAt: &approvedAt, FreezeAt: &t1, FreezeBy: "v1", Side: "buy",
 		SourceSession: models.TradePlanSourceAfterClose,
 	}, []models.TradePlanItem{{
 		StockCode: "sz000001", Priority: 1, TargetAmount: 100_000, Status: models.TradePlanItemPending,
 	}})
 	newer := seedPlanDirect(t, &models.TradePlan{
 		TradeDate: "2026-07-22", Status: models.TradePlanStatusReady,
-		PlanVersion: 2, FreezeAt: &t2, FreezeBy: "v2", Side: "buy",
+		PlanVersion: 2, ApprovedAt: &approvedAt, FreezeAt: &t2, FreezeBy: "v2", Side: "buy",
 		SourceSession: models.TradePlanSourceAfterClose,
 	}, []models.TradePlanItem{{
 		StockCode: "sz000002", Priority: 1, TargetAmount: 100_000, Status: models.TradePlanItemPending,
@@ -157,7 +160,7 @@ func TestGetFrozenTradePlan_MultiVersionPrefersHighestPlanVersion(t *testing.T) 
 	t3 := time.Date(2026, 7, 21, 17, 0, 0, 0, time.Local)
 	sameVerLater := seedPlanDirect(t, &models.TradePlan{
 		TradeDate: "2026-07-22", Status: models.TradePlanStatusReady,
-		PlanVersion: 2, FreezeAt: &t3, FreezeBy: "v2b", Side: "buy",
+		PlanVersion: 2, ApprovedAt: &approvedAt, FreezeAt: &t3, FreezeBy: "v2b", Side: "buy",
 		SourceSession: models.TradePlanSourceAfterClose,
 	}, []models.TradePlanItem{{
 		StockCode: "sz000003", Priority: 1, TargetAmount: 100_000, Status: models.TradePlanItemPending,
@@ -170,9 +173,10 @@ func TestGetFrozenTradePlan_MultiVersionPrefersHighestPlanVersion(t *testing.T) 
 func TestGetFrozenTradePlan_DoesNotMutate(t *testing.T) {
 	setupFrozenConsumerTestDB(t)
 	freezeAt := time.Now()
+	approvedAt := freezeAt.Add(-time.Hour)
 	seeded := seedPlanDirect(t, &models.TradePlan{
 		TradeDate: "2026-07-22", Status: models.TradePlanStatusReady,
-		PlanVersion: 1, FreezeAt: &freezeAt, Side: "buy",
+		PlanVersion: 1, ApprovedAt: &approvedAt, FreezeAt: &freezeAt, Side: "buy",
 	}, []models.TradePlanItem{{
 		StockCode: "sz000001", Priority: 1, TargetAmount: 100_000, Status: models.TradePlanItemPending,
 	}})

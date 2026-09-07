@@ -1,7 +1,13 @@
 <script setup>
+/**
+ * Phase16 Kline Modal contract:
+ * - Unique stock identity prop: `code` (required for embedded chart).
+ * - Other chart options (stockName, strategySignals, costPrice, …) pass through attrs.
+ * - Do not use chart-code / stock_code as Modal chart identity.
+ */
 import { computed, ref, useAttrs, watch } from 'vue'
 import { ExpandOutline, ContractOutline } from '@vicons/ionicons5'
-import { NButton, NIcon, NModal } from 'naive-ui'
+import { NAlert, NButton, NIcon, NModal } from 'naive-ui'
 import StockLightweightKlineChart from './StockLightweightKlineChart.vue'
 
 defineOptions({ inheritAttrs: false })
@@ -9,6 +15,11 @@ defineOptions({ inheritAttrs: false })
 const props = defineProps({
   show: { type: Boolean, default: false },
   title: { type: String, default: '' },
+  /**
+   * Unique chart identity — East-money / display code for StockLightweightKlineChart.
+   * Callers must bind `:code="..."`. Do not pass chart-code.
+   */
+  code: { type: String, default: '' },
   chartKey: { type: String, default: 'kline' },
   chartHeight: { type: Number, default: 500 },
   /** 非最大化时的弹窗宽度 */
@@ -23,6 +34,9 @@ const emit = defineEmits(['update:show', 'after-leave'])
 
 const attrs = useAttrs()
 const maximized = ref(false)
+
+const resolvedCode = computed(() => String(props.code || '').trim())
+const hasCode = computed(() => !!resolvedCode.value)
 
 const visible = computed({
   get: () => props.show,
@@ -69,7 +83,9 @@ const effectiveChartHeight = computed(() => {
   return props.chartHeight
 })
 
-const chartMountKey = computed(() => `${props.chartKey}-${maximized.value ? 'max' : 'normal'}`)
+const chartMountKey = computed(
+  () => `${props.chartKey}-${resolvedCode.value || 'nocode'}-${maximized.value ? 'max' : 'normal'}`,
+)
 
 function toggleMaximize() {
   maximized.value = !maximized.value
@@ -106,10 +122,27 @@ function onAfterLeave() {
 
     <slot name="prepend" />
 
+    <n-alert
+      v-if="embedChart && show && !hasCode"
+      type="warning"
+      :bordered="false"
+      title="未设置股票代码"
+      style="margin-bottom: 8px"
+    >
+      请通过 StockKlineModal 的
+      <code>code</code>
+      属性传入（例如
+      <code>:code="klineModal.chartCode"</code>
+      ）。不要使用
+      <code>chart-code</code>
+      或其它别名作为图表标识。
+    </n-alert>
+
     <stock-lightweight-kline-chart
-      v-if="embedChart && show"
+      v-else-if="embedChart && show && hasCode"
       v-bind="attrs"
       :key="chartMountKey"
+      :code="resolvedCode"
       :chart-height="effectiveChartHeight"
     />
 

@@ -2,117 +2,360 @@ package data
 
 import (
 	"context"
-	"go-stock/backend/logger"
-	"sync"
+	"fmt"
 	"time"
+
+	"go-stock/backend/logger"
 
 	"github.com/chromedp/chromedp"
 )
 
-// BrowserPool 浏览器池结构
+
+// BrowserPool 浏览器池
 type BrowserPool struct {
-	pool chan *context.Context
-	mu   sync.Mutex
+
+	pool chan context.Context
+
 	size int
 }
 
-// NewBrowserPool 创建新的浏览器池
+
+
+// NewBrowserPool 创建浏览器池
 func NewBrowserPool(size int) *BrowserPool {
-	pool := make(chan *context.Context, size)
-	for i := 0; i < size; i++ {
-		path := GetSettingConfig().BrowserPath
-		crawlTimeOut := GetSettingConfig().CrawlTimeOut
-		if crawlTimeOut < 15 {
-			crawlTimeOut = 30
-		}
-		if path != "" {
-			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(crawlTimeOut)*time.Second)
-			// Note: cancel is intentionally not called here as chromedp handles
-			// context cleanup via chromedp.Cancel() in Put/Close methods
-			_ = cancel
-			ctx, _ = chromedp.NewExecAllocator(
-				ctx,
-				chromedp.ExecPath(path),
-				chromedp.Flag("headless", true),
-				chromedp.Flag("blink-settings", "imagesEnabled=false"),
-				chromedp.Flag("disable-javascript", false),
-				chromedp.Flag("disable-gpu", true),
-				//chromedp.UserAgent(""),
-				chromedp.Flag("disable-background-networking", true),
-				chromedp.Flag("enable-features", "NetworkService,NetworkServiceInProcess"),
-				chromedp.Flag("disable-background-timer-throttling", true),
-				chromedp.Flag("disable-backgrounding-occluded-windows", true),
-				chromedp.Flag("disable-breakpad", true),
-				chromedp.Flag("disable-client-side-phishing-detection", true),
-				chromedp.Flag("disable-default-apps", true),
-				chromedp.Flag("disable-dev-shm-usage", true),
-				chromedp.Flag("disable-extensions", true),
-				chromedp.Flag("disable-features", "site-per-process,Translate,BlinkGenPropertyTrees"),
-				chromedp.Flag("disable-hang-monitor", true),
-				chromedp.Flag("disable-ipc-flooding-protection", true),
-				chromedp.Flag("disable-popup-blocking", true),
-				chromedp.Flag("disable-prompt-on-repost", true),
-				chromedp.Flag("disable-renderer-backgrounding", true),
-				chromedp.Flag("disable-sync", true),
-				chromedp.Flag("force-color-profile", "srgb"),
-				chromedp.Flag("metrics-recording-only", true),
-				chromedp.Flag("safebrowsing-disable-auto-update", true),
-				chromedp.Flag("enable-automation", true),
-				chromedp.Flag("password-store", "basic"),
-				chromedp.Flag("use-mock-keychain", true),
-			)
-			ctx, _ = chromedp.NewContext(ctx, chromedp.WithLogf(logger.SugaredLogger.Infof))
-			pool <- &ctx
-		}
+
+
+	if size <= 0 {
+		size = 1
 	}
+
+
+	pool := make(chan context.Context,size)
+
+
+
+	for i:=0;i<size;i++{
+
+
+		ctx:=createBrowserContext()
+
+
+		pool <- ctx
+
+	}
+
+
+
 	return &BrowserPool{
-		pool: pool,
-		size: size,
+
+		pool:pool,
+
+		size:size,
 	}
+
 }
 
-// Get 从池中获取浏览器实例
-func (pool *BrowserPool) Get() *context.Context {
-	return <-pool.pool
-}
 
-// Put 将浏览器实例放回池中
-func (pool *BrowserPool) Put(ctx *context.Context) {
-	pool.mu.Lock()
-	defer pool.mu.Unlock()
-	// 检查池是否已满
-	if len(pool.pool) >= pool.size {
-		// 池已满，关闭并丢弃这个实例
-		chromedp.Cancel(*ctx)
-		return
+
+// 创建浏览器 context
+func createBrowserContext() context.Context {
+
+
+	path:=GetSettingConfig().BrowserPath
+
+
+
+	options:=[]chromedp.ExecAllocatorOption{
+
+
+		// 调试阶段关闭无头
+		// 测试成功以后改 true
+		chromedp.Flag(
+			"headless",
+			false,
+		),
+
+
+		chromedp.Flag(
+			"no-sandbox",
+			true,
+		),
+
+
+		chromedp.Flag(
+			"disable-setuid-sandbox",
+			true,
+		),
+
+
+		chromedp.Flag(
+			"disable-gpu",
+			true,
+		),
+
+
+		chromedp.Flag(
+			"disable-dev-shm-usage",
+			true,
+		),
+
+
+		chromedp.Flag(
+			"disable-extensions",
+			true,
+		),
+
+
+		chromedp.Flag(
+			"disable-popup-blocking",
+			true,
+		),
+
+
+		chromedp.Flag(
+			"disable-background-networking",
+			true,
+		),
+
+
+		chromedp.Flag(
+			"disable-sync",
+			true,
+		),
+
+
+		chromedp.Flag(
+			"ignore-certificate-errors",
+			true,
+		),
+
+
+
+		chromedp.Flag(
+			"disable-features",
+			"IsolateOrigins,site-per-process",
+		),
+
+
+
+		chromedp.UserAgent(
+			"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/133 Safari/537.36",
+		),
+
+
 	}
-	chromedp.Cancel(*ctx)
-	pool.pool <- ctx
-}
 
-// Close 关闭池中的所有浏览器实例
-func (pool *BrowserPool) Close() {
-	close(pool.pool)
-	for ctx := range pool.pool {
-		chromedp.Cancel(*ctx)
+
+
+	if path!=""{
+
+
+		options=append(
+			options,
+			chromedp.ExecPath(path),
+		)
+
 	}
-}
 
-// FetchPage 使用浏览器池获取页面内容
-func (pool *BrowserPool) FetchPage(url, waitVisible string) (string, error) {
-	// 从池中获取浏览器实例
-	ctx := pool.Get()
-	defer pool.Put(ctx) // 使用完毕后放回池中
-	var htmlContent string
-	err := chromedp.Run(*ctx,
-		chromedp.Navigate(url),
-		chromedp.WaitVisible(waitVisible, chromedp.ByQuery), // 确保  元素可见
-		chromedp.WaitReady(waitVisible, chromedp.ByQuery),   // 确保  元素准备好
-		chromedp.InnerHTML("body", &htmlContent),
-		chromedp.Evaluate(`window.close()`, nil),
+
+
+
+	// 浏览器生命周期
+	allocCtx,_:=chromedp.NewExecAllocator(
+		context.Background(),
+		options...,
 	)
-	if err != nil {
-		return "", err
+
+
+
+	browserCtx,_:=chromedp.NewContext(
+		allocCtx,
+		chromedp.WithLogf(
+			logger.SugaredLogger.Infof,
+		),
+	)
+
+
+
+	return browserCtx
+
+}
+
+
+
+
+// 获取浏览器
+func(pool *BrowserPool)Get()context.Context{
+
+
+	return <-pool.pool
+
+}
+
+
+
+
+
+// 放回浏览器
+func(pool *BrowserPool)Put(ctx context.Context){
+
+
+
+	select{
+
+
+	case pool.pool<-ctx:
+
+
+	default:
+
+		chromedp.Cancel(ctx)
+
 	}
-	return htmlContent, nil
+
+
+}
+
+
+
+
+// 关闭
+func(pool *BrowserPool)Close(){
+
+
+
+	close(pool.pool)
+
+
+
+	for ctx:=range pool.pool{
+
+
+		chromedp.Cancel(ctx)
+
+	}
+
+}
+
+
+
+
+
+// FetchPage 获取网页
+func(pool *BrowserPool)FetchPage(
+	url string,
+	waitVisible string,
+)(string,error){
+
+
+
+	ctx:=pool.Get()
+
+
+
+	// 默认放回
+	defer func(){
+
+		if ctx.Err()!=nil{
+
+			logger.SugaredLogger.Warn(
+				"browser context dead recreate",
+			)
+
+			pool.pool<-createBrowserContext()
+
+
+		}else{
+
+
+			pool.Put(ctx)
+
+		}
+
+
+	}()
+
+
+
+	var htmlContent string
+
+
+
+	logger.SugaredLogger.Infof(
+		"navigate start url=%s",
+		url,
+	)
+
+
+
+
+	// 单次访问 timeout
+	runCtx,cancel:=context.WithTimeout(
+		ctx,
+		60*time.Second,
+	)
+
+
+	defer cancel()
+
+
+
+
+	err := chromedp.Run(
+		runCtx,
+	
+		chromedp.Navigate(url),
+	
+		chromedp.Sleep(
+			2*time.Second,
+		),
+	
+		chromedp.Evaluate(
+			`document.documentElement.outerHTML`,
+			&htmlContent,
+		),
+	)
+
+
+
+	if err!=nil{
+
+
+		logger.SugaredLogger.Errorf(
+			"chromedp failed url=%s err=%v",
+			url,
+			err,
+		)
+
+
+		return "",err
+
+	}
+
+
+
+
+	if htmlContent==""{
+
+
+		return "",
+			fmt.Errorf(
+				"empty html",
+			)
+
+	}
+
+
+
+
+	logger.SugaredLogger.Infof(
+		"crawler success url=%s size=%d",
+		url,
+		len(htmlContent),
+	)
+
+
+
+	return htmlContent,nil
+
 }

@@ -122,7 +122,11 @@ func TestPaperTradingJob_NotFrozen_Rejected(t *testing.T) {
 		Now:              sessionANow(),
 	})
 	require.Error(t, err)
-	require.Equal(t, papertrading.RunStatusFailed, res.Status)
+	require.Contains(t, err.Error(), models.ReasonPlanNotFrozen)
+	// Guard fails before run ledger write; JobResult status may be empty.
+	if res != nil && res.Status != "" {
+		require.Equal(t, papertrading.RunStatusFailed, res.Status)
+	}
 }
 
 func TestSettlementJob_DoesNotUnlockSameDay(t *testing.T) {

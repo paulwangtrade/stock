@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"go-stock/backend/logger"
+	"go-stock/backend/tradingevent"
 )
 
 // ExecutionRequest is the Phase10-C.2 unified entry payload for track-B PaperTrading
@@ -75,9 +76,14 @@ func RunExecution(req ExecutionRequest) (*ExecutionResult, error) {
 		now = executionNow()
 	}
 
+	tradeDate := strings.TrimSpace(req.TradeDate)
+	if tradeDate == "" {
+		tradeDate = now.Format("2006-01-02")
+	}
+
 	logger.SugaredLogger.Infof(
 		"ExecutionGateway enter entry=%s trigger=%s actor=%s trade_date=%s plan_id=%d now=%s",
-		ExecutionEntryGateway, trigger, strings.TrimSpace(req.Actor), strings.TrimSpace(req.TradeDate), req.PlanID,
+		ExecutionEntryGateway, trigger, strings.TrimSpace(req.Actor), tradeDate, req.PlanID,
 		now.Format(time.RFC3339),
 	)
 
@@ -89,11 +95,17 @@ func RunExecution(req ExecutionRequest) (*ExecutionResult, error) {
 		Reason:   pol.Reason,
 	}
 
+	// Observation v0: STARTED after session resolve; does not affect allow/deny.
+	tradingevent.EmitExecution(
+		tradingevent.EventExecutionStarted, tradeDate, string(pol.Session), tradingevent.StatusPass, "GATEWAY_ENTER",
+		req.PlanID, now, "",
+	)
+
 	if !pol.Allow {
 		out.PriceMode = PriceModeNone
 		out.JobResult = JobResult{
 			Enabled:   IsEnabled(),
-			TradeDate: strings.TrimSpace(req.TradeDate),
+			TradeDate: tradeDate,
 			PlanID:    req.PlanID,
 			Trigger:   trigger,
 			Actor:     strings.TrimSpace(req.Actor),
@@ -103,12 +115,13 @@ func RunExecution(req ExecutionRequest) (*ExecutionResult, error) {
 		if out.Actor == "" && trigger != TriggerManual {
 			out.Actor = "cron"
 		}
-		if out.TradeDate == "" {
-			out.TradeDate = now.Format("2006-01-02")
-		}
 		logger.SugaredLogger.Infof(
 			"ExecutionGateway reject entry=%s session=%s decision=%s reason=%s",
 			ExecutionEntryGateway, pol.Session, pol.Decision, pol.Reason,
+		)
+		tradingevent.EmitExecution(
+			tradingevent.EventExecutionSkipped, out.TradeDate, string(pol.Session), tradingevent.StatusSkip, pol.Reason,
+			out.PlanID, now, "",
 		)
 		return out, nil
 	}
@@ -128,9 +141,66 @@ func RunExecution(req ExecutionRequest) (*ExecutionResult, error) {
 	if jobRes != nil {
 		out.JobResult = *jobRes
 	}
+	// Preserve request identity for observation when job returns nil/partial.
+	if out.TradeDate == "" {
+		out.TradeDate = tradeDate
+	}
+	if out.PlanID == 0 {
+		out.PlanID = req.PlanID
+	}
 	logger.SugaredLogger.Infof(
 		"ExecutionGateway exit entry=%s session=%s decision=%s price_mode=%s status=%s plan_id=%d filled=%d",
 		ExecutionEntryGateway, pol.Session, pol.Decision, out.PriceMode, out.Status, out.PlanID, out.FilledCount,
 	)
+	emitExecutionExit(out, err, now)
 	return out, err
+}
+
+// emitExecutionExit maps Gateway exit to EXECUTION_* (observation only).
+func emitExecutionExit(out *ExecutionResult, err error, now time.Time) {
+	if out == nil {
+		return
+	}
+	planID := out.PlanID
+	tradeDate := out.TradeDate
+	if tradeDate == "" {
+		tradeDate = now.Format("2006-01-02")
+	}
+	session := string(out.Session)
+	execID := strings.TrimSpace(out.ExecutionID)
+
+	if err != nil {
+		tradingevent.EmitExecution(
+			tradingevent.EventExecutionFailed, tradeDate, session, tradingevent.StatusFail, err.Error(), planID, now, execID,
+		)
+		return
+	}
+	reason := strings.TrimSpace(out.Reason)
+	if reason == "" {
+		reason = strings.TrimSpace(out.Message)
+	}
+	switch out.Status {
+	case RunStatusFailed:
+		if reason == "" {
+			reason = out.Status
+		}
+		tradingevent.EmitExecution(
+			tradingevent.EventExecutionFailed, tradeDate, session, tradingevent.StatusFail, reason, planID, now, execID,
+		)
+	case RunStatusSkippedOutsideSession, RunStatusSkippedDisabled, RunStatusSkippedNonTradingDay,
+		RunStatusSkippedNoFrozenPlan, RunStatusSkippedAlreadyRun, RunStatusSkippedPlanLifecycle:
+		if reason == "" {
+			reason = out.Status
+		}
+		tradingevent.EmitExecution(
+			tradingevent.EventExecutionSkipped, tradeDate, session, tradingevent.StatusSkip, reason, planID, now, execID,
+		)
+	default:
+		if reason == "" {
+			reason = out.Status
+		}
+		tradingevent.EmitExecution(
+			tradingevent.EventExecutionCompleted, tradeDate, session, tradingevent.StatusPass, reason, planID, now, execID,
+		)
+	}
 }

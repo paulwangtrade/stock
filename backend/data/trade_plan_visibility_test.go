@@ -273,3 +273,30 @@ func TestGetUpcomingTradePlan_ViewDoesNotExposeModelPointer(t *testing.T) {
 	// Ensure return type is visibility DTO (compile-time + runtime shape).
 	var _ *TradePlanVisibilityView = view
 }
+
+func TestGetTradePlanVisibilityByID_ItemReason(t *testing.T) {
+	setupPaperTradingTestDB(t)
+	require.NoError(t, EnsureTradePlanTables())
+	repo := NewTradePlanRepo()
+	now := time.Now()
+	sellReason := "manual sell from exit review"
+
+	plan := &models.TradePlan{
+		TradeDate: "2026-08-29", GeneratedAt: now, PoolID: 1,
+		Status: models.TradePlanStatusDraft, PlanVersion: 1,
+		Side: "sell", SourceSession: models.TradePlanSourceTSell,
+		RiskStatus: risk.PlanRiskStatusPassed,
+	}
+	require.NoError(t, repo.CreatePlanWithItems(plan, []models.TradePlanItem{
+		{
+			StockCode: "sz000001", Side: "sell", Priority: 1,
+			TargetVolume: 100, Status: models.TradePlanItemPending,
+			Reason: sellReason,
+		},
+	}))
+
+	view, err := repo.GetTradePlanVisibilityByID(plan.ID)
+	require.NoError(t, err)
+	require.Len(t, view.Items, 1)
+	require.Equal(t, sellReason, view.Items[0].Reason)
+}

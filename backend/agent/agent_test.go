@@ -3,28 +3,55 @@ package agent
 import (
 	"context"
 	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
 	"go-stock/backend/data"
 	"go-stock/backend/db"
 	"go-stock/backend/logger"
-	"io"
-	"strings"
-	"testing"
 
 	"github.com/cloudwego/eino/flow/agent"
 	"github.com/cloudwego/eino/schema"
 	"github.com/duke-git/lancet/v2/fileutil"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 )
 
-// @Author spark
-// @Date 2025/8/4 17:32
-// @Desc
-//-----------------------------------------------------------------------------------
+func initAgentTestDB(t *testing.T) {
+	t.Helper()
+	path := filepath.Join("..", "..", "data", "stock.db")
+	if _, err := os.Stat(path); err != nil {
+		t.Skip("data/stock.db missing:", err)
+	}
+	testDB, err := gorm.Open(sqlite.Open(path+"?_busy_timeout=5000"), &gorm.Config{
+		SkipDefaultTransaction: true,
+	})
+	if err != nil {
+		t.Skip("data/stock.db unusable:", err)
+	}
+	sqlDB, err := testDB.DB()
+	if err != nil {
+		t.Skip("data/stock.db open:", err)
+	}
+	if err := sqlDB.Ping(); err != nil {
+		t.Skip("data/stock.db ping:", err)
+	}
+	orig := db.Dao
+	db.Dao = testDB
+	t.Cleanup(func() {
+		db.Dao = orig
+		_ = sqlDB.Close()
+	})
+}
 
 func TestGetStockAiAgent(t *testing.T) {
 
 	ctx := context.Background()
 
-	db.Init("../../data/stock.db")
+	initAgentTestDB(t)
 
 	config := data.GetSettingConfig()
 
@@ -95,7 +122,12 @@ func TestGetStockAiAgent(t *testing.T) {
 
 func TestAgent(t *testing.T) {
 
-	db.Init("../../data/stock.db")
+	initAgentTestDB(t)
+
+	config := data.GetSettingConfig()
+	if config == nil || len(config.AiConfigs) == 0 {
+		t.Skip("没有配置AI模型，跳过AI Agent测试")
+	}
 
 	md := strings.Builder{}
 

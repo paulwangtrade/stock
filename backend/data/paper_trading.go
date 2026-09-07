@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -299,6 +300,51 @@ func roundLotPaper(vol, lot int64) int64 {
 	return (vol / lot) * lot
 }
 
+// Quantity-policy hooks for Submit (C2.1) + Fill (C2.3).
+// Registered from tradingrule to avoid data↔tradingrule import cycles.
+var (
+	quantityPolicyEnabledFn   func() bool
+	quantityPolicyBuyVolumeOK func(stockCode string, volume int64) bool
+)
+
+// RegisterQuantityPolicySubmitHooks wires EnableQuantityPolicy + ValidateBuyQuantity.
+// Shared by Submit and Fill. nil clears hooks (legacy-only path).
+func RegisterQuantityPolicySubmitHooks(enabled func() bool, buyVolumeOK func(stockCode string, volume int64) bool) {
+	quantityPolicyEnabledFn = enabled
+	quantityPolicyBuyVolumeOK = buyVolumeOK
+}
+
+// applySubmitVolumePolicy resolves Submit volume.
+//
+//	Flag OFF (or sell / hooks unset): legacy roundLotPaper(...,100) + min 100
+//	Flag ON + buy: Validate-only via hooks — no Normalize
+func applySubmitVolumePolicy(stockCode, side string, volume int64) (int64, error) {
+	policyOn := quantityPolicyEnabledFn != nil && quantityPolicyEnabledFn()
+	if policyOn && !strings.EqualFold(strings.TrimSpace(side), "sell") {
+		if quantityPolicyBuyVolumeOK == nil || !quantityPolicyBuyVolumeOK(stockCode, volume) {
+			return 0, fmt.Errorf("数量不符合 QuantityPolicy（非法手数）")
+		}
+		return volume, nil
+	}
+	v := roundLotPaper(volume, 100)
+	if v < 100 {
+		return 0, fmt.Errorf("数量须至少一手(100股)")
+	}
+	return v, nil
+}
+
+// fillQuantityLotOK validates Fill qty without Normalize / rewrite.
+//
+//	Flag OFF (or sell / hooks unset): legacy qty>=100 && qty%100==0
+//	Flag ON + buy: ValidateBuyQuantity via hooks only
+func fillQuantityLotOK(stockCode, side string, qty int64) bool {
+	policyOn := quantityPolicyEnabledFn != nil && quantityPolicyEnabledFn()
+	if policyOn && !strings.EqualFold(strings.TrimSpace(side), "sell") {
+		return quantityPolicyBuyVolumeOK != nil && quantityPolicyBuyVolumeOK(stockCode, qty)
+	}
+	return qty >= 100 && qty%100 == 0
+}
+
 func calcPaperBuyFee(amount float64) float64 {
 	fee := amount * 0.00025
 	if fee < 5 {
@@ -322,10 +368,11 @@ func (p *PaperTradingApi) SubmitPaperOrder(req PaperSubmitOrderReq) (*PaperOrder
 	if req.AccountID == 0 {
 		req.AccountID = acc.ID
 	}
-	req.Volume = roundLotPaper(req.Volume, 100)
-	if req.Volume < 100 {
-		return nil, fmt.Errorf("数量须至少一手(100股)")
+	vol, verr := applySubmitVolumePolicy(req.StockCode, req.Side, req.Volume)
+	if verr != nil {
+		return nil, verr
 	}
+	req.Volume = vol
 	if req.Price <= 0 {
 		return nil, fmt.Errorf("价格无效")
 	}
@@ -379,10 +426,19 @@ func (p *PaperTradingApi) SubmitPaperOrder(req PaperSubmitOrderReq) (*PaperOrder
 	return &order, nil
 }
 
-func (p *PaperTradingApi) FillPaperOrder(orderID uint, fillPrice float64) (err error) {
+func (p *PaperTradingApi) FillPaperOrder(orderID uint, fillPrice float64) error {
+	// fillQty=0 → fill all remaining (legacy full-fill behavior).
+	return p.FillPaperOrderQty(orderID, fillPrice, 0)
+}
+
+// FillPaperOrderQty fills up to fillQty shares at fillPrice.
+// fillQty<=0 means fill all remaining (order.Volume - FilledVol).
+// Partial: OMS stays pending with updated FilledVol; full: OMS→filled.
+// Cancelled/rejected orders cannot be filled (pending claim fails).
+func (p *PaperTradingApi) FillPaperOrderQty(orderID uint, fillPrice float64, fillQty int64) (err error) {
 	started := time.Now()
 	defer func() {
-		logger.SugaredLogger.Infow("paper trading operation", "operation", "fill_order", "order_id", orderID, "duration", time.Since(started), "ok", err == nil, "error", err)
+		logger.SugaredLogger.Infow("paper trading operation", "operation", "fill_order", "order_id", orderID, "fill_qty", fillQty, "duration", time.Since(started), "ok", err == nil, "error", err)
 	}()
 	EnsurePaperTradingTables()
 
@@ -391,10 +447,11 @@ func (p *PaperTradingApi) FillPaperOrder(orderID uint, fillPrice float64) (err e
 	var account PaperAccount
 	var changedPosition PaperPosition
 	committed := false
+	fullyFilled := false
 	err = db.Dao.Transaction(func(tx *gorm.DB) error {
 		claim := tx.Model(&PaperOrder{}).
-			Where("id = ? AND status = ?", orderID, "pending").
-			Updates(map[string]any{"status": "processing", "updated_at": time.Now()})
+			Where("id = ? AND status = ?", orderID, PaperOrderStatusPending).
+			Updates(map[string]any{"status": PaperOrderStatusProcessing, "updated_at": time.Now()})
 		if claim.Error != nil {
 			return claim.Error
 		}
@@ -402,14 +459,9 @@ func (p *PaperTradingApi) FillPaperOrder(orderID uint, fillPrice float64) (err e
 			if err := tx.First(&order, orderID).Error; err != nil {
 				return err
 			}
-			if order.Status == "filled" {
-				var count int64
-				if err := tx.Model(&PaperFill{}).Where("order_id = ?", orderID).Count(&count).Error; err != nil {
-					return err
-				}
-				if count == 1 {
-					return nil
-				}
+			if order.Status == PaperOrderStatusFilled {
+				// Idempotent: already fully filled — no rollback.
+				return nil
 			}
 			return paperFillReject(PaperOrderRejectInvalidOrder, "订单状态不是 pending: %s", order.Status)
 		}
@@ -422,17 +474,39 @@ func (p *PaperTradingApi) FillPaperOrder(orderID uint, fillPrice float64) (err e
 		if fillPrice <= 0 {
 			return paperFillReject(PaperOrderRejectInvalidOrder, "成交价格无效")
 		}
+
+		remaining := order.Volume - order.FilledVol
+		if remaining <= 0 {
+			return paperFillReject(PaperOrderRejectInvalidOrder, "no remaining quantity")
+		}
+		qty := fillQty
+		if qty <= 0 {
+			qty = remaining
+		}
+		if qty > remaining {
+			return paperFillReject(PaperOrderRejectInvalidOrder, "fill_qty %d > remaining %d", qty, remaining)
+		}
+		// Phase12-M2.5-C2.3: Flag OFF keep %100; Flag ON buy → QuantityPolicy Validate-only.
+		// Fill never Normalizes or rewrites qty; slice/partial-fill path above unchanged.
+		if !fillQuantityLotOK(order.StockCode, order.Side, qty) {
+			if quantityPolicyEnabledFn != nil && quantityPolicyEnabledFn() && !strings.EqualFold(strings.TrimSpace(order.Side), "sell") {
+				return paperFillReject(PaperOrderRejectInvalidOrder, "fill_qty 不符合 QuantityPolicy (got %d)", qty)
+			}
+			return paperFillReject(PaperOrderRejectInvalidOrder, "fill_qty must be lot multiple >= 100 (got %d)", qty)
+		}
+
 		if err := tx.First(&account, order.AccountID).Error; err != nil {
 			return err
 		}
 
 		now := time.Now()
-		amount := fillPrice * float64(order.Volume)
+		amount := fillPrice * float64(qty)
 		var position PaperPosition
 		positionQuery := tx.Where("account_id = ? AND stock_code = ?", order.AccountID, order.StockCode).First(&position)
+		var legFee float64
 		if order.Side == "buy" {
-			fee := calcPaperBuyFee(amount)
-			total := amount + fee
+			legFee = calcPaperBuyFee(amount)
+			total := amount + legFee
 			if account.Cash < total {
 				return paperFillReject(PaperOrderRejectCashInsufficient, "现金不足：需要 %.2f，可用 %.2f", total, account.Cash)
 			}
@@ -442,7 +516,7 @@ func (p *PaperTradingApi) FillPaperOrder(orderID uint, fillPrice float64) (err e
 					AccountID: order.AccountID,
 					StockCode: order.StockCode,
 					StockName: order.StockName,
-					Volume:    order.Volume,
+					Volume:    qty,
 					AvgCost:   fillPrice,
 					MarkPrice: fillPrice,
 					MarkedAt:  &now,
@@ -454,7 +528,7 @@ func (p *PaperTradingApi) FillPaperOrder(orderID uint, fillPrice float64) (err e
 			} else if positionQuery.Error != nil {
 				return positionQuery.Error
 			} else {
-				newVolume := position.Volume + order.Volume
+				newVolume := position.Volume + qty
 				position.AvgCost = (position.AvgCost*float64(position.Volume) + amount) / float64(newVolume)
 				position.Volume = newVolume
 				position.MarkPrice = fillPrice
@@ -464,7 +538,6 @@ func (p *PaperTradingApi) FillPaperOrder(orderID uint, fillPrice float64) (err e
 					return err
 				}
 			}
-			order.Fee = fee
 		} else {
 			if errors.Is(positionQuery.Error, gorm.ErrRecordNotFound) {
 				return paperFillReject(PaperOrderRejectPositionInsufficient, "无持仓")
@@ -472,13 +545,13 @@ func (p *PaperTradingApi) FillPaperOrder(orderID uint, fillPrice float64) (err e
 			if positionQuery.Error != nil {
 				return positionQuery.Error
 			}
-			if position.Sellable < order.Volume {
-				return paperFillReject(PaperOrderRejectPositionInsufficient, "可卖数量不足（T+1）：可卖 %d，委托 %d", position.Sellable, order.Volume)
+			if position.Sellable < qty {
+				return paperFillReject(PaperOrderRejectPositionInsufficient, "可卖数量不足（T+1）：可卖 %d，委托 %d", position.Sellable, qty)
 			}
-			fee := calcPaperSellFee(amount)
-			account.Cash += amount - fee
-			position.Volume -= order.Volume
-			position.Sellable -= order.Volume
+			legFee = calcPaperSellFee(amount)
+			account.Cash += amount - legFee
+			position.Volume -= qty
+			position.Sellable -= qty
 			position.MarkPrice = fillPrice
 			position.MarkedAt = &now
 			position.UpdatedAt = now
@@ -489,9 +562,35 @@ func (p *PaperTradingApi) FillPaperOrder(orderID uint, fillPrice float64) (err e
 			} else if err := tx.Save(&position).Error; err != nil {
 				return err
 			}
-			order.Fee = fee
 		}
 		changedPosition = position
+
+		prevVol := order.FilledVol
+		prevAvg := order.FilledPrice
+		prevFee := order.Fee
+		newVol := prevVol + qty
+		var newAvg float64
+		if prevVol <= 0 {
+			newAvg = fillPrice
+		} else {
+			newAvg = (prevAvg*float64(prevVol) + amount) / float64(newVol)
+		}
+		newFee := prevFee + legFee
+		fullyFilled = newVol >= order.Volume
+		finalStatus := PaperOrderStatusPending
+		updates := map[string]any{
+			"filled_price": newAvg,
+			"filled_vol":   newVol,
+			"fee":          newFee,
+			"updated_at":   now,
+		}
+		if fullyFilled {
+			finalStatus = PaperOrderStatusFilled
+			updates["status"] = PaperOrderStatusFilled
+			updates["filled_at"] = now
+		} else {
+			updates["status"] = PaperOrderStatusPending
+		}
 
 		fill = PaperFill{
 			AccountID:   order.AccountID,
@@ -500,34 +599,47 @@ func (p *PaperTradingApi) FillPaperOrder(orderID uint, fillPrice float64) (err e
 			StockName:   order.StockName,
 			Side:        order.Side,
 			Price:       fillPrice,
-			Volume:      order.Volume,
-			Fee:         order.Fee,
+			Volume:      qty,
+			Fee:         legFee,
 			StrategyTag: order.StrategyTag,
 			FilledAt:    now,
 		}
-		if err := tx.Create(&fill).Error; err != nil {
-			return err
+		// Phase2 unique index uidx_paper_fill_order: one fill row per order (no migration).
+		// Partial legs accumulate into the same row (Volume/Price/Fee = cum).
+		var existingFill PaperFill
+		ferr := tx.Where("order_id = ?", order.ID).First(&existingFill).Error
+		if errors.Is(ferr, gorm.ErrRecordNotFound) {
+			if err := tx.Create(&fill).Error; err != nil {
+				return err
+			}
+		} else if ferr != nil {
+			return ferr
+		} else {
+			existingFill.Price = newAvg
+			existingFill.Volume = newVol
+			existingFill.Fee = newFee
+			existingFill.FilledAt = now
+			if err := tx.Save(&existingFill).Error; err != nil {
+				return err
+			}
+			fill = existingFill
 		}
 		finalize := tx.Model(&PaperOrder{}).
-			Where("id = ? AND status = ?", order.ID, "processing").
-			Updates(map[string]any{
-				"status":       "filled",
-				"filled_price": fillPrice,
-				"filled_vol":   order.Volume,
-				"fee":          order.Fee,
-				"filled_at":    now,
-				"updated_at":   now,
-			})
+			Where("id = ? AND status = ?", order.ID, PaperOrderStatusProcessing).
+			Updates(updates)
 		if finalize.Error != nil {
 			return finalize.Error
 		}
 		if finalize.RowsAffected != 1 {
 			return paperFillReject(PaperOrderRejectInvalidOrder, "订单状态 CAS 失败")
 		}
-		order.Status = "filled"
-		order.FilledPrice = fillPrice
-		order.FilledVol = order.Volume
-		order.FilledAt = &now
+		order.Status = finalStatus
+		order.FilledPrice = newAvg
+		order.FilledVol = newVol
+		order.Fee = newFee
+		if fullyFilled {
+			order.FilledAt = &now
+		}
 		order.UpdatedAt = now
 
 		if err := revaluePaperAccount(tx, &account, now); err != nil {
@@ -542,11 +654,77 @@ func (p *PaperTradingApi) FillPaperOrder(orderID uint, fillPrice float64) (err e
 	if err != nil || !committed {
 		return err
 	}
-	// 兼容：保留 fill；生命周期：补发 order_filled（Fill 事务已提交）
 	paperTradingEvents.Filled(toTradeFill(fill))
-	paperTradingEvents.OrderFilled(toTradeOrder(order))
+	if fullyFilled {
+		paperTradingEvents.OrderFilled(toTradeOrder(order))
+	}
 	paperTradingEvents.PositionChanged(toTradePosition(changedPosition))
 	paperTradingEvents.AccountChanged(toTradeAccount(account))
+	return nil
+}
+
+// RejectPaperOrderSim marks a zero-fill pending order as rejected (scenario simulation).
+// Does not touch Position/Cash. reason must be price|liquidity|broker.
+func (p *PaperTradingApi) RejectPaperOrderSim(orderID uint, reason, message string) error {
+	EnsurePaperTradingTables()
+	if db.Dao == nil || orderID == 0 {
+		return paperFillReject(PaperOrderRejectInvalidOrder, "invalid order id")
+	}
+	reason = strings.TrimSpace(strings.ToLower(reason))
+	switch reason {
+	case PaperSimRejectReasonPrice, PaperSimRejectReasonLiquidity, PaperSimRejectReasonBroker:
+	default:
+		return paperFillReject(PaperOrderRejectInvalidOrder, "reject reason must be price|liquidity|broker")
+	}
+	if strings.TrimSpace(message) == "" {
+		message = "simulated reject: " + reason
+	}
+	if len(message) > 500 {
+		message = message[:500]
+	}
+	now := time.Now()
+	var rejected *PaperOrder
+	err := db.Dao.Transaction(func(tx *gorm.DB) error {
+		var order PaperOrder
+		if err := tx.First(&order, orderID).Error; err != nil {
+			return err
+		}
+		if order.Status != PaperOrderStatusPending {
+			return paperFillReject(PaperOrderRejectInvalidOrder, "订单状态不是 pending: %s", order.Status)
+		}
+		if order.FilledVol > 0 {
+			return paperFillReject(PaperOrderRejectInvalidOrder, "cannot reject after partial fills (use cancel)")
+		}
+		res := tx.Model(&PaperOrder{}).
+			Where("id = ? AND status = ? AND filled_vol = 0", orderID, PaperOrderStatusPending).
+			Updates(map[string]any{
+				"status":             PaperOrderStatusRejected,
+				"reject_code":        reason,
+				"reject_reason":      message,
+				"fill_attempt_count": gorm.Expr("fill_attempt_count + 1"),
+				"updated_at":         now,
+			})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected != 1 {
+			return paperFillReject(PaperOrderRejectInvalidOrder, "reject CAS miss")
+		}
+		if err := tx.First(&order, orderID).Error; err != nil {
+			return err
+		}
+		if err := writePaperOrderEvent(tx, &order, PaperOrderEventRejected, reason, message, now); err != nil {
+			return err
+		}
+		rejected = &order
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if rejected != nil {
+		paperTradingEvents.OrderRejected(toTradeOrder(*rejected))
+	}
 	return nil
 }
 

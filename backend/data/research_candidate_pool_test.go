@@ -93,3 +93,78 @@ func TestGetCandidatePoolScoreThreshold_Default(t *testing.T) {
 	setupSettingsCacheTestDB(t)
 	require.Equal(t, 60.0, GetCandidatePoolScoreThreshold())
 }
+
+// Phase16.15-E: later universe empty snapshot must not override earlier scope=all.
+func TestListResearchCandidates_IgnoresUniverseEmptySnapshot(t *testing.T) {
+	setupSignalScanListTestDB(t)
+	days0 := 0
+	payload := models.SignalScanResultPayload{
+		Items: []models.SignalScanHit{
+			{SECUCODE: "600000.SH", SECURITY_CODE: "600000", SECURITY_NAME_ABBR: "浦发", Tag: "强", DaysAgo: &days0, RSI: 28, NEW_PRICE: "10"},
+		},
+		HitTotal: 1,
+	}
+	raw, err := json.Marshal(payload)
+	require.NoError(t, err)
+
+	allSnap := models.SignalScanSnapshot{
+		CreatedAt:  time.Date(2026, 9, 3, 20, 12, 0, 0, time.Local),
+		TradeDate:  "2026-09-03",
+		Session:    "close",
+		Scope:      models.SignalScanScopeAll,
+		Status:     "done",
+		HitTotal:   1,
+		ResultJSON: string(raw),
+	}
+	require.NoError(t, db.Dao.Create(&allSnap).Error)
+
+	universeEmpty := models.SignalScanSnapshot{
+		CreatedAt:  time.Date(2026, 9, 4, 0, 19, 0, 0, time.Local),
+		TradeDate:  "2026-09-02",
+		Session:    "close",
+		Scope:      models.SignalScanScopeUniverse,
+		Status:     "done",
+		HitTotal:   0,
+		ResultJSON: `{"items":[],"hitTotal":0}`,
+	}
+	require.NoError(t, db.Dao.Create(&universeEmpty).Error)
+
+	list := ListResearchCandidatesFromLatestSnapshot(60)
+	require.NotNil(t, list)
+	require.Equal(t, allSnap.ID, list.SnapshotID)
+	require.Equal(t, "2026-09-03", list.TradeDate)
+	require.Equal(t, 1, list.ItemCount)
+	require.Equal(t, "sh600000", list.Items[0].StockCode)
+
+	byDate := ListResearchCandidatesForTradeDate("2026-09-02", 60)
+	require.NotNil(t, byDate)
+	require.Equal(t, uint(0), byDate.SnapshotID)
+	require.Equal(t, 0, byDate.ItemCount)
+	require.Contains(t, byDate.Message, "universe")
+}
+
+func TestListResearchCandidates_AllowsLegacyEmptyScope(t *testing.T) {
+	setupSignalScanListTestDB(t)
+	days0 := 0
+	payload := models.SignalScanResultPayload{
+		Items: []models.SignalScanHit{
+			{SECUCODE: "000001.SZ", SECURITY_CODE: "000001", SECURITY_NAME_ABBR: "平安", Tag: "强", DaysAgo: &days0, RSI: 28, NEW_PRICE: "11"},
+		},
+		HitTotal: 1,
+	}
+	raw, err := json.Marshal(payload)
+	require.NoError(t, err)
+	require.NoError(t, db.Dao.Create(&models.SignalScanSnapshot{
+		CreatedAt:  time.Now(),
+		TradeDate:  "2099-04-01",
+		Session:    "close",
+		Scope:      "", // legacy
+		Status:     "done",
+		HitTotal:   1,
+		ResultJSON: string(raw),
+	}).Error)
+
+	list := ListResearchCandidatesFromLatestSnapshot(60)
+	require.Equal(t, 1, list.ItemCount)
+	require.Equal(t, "sz000001", list.Items[0].StockCode)
+}

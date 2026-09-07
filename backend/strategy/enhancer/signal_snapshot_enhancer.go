@@ -6,6 +6,7 @@ import (
 	"go-stock/backend/data"
 	"go-stock/backend/logger"
 	"go-stock/backend/models"
+	"go-stock/backend/research/provenance"
 )
 
 const (
@@ -48,7 +49,7 @@ func (e *SignalSnapshotEnhancer) Enhance(items []CandidateItem, ctx EnhanceConte
 	}
 
 	hits := e.Source.ParseSnapshotHits(snap)
-	byCode := buildHitIndex(hits)
+	byCode := provenance.BuildHitIndex(hits)
 	enhanced := 0
 	for i := range items {
 		code := strings.ToLower(strings.TrimSpace(items[i].StockCode))
@@ -71,27 +72,6 @@ func (e *SignalSnapshotEnhancer) Enhance(items []CandidateItem, ctx EnhanceConte
 	logger.SugaredLogger.Infof("signal enhancer applied snapshot_id=%d hits=%d matched=%d",
 		snap.ID, len(hits), enhanced)
 	return items, nil
-}
-
-func buildHitIndex(hits []models.SignalScanHit) map[string]models.SignalScanHit {
-	out := map[string]models.SignalScanHit{}
-	for _, h := range hits {
-		for _, raw := range []string{h.SECUCODE, h.SECURITY_CODE} {
-			raw = strings.TrimSpace(raw)
-			if raw == "" {
-				continue
-			}
-			n, err := data.NormalizeStockCode(raw)
-			if err != nil || n.Market != data.MarketCN {
-				continue
-			}
-			code := strings.ToLower(strings.TrimSpace(n.SinaCode))
-			if data.IsAShareSinaCode(code) {
-				out[code] = h
-			}
-		}
-	}
-	return out
 }
 
 func signalScoreFromTag(tag string) float64 {

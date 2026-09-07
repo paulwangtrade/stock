@@ -17,7 +17,7 @@ func TestPreTradeCheck_CashInsufficient_DoesNotCallPort(t *testing.T) {
 		return &preTradeAccountSnapshot{Cash: 1_000, Positions: map[string]preTradePosition{}}, nil
 	})
 	order, err := svc.ExecutePlanItem(context.Background(), models.TradePlanItem{
-		StockCode: "sh603799", Side: "buy",
+		StockCode: "sh603799", Side: "buy", LimitPrice: 38.50, TargetVolume: 2500,
 	}, ExecutePlanItemOpts{Price: 38.50, Volume: 2500, AutoFill: true})
 	require.Error(t, err)
 	require.Nil(t, order)
@@ -35,6 +35,7 @@ func TestPreTradeCheck_OK_CallsPortAndFilled(t *testing.T) {
 	svc := NewExecutionService(port) // 默认 DB 快照
 	order, err := svc.ExecutePlanItem(context.Background(), models.TradePlanItem{
 		StockCode: "sh600000", StockName: "浦发", Side: "buy",
+		LimitPrice: 10, TargetVolume: 100,
 	}, ExecutePlanItemOpts{
 		Price: 10, Volume: 100, AutoFill: true, StrategyTag: models.PaperStrategyTagTradePlan,
 	})
@@ -50,7 +51,7 @@ func TestPreTradeCheck_SellNoPosition_DoesNotCallPort(t *testing.T) {
 		return &preTradeAccountSnapshot{Cash: 100_000, Positions: map[string]preTradePosition{}}, nil
 	})
 	order, err := svc.ExecutePlanItem(context.Background(), models.TradePlanItem{
-		StockCode: "sz000001", Side: "sell",
+		StockCode: "sz000001", Side: "sell", LimitPrice: 10, TargetVolume: 100,
 	}, ExecutePlanItemOpts{Price: 10, Volume: 100, AutoFill: true})
 	require.Error(t, err)
 	require.Nil(t, order)
@@ -63,8 +64,10 @@ func TestPreTradeCheck_InvalidOrder(t *testing.T) {
 	svc := NewExecutionService(port).withSnapshotLoader(func(uint) (*preTradeAccountSnapshot, error) {
 		return &preTradeAccountSnapshot{Cash: 1e9}, nil
 	})
+	// Missing symbol → Safety Gate blocks before Port (Spec integrity).
 	_, err := svc.ExecutePlanItem(context.Background(), models.TradePlanItem{Side: "buy"}, ExecutePlanItemOpts{Price: 10, Volume: 100})
-	require.Equal(t, data.PaperOrderRejectInvalidOrder, PreTradeRejectCode(err))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "safetygate")
 	require.Equal(t, 0, port.calls)
 }
 

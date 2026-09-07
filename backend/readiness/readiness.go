@@ -11,10 +11,12 @@ import (
 
 	"go-stock/backend/models"
 	"go-stock/backend/qualitygate"
+	"go-stock/backend/sellgate"
+	"go-stock/backend/tradingrule"
 )
 
 const (
-	LotSize = int64(100)
+	// LotSize moved to lot_threshold.go (legacy 100; Flag-aware helpers alongside).
 
 	StageLegacy             = "LEGACY"
 	StageIntentDraft        = "S1_INTENT_DRAFT"
@@ -22,28 +24,34 @@ const (
 	StageIntentLocked       = "S3_INTENT_LOCKED"
 	StageFrozenSnapshot     = "S4_FROZEN_SNAPSHOT"
 
-	IntentSelected  = "selected"
-	IntentPriced    = "priced"
-	IntentGapSkip   = "gap_skip"
-	IntentSizeSkip  = "size_skip"
+	IntentSelected   = "selected"
+	IntentPriced     = "priced"
+	IntentGapSkip    = "gap_skip"
+	IntentSizeSkip   = "size_skip"
 	IntentManualSkip = "manual_skip"
 
 	SeverityBlock = "BLOCK"
 	SeverityWarn  = "WARN"
 
-	RuleIRLimit   = "IR-LIMIT"
-	RuleIRVolume  = "IR-VOLUME"
-	RuleIRPriced  = "IR-PRICED-VOLUME"
-	RuleIREmpty   = "IR-EMPTY"
-	RuleIRLegacy  = "IR-LEGACY"
-	RuleIRStage   = "IR-STAGE"
+	RuleIRLimit  = "IR-LIMIT"
+	RuleIRVolume = "IR-VOLUME"
+	RuleIRPriced = "IR-PRICED-VOLUME"
+	RuleIREmpty  = "IR-EMPTY"
+	RuleIRLegacy = "IR-LEGACY"
+	RuleIRStage  = "IR-STAGE"
 
-	CodeLimitMissing       = "LIMIT_PRICE_MISSING"
-	CodeVolumeBelowLot     = "TARGET_VOLUME_BELOW_LOT"
-	CodePricedNoVolume     = "PRICED_VOLUME_NOT_MATERIALIZED"
-	CodeNoTradeable        = "NO_TRADEABLE_ITEMS"
-	CodeLegacyNoIntent     = "LEGACY_NO_INTENT"
+	CodeLimitMissing          = "LIMIT_PRICE_MISSING"
+	CodeVolumeBelowLot        = "TARGET_VOLUME_BELOW_LOT"
+	CodePricedNoVolume        = "PRICED_VOLUME_NOT_MATERIALIZED"
+	CodeNoTradeable           = "NO_TRADEABLE_ITEMS"
+	CodeLegacyNoIntent        = "LEGACY_NO_INTENT"
 	CodeIntentNotMaterialized = "INTENT_NOT_MATERIALIZED"
+
+	RuleIRSell                = "IR-SELL"
+	CodeSellNoPosition        = "SELL_NO_POSITION"
+	CodeSellNotSellable       = "SELL_NOT_SELLABLE"
+	CodeSellInsufficientAvail = "SELL_INSUFFICIENT_AVAILABLE"
+	CodeSellInvalidQuantity   = "SELL_INVALID_QUANTITY"
 )
 
 // Finding is one readiness / quality finding line.
@@ -114,6 +122,10 @@ func EvaluateExecutionIntentReadiness(plan *models.TradePlan, opts *Options) Exe
 		return out
 	}
 
+	if sellgate.IsPureSellPlan(plan) {
+		return evaluatePureSellReadiness(plan, opts, out)
+	}
+
 	missingLimit := make([]string, 0)
 	missingVolume := make([]string, 0)
 	pricedNoVol := make([]string, 0)
@@ -132,7 +144,7 @@ func EvaluateExecutionIntentReadiness(plan *models.TradePlan, opts *Options) Exe
 			continue
 		}
 
-		full := st == IntentPriced && it.LimitPrice > 0 && it.TargetVolume >= LotSize
+		full := st == IntentPriced && it.LimitPrice > 0 && VolumeMeetsBuyLot(it.StockCode, it.TargetVolume)
 		if full {
 			tradeable++
 			continue
@@ -145,10 +157,10 @@ func EvaluateExecutionIntentReadiness(plan *models.TradePlan, opts *Options) Exe
 		if it.LimitPrice <= 0 {
 			missingLimit = append(missingLimit, it.StockCode)
 		}
-		if it.TargetVolume < LotSize {
+		if !VolumeMeetsBuyLot(it.StockCode, it.TargetVolume) {
 			missingVolume = append(missingVolume, it.StockCode)
 		}
-		if st == IntentPriced && it.TargetVolume < LotSize {
+		if st == IntentPriced && !VolumeMeetsBuyLot(it.StockCode, it.TargetVolume) {
 			pricedNoVol = append(pricedNoVol, it.StockCode)
 		}
 	}
@@ -200,12 +212,25 @@ func EvaluateExecutionIntentReadiness(plan *models.TradePlan, opts *Options) Exe
 	// Non-skip volume below lot (includes selected and half-priced); avoid dup-only noise when already listed as pricedNoVol-only set.
 	if len(missingVolume) > 0 {
 		// Still emit when there are non-priced volume gaps, or always for rule 2 coverage.
+		// Evidence keeps lot_size for compatibility; Flag ON adds policy mins.
+		ev := map[string]any{
+			"codes":           missingVolume,
+			"lot_size":        LotSize, // legacy compat field
+			"quantity_policy": tradingrule.EnableQuantityPolicy(),
+		}
+		if tradingrule.EnableQuantityPolicy() {
+			mins := make(map[string]int64, len(missingVolume))
+			for _, code := range missingVolume {
+				mins[code] = EffectiveBuyLotThreshold(code)
+			}
+			ev["min_buy_qty_by_code"] = mins
+		}
 		out.Blockers = append(out.Blockers, Finding{
 			RuleCode: RuleIRVolume,
 			Code:     CodeVolumeBelowLot,
 			Severity: SeverityBlock,
-			Message:  fmt.Sprintf("non-skip buy items target_volume < %d: %s", LotSize, strings.Join(missingVolume, ",")),
-			Evidence: map[string]any{"codes": missingVolume, "lot_size": LotSize},
+			Message:  fmt.Sprintf("non-skip buy items target_volume below buy-lot gate: %s", strings.Join(missingVolume, ",")),
+			Evidence: ev,
 		})
 	}
 	if tradeable == 0 {
@@ -278,10 +303,80 @@ func isBuy(side string) bool {
 	return s == "" || s == "buy"
 }
 
+func isSell(side string) bool {
+	return strings.EqualFold(strings.TrimSpace(side), "sell")
+}
+
+func evaluatePureSellReadiness(plan *models.TradePlan, opts *Options, out ExecutionIntentReadinessResult) ExecutionIntentReadinessResult {
+	tradeable := 0
+	for _, it := range plan.Items {
+		if !isSell(it.Side) {
+			out.Blockers = append(out.Blockers, Finding{
+				RuleCode: RuleIRSell,
+				Code:     "SELL_MIXED_PLAN",
+				Severity: SeverityBlock,
+				Message:  fmt.Sprintf("mixed buy/sell plan not supported: item %s side=%s", it.StockCode, it.Side),
+			})
+			continue
+		}
+		if it.TargetVolume <= 0 || !sellgate.VolumeMeetsSellLot(it.StockCode, it.TargetVolume) {
+			out.Blockers = append(out.Blockers, Finding{
+				RuleCode: RuleIRSell,
+				Code:     CodeSellInvalidQuantity,
+				Severity: SeverityBlock,
+				Message:  fmt.Sprintf("sell item invalid quantity: %s vol=%d", it.StockCode, it.TargetVolume),
+			})
+			continue
+		}
+		_, err := sellgate.CheckSellPositionGate(it.StockCode, it.TargetVolume, plan.TradeDate, out.CheckedAt)
+		if err != nil {
+			code := CodeSellInvalidQuantity
+			switch err {
+			case sellgate.ErrSellNoPosition:
+				code = CodeSellNoPosition
+			case sellgate.ErrSellNotSellable:
+				code = CodeSellNotSellable
+			case sellgate.ErrSellInsufficientAvailable:
+				code = CodeSellInsufficientAvail
+			}
+			out.Blockers = append(out.Blockers, Finding{
+				RuleCode: RuleIRSell,
+				Code:     code,
+				Severity: SeverityBlock,
+				Message:  fmt.Sprintf("sell gate failed for %s: %v", it.StockCode, err),
+			})
+			continue
+		}
+		tradeable++
+	}
+	out.TradeableCount = tradeable
+	out.Materialized = tradeable > 0
+	if tradeable == 0 {
+		out.Blockers = append(out.Blockers, Finding{
+			RuleCode: RuleIREmpty,
+			Code:     CodeNoTradeable,
+			Severity: SeverityBlock,
+			Message:  "no tradeable sell items",
+		})
+	}
+	// Pure sell plans skip buy QualityGate (I1 position-overlap would false-positive).
+	out.Ready = len(out.Blockers) == 0
+	return out
+}
+
 // evaluateQualityGateSkipAware runs MVP QualityGate on a plan projection that
 // excludes gap_skip / size_skip / manual_skip items so they cannot trip E1.
 // I1 only sees remaining (tradeable / pending) codes.
 func evaluateQualityGateSkipAware(plan *models.TradePlan, opts *Options) qualitygate.Result {
+	if sellgate.IsPureSellPlan(plan) {
+		return qualitygate.Result{
+			Passed:    true,
+			Severity:  qualitygate.SeverityPASS,
+			PlanID:    plan.ID,
+			TradeDate: plan.TradeDate,
+			CheckedAt: time.Now(),
+		}
+	}
 	md := opts.MarketData
 	// After morning materialization, open-gap check is usually N/A.
 	if plan.PricingStage == "morning_materialized" && !md.SkipGapEval {

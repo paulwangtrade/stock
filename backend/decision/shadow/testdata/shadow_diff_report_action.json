@@ -1,0 +1,87 @@
+{
+  "equal": false,
+  "summary": "DIFF js_legacy vs go_engine: 4 field(s)",
+  "leftProducer": "js_legacy",
+  "rightProducer": "go_engine",
+  "diffs": [
+    {
+      "path": "action.allowDraft",
+      "slice": "action",
+      "left": true,
+      "right": false
+    },
+    {
+      "path": "action.code",
+      "slice": "action",
+      "left": "ENTER",
+      "right": "WAIT_PULLBACK"
+    },
+    {
+      "path": "action.label",
+      "slice": "action",
+      "left": "可买",
+      "right": "等回踩"
+    },
+    {
+      "path": "action.side",
+      "slice": "action",
+      "left": "buy",
+      "right": "none"
+    }
+  ],
+  "bySlice": {
+    "action": {
+      "equal": false,
+      "diffs": [
+        {
+          "path": "action.allowDraft",
+          "slice": "action",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "action.code",
+          "slice": "action",
+          "left": "ENTER",
+          "right": "WAIT_PULLBACK"
+        },
+        {
+          "path": "action.label",
+          "slice": "action",
+          "left": "可买",
+          "right": "等回踩"
+        },
+        {
+          "path": "action.side",
+          "slice": "action",
+          "left": "buy",
+          "right": "none"
+        }
+      ]
+    },
+    "entryZone": {
+      "equal": true,
+      "diffs": []
+    },
+    "gate": {
+      "equal": true,
+      "diffs": []
+    },
+    "risk": {
+      "equal": true,
+      "diffs": []
+    },
+    "signal": {
+      "equal": true,
+      "diffs": []
+    },
+    "size": {
+      "equal": true,
+      "diffs": []
+    }
+  },
+  "harness": "quant-decision-shadow-dual-run",
+  "phase": "Phase2-A",
+  "baselineId": "qd1:go_engine:sz000001:2026-07-21T00:00:00Z:ENTER:可买",
+  "candidateId": "qd1:go_engine:sz000001:2026-07-21T00:00:00Z:ENTER:可买"
+}

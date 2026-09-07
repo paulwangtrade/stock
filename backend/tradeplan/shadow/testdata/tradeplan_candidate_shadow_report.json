@@ -1,0 +1,235 @@
+{
+  "phase": "Phase5-C",
+  "harness": "quant-tradeplan-candidate-shadow-batch",
+  "generatedAt": "2026-07-21T00:00:00Z",
+  "totalPairs": 4,
+  "equalCount": 3,
+  "diffCount": 1,
+  "candidateFieldsCovered": 1,
+  "missingFieldCounts": {
+    "plan.snapshotHash": 4,
+    "plan.sourceDecisionId": 4,
+    "plan.stopPrice": 4
+  },
+  "fieldStats": {
+    "EntryPriceHint": {
+      "equalCount": 4,
+      "differentCount": 0,
+      "weakMatchCount": 0,
+      "ignoredCount": 0,
+      "equalRate": 1
+    },
+    "Executing": {
+      "equalCount": 0,
+      "differentCount": 1,
+      "weakMatchCount": 0,
+      "ignoredCount": 0,
+      "equalRate": 0
+    },
+    "Fill": {
+      "equalCount": 0,
+      "differentCount": 1,
+      "weakMatchCount": 0,
+      "ignoredCount": 0,
+      "equalRate": 0
+    },
+    "IntentKind": {
+      "equalCount": 0,
+      "differentCount": 0,
+      "weakMatchCount": 4,
+      "ignoredCount": 0,
+      "equalRate": 0
+    },
+    "Item.Status": {
+      "equalCount": 0,
+      "differentCount": 0,
+      "weakMatchCount": 0,
+      "ignoredCount": 1,
+      "equalRate": 0
+    },
+    "OrderID": {
+      "equalCount": 0,
+      "differentCount": 1,
+      "weakMatchCount": 0,
+      "ignoredCount": 0,
+      "equalRate": 0
+    },
+    "Side": {
+      "equalCount": 4,
+      "differentCount": 0,
+      "weakMatchCount": 0,
+      "ignoredCount": 0,
+      "equalRate": 1
+    },
+    "Status": {
+      "equalCount": 0,
+      "differentCount": 0,
+      "weakMatchCount": 0,
+      "ignoredCount": 4,
+      "equalRate": 0
+    },
+    "TargetShares": {
+      "equalCount": 3,
+      "differentCount": 1,
+      "weakMatchCount": 0,
+      "ignoredCount": 0,
+      "equalRate": 0.75
+    }
+  },
+  "riskFlagCounts": {
+    "forbidden_field": 2,
+    "intent_weak_match": 4,
+    "missing_decision_provenance": 4
+  },
+  "pairs": [
+    {
+      "equal": true,
+      "missingFields": [
+        "plan.stopPrice",
+        "plan.sourceDecisionId",
+        "plan.snapshotHash"
+      ],
+      "differentFields": [
+        {
+          "path": "IntentKind",
+          "left": "ENTER_HINT",
+          "right": "buy enter",
+          "kind": "weak_match"
+        },
+        {
+          "path": "Status",
+          "left": "n/a(candidate)",
+          "right": "ready",
+          "kind": "ignored"
+        }
+      ],
+      "riskFlags": [
+        "intent_weak_match",
+        "missing_decision_provenance"
+      ],
+      "stockCode": "sz000001",
+      "tradeDate": "2026-07-21",
+      "summary": "case1_equal: OK: compared fields equal (lifecycle/fill ignored)"
+    },
+    {
+      "equal": false,
+      "missingFields": [
+        "plan.stopPrice",
+        "plan.sourceDecisionId",
+        "plan.snapshotHash"
+      ],
+      "differentFields": [
+        {
+          "path": "TargetShares",
+          "left": 1000,
+          "right": 800,
+          "kind": "different"
+        },
+        {
+          "path": "IntentKind",
+          "left": "ENTER_HINT",
+          "right": "buy",
+          "kind": "weak_match"
+        },
+        {
+          "path": "Status",
+          "left": "n/a(candidate)",
+          "right": "ready",
+          "kind": "ignored"
+        }
+      ],
+      "riskFlags": [
+        "intent_weak_match",
+        "missing_decision_provenance"
+      ],
+      "stockCode": "sz000001",
+      "tradeDate": "2026-07-21",
+      "summary": "case2_shares: DIFF: semantic field mismatch"
+    },
+    {
+      "equal": true,
+      "missingFields": [
+        "plan.stopPrice",
+        "plan.sourceDecisionId",
+        "plan.snapshotHash"
+      ],
+      "differentFields": [
+        {
+          "path": "IntentKind",
+          "left": "ENTER_HINT",
+          "right": "buy",
+          "kind": "weak_match"
+        },
+        {
+          "path": "Status",
+          "left": "n/a(candidate)",
+          "right": "executing",
+          "kind": "ignored"
+        },
+        {
+          "path": "Item.Status",
+          "left": "n/a(candidate)",
+          "right": "filled",
+          "kind": "ignored"
+        },
+        {
+          "path": "Executing",
+          "left": false,
+          "right": true,
+          "kind": "forbidden_field"
+        }
+      ],
+      "riskFlags": [
+        "intent_weak_match",
+        "missing_decision_provenance",
+        "forbidden_field"
+      ],
+      "stockCode": "sz000001",
+      "tradeDate": "2026-07-21",
+      "summary": "case3_status_ignored: OK: compared fields equal (lifecycle/fill ignored)"
+    },
+    {
+      "equal": true,
+      "missingFields": [
+        "plan.stopPrice",
+        "plan.sourceDecisionId",
+        "plan.snapshotHash"
+      ],
+      "differentFields": [
+        {
+          "path": "IntentKind",
+          "left": "ENTER_HINT",
+          "right": "buy",
+          "kind": "weak_match"
+        },
+        {
+          "path": "Status",
+          "left": "n/a(candidate)",
+          "right": "ready",
+          "kind": "ignored"
+        },
+        {
+          "path": "OrderID",
+          "left": 0,
+          "right": 99,
+          "kind": "forbidden_field"
+        },
+        {
+          "path": "Fill",
+          "left": null,
+          "right": "fillId=1 vol=1000 px=0",
+          "kind": "forbidden_field"
+        }
+      ],
+      "riskFlags": [
+        "intent_weak_match",
+        "missing_decision_provenance",
+        "forbidden_field"
+      ],
+      "stockCode": "sz000001",
+      "tradeDate": "2026-07-21",
+      "summary": "case4_forbidden: OK: compared fields equal (lifecycle/fill ignored)"
+    }
+  ],
+  "summary": "UNSTABLE_SHADOW: semantic diffs present"
+}

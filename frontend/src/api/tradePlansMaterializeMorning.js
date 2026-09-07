@@ -3,6 +3,8 @@
  * No fetch / no auto Approve / Freeze.
  */
 
+import { formatMaterializeOutcomeDisplay } from '../viewmodels/tradePlan/intentPreflight.js'
+
 export const PRICING_STAGE_AFTER_CLOSE_INTENT = 'after_close_intent'
 export const PRICING_STAGE_MORNING_MATERIALIZED = 'morning_materialized'
 
@@ -91,48 +93,8 @@ export function normalizeMaterializeMorningResponse(body) {
 
 /**
  * @param {ReturnType<typeof normalizeMaterializeMorningResponse>} res
- * @returns {{ ok: boolean, title: string, detailLines: string[] }}
+ * @returns {{ ok: boolean, level?: string, title: string, detailLines: string[], toastMessage?: string }}
  */
 export function formatMaterializeMorningDisplay(res) {
-  if (!res || typeof res !== 'object') {
-    return {
-      ok: false,
-      title: '早盘物化失败',
-      detailLines: ['无响应'],
-    }
-  }
-  if (res.success) {
-    const lines = [
-      `物化条目：${res.materialized_items}`,
-      `Readiness：${res.readiness_ready ? 'Ready' : 'Blocked'}`,
-    ]
-    if (res.blockers.length) {
-      lines.push(`阻断（${res.blockers.length}）：`)
-      for (const b of res.blockers.slice(0, 8)) {
-        const code = b.code || b.rule_code || '—'
-        lines.push(`- [${code}] ${b.message || ''}`.trim())
-      }
-      if (res.blockers.length > 8) {
-        lines.push(`…另有 ${res.blockers.length - 8} 项`)
-      }
-    } else {
-      lines.push('阻断：无')
-    }
-    return { ok: true, title: '早盘物化成功', detailLines: lines }
-  }
-  const reason =
-    String(res.message || '').trim() ||
-    (res.failed_step ? `步骤失败：${res.failed_step}` : '') ||
-    (res.code ? `业务码 ${res.code}` : '') ||
-    '未知错误'
-  const lines = [reason]
-  if (res.failed_step) lines.push(`失败步骤：${res.failed_step}`)
-  if (res.blockers.length) {
-    lines.push(`阻断（${res.blockers.length}）：`)
-    for (const b of res.blockers.slice(0, 5)) {
-      const code = b.code || b.rule_code || '—'
-      lines.push(`- [${code}] ${b.message || ''}`.trim())
-    }
-  }
-  return { ok: false, title: '早盘物化失败', detailLines: lines }
+  return formatMaterializeOutcomeDisplay(res)
 }

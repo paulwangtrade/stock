@@ -1,12 +1,25 @@
-/** 自选页：今日有操作提示（可买/等回踩/先风控）时的弹窗去重与文案 */
+/** 自选页：今日有操作提示（可买/等回踩/先风控）时的弹窗去重与文案
+ * Phase1-B1：Action 优先消费 Decision；无 Decision 时 legacy_fallback（adapter），不自行派生。
+ */
 
 import { BUY_ENTRY_TAGS } from './buyPriceRange'
 import { isSellSignalTag } from './icePointSignals'
 import { getQuantAutomationFromSettings } from './quantAutomationSettings'
 import { resolveSignalActionHint } from './signalActionHint'
-import { formatSignalTagLabel } from './signalBuyGuide'
+import {
+  ensureDecisionId,
+  recordActionObservation,
+  OBS_CONSUMER_ALERT,
+  OBS_SOURCE_DECISION,
+  OBS_SOURCE_LEGACY,
+} from './quantDecisionObservability'
 
 const STATE_KEY = 'watchlistActionAlertStateV1'
+
+/** Decision 路径标记 */
+export const ALERT_ACTION_SOURCE_DECISION = 'decision'
+/** 无 Decision 时的兼容路径（adapter → derive，不在本模块写 label） */
+export const ALERT_ACTION_SOURCE_LEGACY = 'legacy_fallback'
 
 /** 需要弹窗提醒的操作标签 */
 export const WATCHLIST_ACTIONABLE_LABELS = new Set(['可买', '等回踩', '可加仓', '早减', '先风控'])
@@ -57,42 +70,114 @@ export function isCoveredByQuantAutomation(entry, actionLabel, automation) {
   return false
 }
 
+/** Decision.action → 旧 actionHint 形（仅透传，不派生） */
+function actionHintFromDecision(decision) {
+  const a = decision?.action
+  if (!a?.label) return null
+  ensureDecisionId(decision)
+  const hint = {
+    label: a.label,
+    type: a.type || 'default',
+    lines: Array.isArray(a.lines) ? a.lines : [],
+    tooltip: a.tooltip || (Array.isArray(a.lines) ? a.lines.join('\n') : ''),
+    decisionId: decision.id || null,
+    actionSource: OBS_SOURCE_DECISION,
+  }
+  if (decision.signal?.tag) hint.tag = decision.signal.tag
+  return hint
+}
+
+/**
+ * 解析 Alert 用 Action：优先 Decision，否则 legacy_fallback。
+ * @returns {{ actionHint: object|null, actionSource: string, decision: object|null, decisionId: string|null }}
+ */
+export function resolveWatchlistAlertAction(code, entry, ctx = {}) {
+  const {
+    quantDecisionFor,
+    quantChecklistFor,
+    quantEntryFor,
+  } = ctx
+
+  const decision = typeof quantDecisionFor === 'function'
+    ? quantDecisionFor(code)
+    : null
+
+  const fromDecision = actionHintFromDecision(decision)
+  if (fromDecision) {
+    recordActionObservation({
+      consumer: OBS_CONSUMER_ALERT,
+      code,
+      asOf: decision?.asOf || '',
+      decisionId: decision?.id || null,
+      actionLabel: fromDecision.label,
+      actionCode: decision?.action?.code || '',
+      actionSource: OBS_SOURCE_DECISION,
+    })
+    return {
+      actionHint: fromDecision,
+      actionSource: ALERT_ACTION_SOURCE_DECISION,
+      decision,
+      decisionId: decision?.id || null,
+    }
+  }
+
+  // legacy_fallback：无 Decision（或无 label）时经 adapter，标记路径
+  const qEntry = quantEntryFor?.(code)
+  const actionHint = resolveSignalActionHint({
+    tag: entry?.tag,
+    buyPriceRange: qEntry?.buyPriceRange ?? entry?.buyPriceRange,
+    sellPositionPct: entry?.sellPositionPct,
+    addPositionPct: entry?.addPositionPct,
+    rushReducePct: entry?.rushReducePct,
+    sourceTag: entry?.sourceTag,
+    daysAgo: 0,
+    checklistReady: quantChecklistFor?.(code)?.ready,
+  })
+  const legacyHint = actionHint
+    ? {
+        ...actionHint,
+        actionSource: OBS_SOURCE_LEGACY,
+        decisionId: decision?.id || null,
+      }
+    : null
+  recordActionObservation({
+    consumer: OBS_CONSUMER_ALERT,
+    code,
+    asOf: decision?.asOf || '',
+    decisionId: decision?.id || null,
+    actionLabel: legacyHint?.label || '',
+    actionCode: '',
+    actionSource: OBS_SOURCE_LEGACY,
+  })
+  return {
+    actionHint: legacyHint,
+    actionSource: ALERT_ACTION_SOURCE_LEGACY,
+    decision: decision || null,
+    decisionId: decision?.id || null,
+  }
+}
+
 /**
  * @param {Record<string, object>} byCode scanWatchlistSignals 的 byCode
  * @param {object} ctx
- * @param {Record<string, object>} [ctx.liveByCode] 代码 → 行情行
+ * @param {function} [ctx.quantDecisionFor]
  * @param {function} [ctx.quantChecklistFor]
  * @param {function} [ctx.quantEntryFor]
- * @param {object} [ctx.automation] 量化自动化配置
- * @returns {Array<{ code, name, tag, actionLabel, actionHint, title, content, isRed, sortRank }>}
+ * @param {object} [ctx.automation]
+ * @returns {Array<object>}
  */
 export function collectWatchlistActionAlerts(byCode, ctx = {}) {
-  const {
-    liveByCode = {},
-    quantChecklistFor,
-    quantEntryFor,
-    automation,
-  } = ctx
+  const { automation } = ctx
   const out = []
   for (const [code, entry] of Object.entries(byCode || {})) {
     if (!entry?.ok || !entry.tag || entry.daysAgo !== 0) continue
-    const qEntry = quantEntryFor?.(code)
-    const actionHint = resolveSignalActionHint({
-      tag: entry.tag,
-      buyPriceRange: qEntry?.buyPriceRange ?? entry.buyPriceRange,
-      sellPositionPct: entry.sellPositionPct,
-      addPositionPct: entry.addPositionPct,
-      rushReducePct: entry.rushReducePct,
-      sourceTag: entry.sourceTag,
-      daysAgo: 0,
-      checklistReady: quantChecklistFor?.(code)?.ready,
-    })
+
+    const { actionHint, actionSource, decisionId } = resolveWatchlistAlertAction(code, entry, ctx)
     if (!actionHint || !WATCHLIST_ACTIONABLE_LABELS.has(actionHint.label)) continue
     if (isCoveredByQuantAutomation(entry, actionHint.label, automation)) continue
 
     const name = entry.name || code
     const label = stockLabel(name, code)
-    const tagLabel = formatSignalTagLabel(entry.tag, entry.sellPositionPct ?? entry.addPositionPct ?? entry.rushReducePct)
     const isRed = actionHint.label === '先风控'
     out.push({
       code,
@@ -100,6 +185,8 @@ export function collectWatchlistActionAlerts(byCode, ctx = {}) {
       tag: entry.tag,
       actionLabel: actionHint.label,
       actionHint,
+      actionSource,
+      decisionId: decisionId || actionHint.decisionId || null,
       sortRank: entry.sortRank ?? 99,
       isRed,
       title: `${name} · ${actionHint.label}`,
@@ -110,6 +197,8 @@ export function collectWatchlistActionAlerts(byCode, ctx = {}) {
         tag: entry.tag,
         actionLabel: actionHint.label,
         actionHint,
+        actionSource,
+        decisionId: decisionId || actionHint.decisionId || null,
         isRed,
       },
     })
@@ -185,6 +274,7 @@ export function pushWatchlistActionAlerts(byCode, dispatchNotify, ctx = {}) {
 
   const automation = getQuantAutomationFromSettings(settings)
   const alerts = collectWatchlistActionAlerts(byCode, {
+    quantDecisionFor: ctx.quantDecisionFor,
     quantChecklistFor: ctx.quantChecklistFor,
     quantEntryFor: ctx.quantEntryFor,
     automation,

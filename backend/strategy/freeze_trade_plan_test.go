@@ -164,6 +164,18 @@ func TestFreezeTradePlan_IsFrozenAfterFreeze(t *testing.T) {
 	require.False(t, got.IsDraft())
 }
 
+func TestFreezeTradePlanAt_UsesProvidedTime(t *testing.T) {
+	setupFreezeTestDB(t)
+	plan := seedApprovedDraft(t, "2026-08-17")
+	want := time.Date(2026, 8, 17, 11, 12, 0, 0, time.Local)
+
+	got, err := FreezeTradePlanAt(plan.ID, "sim", "late freeze", want)
+	require.NoError(t, err)
+	require.True(t, got.IsFrozen())
+	require.NotNil(t, got.FreezeAt)
+	require.True(t, got.FreezeAt.Equal(want))
+}
+
 func TestFreezeTradePlan_SourceBoundary(t *testing.T) {
 	b, err := os.ReadFile(filepath.Join("freeze_trade_plan.go"))
 	require.NoError(t, err)

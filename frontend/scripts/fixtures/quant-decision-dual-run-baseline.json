@@ -1,0 +1,85 @@
+{
+  "name": "dual-run-baseline-buy-ready",
+  "description": "js_legacy baseline fixture — ENTER / 可买",
+  "decision": {
+    "id": "qd1:js_legacy:sz000001:2026-07-21T00:00:00.000Z:ENTER:可买",
+    "asOf": "2026-07-21T00:00:00.000Z",
+    "tradeDate": "2026-07-21",
+    "purpose": "watchlist",
+    "instrument": {
+      "stockCode": "sz000001",
+      "stockName": "平安银行"
+    },
+    "regime": {
+      "level": 3,
+      "key": "level3",
+      "name": "中性观望",
+      "source": "watchlist_js",
+      "exposureCap": 0.2
+    },
+    "signal": {
+      "tag": "强",
+      "tagKind": "entry",
+      "daysAgo": 0,
+      "score": 0,
+      "sourceTag": "",
+      "summary": "今日强化买点",
+      "barIndex": null,
+      "dayKey": ""
+    },
+    "entryZone": {
+      "low": 10,
+      "high": 10.2,
+      "instantPrice": 10.1,
+      "instantText": "10.10",
+      "mode": "near",
+      "deferMode": "same",
+      "daysAgo": 0,
+      "text": "10.00~10.20",
+      "note": "贴近区间",
+      "extended": false,
+      "tag": "",
+      "rangeHigh": 10.2
+    },
+    "gate": {
+      "score": 0.875,
+      "ready": true,
+      "requiredPassed": true,
+      "readyThreshold": 0.85,
+      "items": [
+        { "id": "buy_signal", "label": "买入信号", "passed": true }
+      ]
+    },
+    "risk": {
+      "passed": true,
+      "code": "APPROVED",
+      "message": "phase1 watchlist placeholder (PlanFilter not wired)"
+    },
+    "size": {
+      "ok": true,
+      "stopPrice": 9.85,
+      "targetShares": 1000,
+      "addShares": 1000,
+      "targetAmount": 0,
+      "positionPct": 12.5,
+      "bindingConstraint": "",
+      "reason": "建议买入 1000 股"
+    },
+    "holdingBias": null,
+    "action": {
+      "code": "ENTER",
+      "label": "可买",
+      "allowDraft": true,
+      "side": "buy",
+      "type": "success",
+      "lines": ["强 · 今日", "出信号价 10.10", "买入参考 10.00~10.20", "清单已通过，落入区间可考虑", "参考区间，非投资建议"],
+      "tooltip": "强 · 今日\n出信号价 10.10\n买入参考 10.00~10.20\n清单已通过，落入区间可考虑\n参考区间，非投资建议"
+    },
+    "blockers": [],
+    "meta": {
+      "schemaVersion": 1,
+      "producer": "js_legacy",
+      "existingVolume": 0
+    }
+  }
+}

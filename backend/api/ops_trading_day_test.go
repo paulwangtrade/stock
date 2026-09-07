@@ -37,6 +37,7 @@ func TestOpsTradingDayAPI_FrozenReady(t *testing.T) {
 	plan := &models.TradePlan{
 		TradeDate: tradeDate, GeneratedAt: now, PoolID: 1,
 		Status: models.TradePlanStatusReady, PlanVersion: 1,
+		ApprovedAt: &freezeAt, ApprovedBy: "approver",
 		FreezeAt: &freezeAt, FreezeBy: "ops",
 		SourceSession: models.TradePlanSourceAfterClose,
 		RiskStatus:    risk.PlanRiskStatusPassed,

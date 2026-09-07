@@ -6,7 +6,9 @@ import (
 
 	"go-stock/backend/data"
 	"go-stock/backend/db"
+	"go-stock/backend/instrument"
 	"go-stock/backend/models"
+	"go-stock/backend/strategysnapshot"
 
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
@@ -38,7 +40,23 @@ func TestApplicationMigrationRegistry_FreshDatabaseReady(t *testing.T) {
 	require.True(t, db.Dao.Migrator().HasColumn(&models.CandidatePoolItem{}, "DecisionID"))
 	require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlan{}, "FreezeAt"))
 	require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlan{}, "PlanVersion"))
-	require.Equal(t, 3, db.GetAppliedSchemaVersion())
+	for _, field := range tradePlanIntentDefaultFields {
+		require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlan{}, field), field)
+	}
+	for _, field := range tradePlanItemIntentFields {
+		require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlanItem{}, field), field)
+	}
+	require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlan{}, "ApprovedSource"))
+	require.True(t, db.Dao.Migrator().HasTable(&models.AuditEvent{}))
+	require.True(t, db.Dao.Migrator().HasTable(&models.RecoveryCheckpoint{}))
+	require.True(t, db.Dao.Migrator().HasTable(&instrument.InstrumentQuantityMeta{}))
+	require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlan{}, "ProviderMode"))
+	require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlan{}, "DecisionProvider"))
+	require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlan{}, "DecisionVersion"))
+	require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlan{}, "AllocationVersion"))
+	require.True(t, db.Dao.Migrator().HasTable(&strategysnapshot.StrategySnapshotRow{}))
+	require.True(t, db.Dao.Migrator().HasTable(&strategysnapshot.PlanStrategyRefRow{}))
+	require.Equal(t, 11, db.GetAppliedSchemaVersion())
 	require.True(t, validateApplicationSchema().Ready())
 }
 
@@ -72,11 +90,12 @@ CREATE TABLE candidate_pool_items (
 
 	first, err := applyApplicationMigrations()
 	require.NoError(t, err)
-	require.Equal(t, []int{2, 3}, first.Applied)
+	require.Equal(t, []int{2, 3, 4, 5, 6, 7, 8, 9, 10}, first.Applied)
 	require.True(t, db.Dao.Migrator().HasColumn(&models.CandidatePoolItem{}, "DecisionID"))
 	require.True(t, db.Dao.Migrator().HasIndex(&models.CandidatePoolItem{}, "DecisionID"))
 	require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlan{}, "FreezeAt"))
-	require.Equal(t, 3, db.GetAppliedSchemaVersion())
+	require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlan{}, "PricingPolicyVersion"))
+	require.Equal(t, 11, db.GetAppliedSchemaVersion())
 
 	pool := &models.CandidatePool{TradeDate: "2026-07-21"}
 	err = data.NewCandidatePoolRepo().CreatePoolWithItems(pool, []models.CandidatePoolItem{{
@@ -91,16 +110,16 @@ func TestApplicationMigrationRegistry_RepeatedApplyIsIdempotent(t *testing.T) {
 	setupMainSchemaTestDB(t)
 	first, err := applyApplicationMigrations()
 	require.NoError(t, err)
-	require.Equal(t, []int{1, 2, 3}, first.Applied)
+	require.Equal(t, []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, first.Applied)
 
 	second, err := applyApplicationMigrations()
 	require.NoError(t, err)
 	require.Empty(t, second.Applied)
-	require.Equal(t, []int{1, 2, 3}, second.Skipped)
+	require.Equal(t, []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, second.Skipped)
 
 	var count int64
 	require.NoError(t, db.Dao.Model(&db.SchemaMigration{}).Count(&count).Error)
-	require.Equal(t, int64(3), count)
+	require.Equal(t, int64(11), count)
 }
 
 func TestTradingPreflightCheck_BlocksInvalidSchemaButAppContinues(t *testing.T) {
@@ -169,18 +188,24 @@ CREATE TABLE trade_plan_items (
 
 	first, err := applyApplicationMigrations()
 	require.NoError(t, err)
-	require.Equal(t, []int{3}, first.Applied)
+	require.Equal(t, []int{3, 4, 5, 6, 7, 8, 9, 10}, first.Applied)
 	for _, field := range tradePlanLifecycleFields {
 		require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlan{}, field), field)
 	}
-	require.Equal(t, 3, db.GetAppliedSchemaVersion())
+	for _, field := range tradePlanIntentDefaultFields {
+		require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlan{}, field), field)
+	}
+	for _, field := range tradePlanItemIntentFields {
+		require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlanItem{}, field), field)
+	}
+	require.Equal(t, 11, db.GetAppliedSchemaVersion())
 	require.True(t, validateApplicationSchema().Ready())
 
-	// Idempotent re-apply: skip v3, columns remain.
+	// Idempotent re-apply: skip v3+, columns remain.
 	second, err := applyApplicationMigrations()
 	require.NoError(t, err)
 	require.Empty(t, second.Applied)
-	require.Equal(t, []int{1, 2, 3}, second.Skipped)
+	require.Equal(t, []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, second.Skipped)
 	require.True(t, validateApplicationSchema().Ready())
 }
 
@@ -200,12 +225,193 @@ func TestApplicationSchemaValidation_TradePlanLifecycleBlockedAndReady(t *testin
 	ready := validateApplicationSchema()
 	require.True(t, ready.Ready())
 	require.Equal(t, db.SchemaValidationReady, ready.Status)
-	require.Equal(t, 3, ready.RequiredVersion)
-	require.Equal(t, 3, ready.CurrentVersion)
+	require.Equal(t, 11, ready.RequiredVersion)
+	require.Equal(t, 11, ready.CurrentVersion)
 
 	require.NoError(t, db.Dao.Migrator().DropColumn(&models.TradePlan{}, "FreezeAt"))
 	blocked := validateApplicationSchema()
 	require.False(t, blocked.Ready())
 	require.Equal(t, db.SchemaValidationBlocked, blocked.Status)
 	require.Contains(t, blocked.MissingColumns, "trade_plans.freeze_at")
+}
+
+func TestApplicationMigrationRegistry_UpgradesV3ToExecutionIntentV4(t *testing.T) {
+	setupMainSchemaTestDB(t)
+	require.NoError(t, runCoreSchemaMigrations())
+	require.NoError(t, runExtendedSchemaMigrations())
+
+	plan := models.TradePlan{
+		TradeDate: "2026-07-24", Status: models.TradePlanStatusDraft,
+		AmountPerStock: 100000, RiskStatus: "passed", PlanVersion: 1, SourceSession: "after_close",
+	}
+	require.NoError(t, db.Dao.Create(&plan).Error)
+	item := models.TradePlanItem{
+		PlanID: plan.ID, TradeDate: plan.TradeDate, StockCode: "sz001309",
+		Side: "buy", Priority: 1, TargetAmount: 100000, LimitPrice: 0, TargetVolume: 0,
+		Status: models.TradePlanItemPending,
+	}
+	require.NoError(t, db.Dao.Create(&item).Error)
+
+	// Strip Intent columns to simulate stock.db stopped at lifecycle v3.
+	for _, field := range tradePlanIntentDefaultFields {
+		if db.Dao.Migrator().HasColumn(&models.TradePlan{}, field) {
+			require.NoError(t, db.Dao.Migrator().DropColumn(&models.TradePlan{}, field), field)
+		}
+	}
+	for _, field := range tradePlanItemIntentFields {
+		if db.Dao.Migrator().HasColumn(&models.TradePlanItem{}, field) {
+			require.NoError(t, db.Dao.Migrator().DropColumn(&models.TradePlanItem{}, field), field)
+		}
+	}
+	require.NoError(t, db.MarkSchemaVersion(1))
+	require.NoError(t, db.MarkSchemaVersion(2))
+	require.NoError(t, db.MarkSchemaVersion(3))
+
+	for _, field := range tradePlanIntentDefaultFields {
+		require.False(t, db.Dao.Migrator().HasColumn(&models.TradePlan{}, field), field)
+	}
+	blocked := validateApplicationSchema()
+	require.False(t, blocked.Ready())
+	require.Contains(t, blocked.MissingColumns, "trade_plans.pricing_policy_version")
+
+	first, err := applyApplicationMigrations()
+	require.NoError(t, err)
+	require.Equal(t, []int{4, 5, 6, 7, 8, 9, 10}, first.Applied)
+	require.Equal(t, 11, db.GetAppliedSchemaVersion())
+	for _, field := range tradePlanIntentDefaultFields {
+		require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlan{}, field), field)
+	}
+	for _, field := range tradePlanItemIntentFields {
+		require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlanItem{}, field), field)
+	}
+	require.True(t, validateApplicationSchema().Ready())
+
+	// No backfill: historical plan/item business fields unchanged.
+	var gotPlan models.TradePlan
+	require.NoError(t, db.Dao.First(&gotPlan, plan.ID).Error)
+	require.Equal(t, "passed", gotPlan.RiskStatus)
+	require.Equal(t, 0, gotPlan.PricingPolicyVersion)
+	require.Equal(t, "", gotPlan.DefaultEntryRule)
+	require.Nil(t, gotPlan.DefaultMaxSlippage)
+	require.Equal(t, "", gotPlan.PricingStage)
+
+	var gotItem models.TradePlanItem
+	require.NoError(t, db.Dao.First(&gotItem, item.ID).Error)
+	require.Equal(t, float64(0), gotItem.LimitPrice)
+	require.Equal(t, int64(0), gotItem.TargetVolume)
+	require.Equal(t, float64(0), gotItem.RefPrice)
+	require.Equal(t, "", gotItem.IntentStatus)
+	require.Nil(t, gotItem.MaxSlippage)
+
+	second, err := applyApplicationMigrations()
+	require.NoError(t, err)
+	require.Empty(t, second.Applied)
+	require.Equal(t, []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, second.Skipped)
+}
+
+func TestApplicationMigrationRegistry_ExecutionIntentAddColumnIdempotent(t *testing.T) {
+	setupMainSchemaTestDB(t)
+	require.NoError(t, db.Dao.AutoMigrate(&models.TradePlan{}, &models.TradePlanItem{}))
+	for _, field := range tradePlanIntentDefaultFields {
+		require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlan{}, field), field)
+	}
+	for _, field := range tradePlanItemIntentFields {
+		require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlanItem{}, field), field)
+	}
+	// Already-present columns: migrate is a no-op (idempotent).
+	require.NoError(t, migrateTradePlanExecutionIntentColumns(db.Dao))
+	require.NoError(t, migrateTradePlanExecutionIntentColumns(db.Dao))
+}
+
+func TestApplicationMigrationRegistry_ApprovedSourceAddColumnIdempotent(t *testing.T) {
+	setupMainSchemaTestDB(t)
+	require.NoError(t, db.Dao.AutoMigrate(&models.TradePlan{}))
+	require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlan{}, "ApprovedSource"))
+	require.NoError(t, migrateTradePlanApprovedSource(db.Dao))
+	require.NoError(t, migrateTradePlanApprovedSource(db.Dao))
+}
+
+func TestApplicationSchemaValidation_ExecutionIntentBlockedAndReady(t *testing.T) {
+	setupMainSchemaTestDB(t)
+	require.NoError(t, runSchemaMigrations())
+	ready := validateApplicationSchema()
+	require.True(t, ready.Ready())
+	require.Equal(t, 11, ready.RequiredVersion)
+
+	require.NoError(t, db.Dao.Migrator().DropColumn(&models.TradePlanItem{}, "RefPrice"))
+	blocked := validateApplicationSchema()
+	require.False(t, blocked.Ready())
+	require.Contains(t, blocked.MissingColumns, "trade_plan_items.ref_price")
+}
+
+func TestApplicationMigrationRegistry_ProviderMetadataAddColumnIdempotent(t *testing.T) {
+	setupMainSchemaTestDB(t)
+	require.NoError(t, db.Dao.AutoMigrate(&models.TradePlan{}))
+	for _, field := range tradePlanProviderMetadataFields {
+		require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlan{}, field), field)
+	}
+	require.NoError(t, migrateTradePlanProviderMetadataColumns(db.Dao))
+	require.NoError(t, migrateTradePlanProviderMetadataColumns(db.Dao))
+}
+
+func TestApplicationMigrationRegistry_ProviderMetadataNoBackfill(t *testing.T) {
+	setupMainSchemaTestDB(t)
+	_, err := applyApplicationMigrations()
+	require.NoError(t, err)
+	require.Equal(t, 11, db.GetAppliedSchemaVersion())
+
+	plan := models.TradePlan{
+		TradeDate: "2026-08-21", Status: models.TradePlanStatusDraft,
+		AmountPerStock: 100000, RiskStatus: "passed", PlanVersion: 1, SourceSession: "after_close",
+		// Explicit empty: pre-metadata / unrecorded semantics.
+		ProviderMode: "", DecisionProvider: "", DecisionVersion: "", AllocationVersion: "",
+	}
+	require.NoError(t, db.Dao.Create(&plan).Error)
+
+	for _, field := range tradePlanProviderMetadataFields {
+		require.NoError(t, db.Dao.Migrator().DropColumn(&models.TradePlan{}, field), field)
+		require.False(t, db.Dao.Migrator().HasColumn(&models.TradePlan{}, field), field)
+	}
+
+	// Re-ADD columns (same as v10 Up). Must not UPDATE historical rows to fixed_amount.
+	require.NoError(t, migrateTradePlanProviderMetadataColumns(db.Dao))
+	for _, field := range tradePlanProviderMetadataFields {
+		require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlan{}, field), field)
+	}
+
+	var got models.TradePlan
+	require.NoError(t, db.Dao.First(&got, plan.ID).Error)
+	require.Equal(t, "", got.ProviderMode)
+	require.Equal(t, "", got.DecisionProvider)
+	require.Equal(t, "", got.DecisionVersion)
+	require.Equal(t, "", got.AllocationVersion)
+	require.Equal(t, "passed", got.RiskStatus)
+	require.NotEqual(t, models.TradePlanDecisionProviderFixed, got.DecisionProvider)
+}
+
+func TestApplicationMigrationRegistry_UpgradesV10ToStrategySnapshotsV11(t *testing.T) {
+	setupMainSchemaTestDB(t)
+	_, err := applyApplicationMigrations()
+	require.NoError(t, err)
+	require.Equal(t, 11, db.GetAppliedSchemaVersion())
+
+	// Simulate stock.db stopped at v10 (provider metadata applied, no snapshot tables).
+	require.NoError(t, db.Dao.Migrator().DropTable(&strategysnapshot.StrategySnapshotRow{}))
+	require.NoError(t, db.Dao.Migrator().DropTable(&strategysnapshot.PlanStrategyRefRow{}))
+	require.NoError(t, db.Dao.Where("version = ?", 11).Delete(&db.SchemaMigration{}).Error)
+	require.Equal(t, 10, db.GetAppliedSchemaVersion())
+	require.False(t, db.Dao.Migrator().HasTable(&strategysnapshot.StrategySnapshotRow{}))
+
+	first, err := applyApplicationMigrations()
+	require.NoError(t, err)
+	require.Equal(t, []int{11}, first.Applied)
+	require.True(t, db.Dao.Migrator().HasTable(&strategysnapshot.StrategySnapshotRow{}))
+	require.True(t, db.Dao.Migrator().HasTable(&strategysnapshot.PlanStrategyRefRow{}))
+	require.Equal(t, 11, db.GetAppliedSchemaVersion())
+	require.True(t, validateApplicationSchema().Ready())
+
+	second, err := applyApplicationMigrations()
+	require.NoError(t, err)
+	require.Empty(t, second.Applied)
+	require.Contains(t, second.Skipped, 11)
 }

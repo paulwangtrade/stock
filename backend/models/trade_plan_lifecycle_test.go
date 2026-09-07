@@ -116,4 +116,7 @@ func TestTradePlanSourceSessionConstants(t *testing.T) {
 	if TradePlanSourceMorningRebuild != "morning_rebuild" {
 		t.Fatalf("TradePlanSourceMorningRebuild=%q", TradePlanSourceMorningRebuild)
 	}
+	if TradePlanSourceCashRescale != "cash_rescale" {
+		t.Fatalf("TradePlanSourceCashRescale=%q", TradePlanSourceCashRescale)
+	}
 }

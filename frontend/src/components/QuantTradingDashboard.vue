@@ -13,7 +13,18 @@ import {
   NTag,
   useMessage,
 } from 'naive-ui'
-import { GetPaperAccountSnapshot, GetPaperMarginSnapshot } from '../../wailsjs/go/main/App'
+import {
+  BuildCandidatePool,
+  BuildTradePlan,
+  GetPaperAccountSnapshot,
+  GetPaperMarginSnapshot,
+  GetPaperOpenBuyStatus,
+  GetTodayTradeAnalysis,
+  GetTodayTradePlan,
+  ResetPaperAccount,
+  RunPaperOpenBuyOnce,
+  RunPaperOpenPrepare,
+} from '../../wailsjs/go/main/App'
 import { EventsOff, EventsOn } from '../../wailsjs/runtime/runtime'
 import {
   accountModeText,
@@ -35,6 +46,9 @@ import { createTradingStream } from '../utils/tradingStream'
 
 const message = useMessage()
 const loading = ref(false)
+/** TEMP: 生产 exe 模拟建仓调试，测完可删 */
+const debugBusy = ref(false)
+const tradeAnalysisText = ref('')
 const snapshot = ref(null)
 const activeTab = ref('trades')
 const subscribed = ref(false)
@@ -166,6 +180,149 @@ async function refresh() {
   }
 }
 
+// TEMP: 模拟建仓调试入口（不改业务逻辑），测完可删整块
+async function debugResetPaperAccount() {
+  debugBusy.value = true
+  try {
+    await ResetPaperAccount(1000000)
+    message.success('ResetPaperAccount(1000000) 完成')
+    await refresh()
+  } catch (error) {
+    message.error(error?.message || String(error))
+  } finally {
+    debugBusy.value = false
+  }
+}
+
+async function debugRunPaperOpenPrepare() {
+  debugBusy.value = true
+  try {
+    const res = await RunPaperOpenPrepare()
+    message.info(`RunPaperOpenPrepare: ${res?.message || JSON.stringify(res)}`)
+  } catch (error) {
+    message.error(error?.message || String(error))
+  } finally {
+    debugBusy.value = false
+  }
+}
+
+async function debugBuildCandidatePool() {
+  debugBusy.value = true
+  try {
+    const pool = await BuildCandidatePool('')
+    message.success(`BuildCandidatePool: id=${pool?.id} items=${pool?.itemCount} source=${pool?.source}`)
+  } catch (error) {
+    message.error(error?.message || String(error))
+  } finally {
+    debugBusy.value = false
+  }
+}
+
+async function debugBuildTradePlan() {
+  debugBusy.value = true
+  try {
+    const plan = await BuildTradePlan('')
+    message.success(`BuildTradePlan: id=${plan?.id} status=${plan?.status} items=${plan?.items?.length || 0}`)
+  } catch (error) {
+    message.error(error?.message || String(error))
+  } finally {
+    debugBusy.value = false
+  }
+}
+
+async function debugGetTodayTradePlan() {
+  debugBusy.value = true
+  try {
+    const plan = await GetTodayTradePlan()
+    const codes = (plan?.items || []).map((item) => item.stockCode).join(',')
+    message.info(`GetTodayTradePlan: id=${plan?.id} status=${plan?.status} codes=${codes || '-'}`)
+  } catch (error) {
+    message.error(error?.message || String(error))
+  } finally {
+    debugBusy.value = false
+  }
+}
+
+function formatTradeAnalysisTree(ana) {
+  if (!ana) return '(empty)'
+  const lines = []
+  lines.push(`TradeDate: ${ana.tradeDate || '-'}`)
+  lines.push(`Message: ${ana.message || '-'}`)
+  lines.push('CandidatePool')
+  if (ana.pool) {
+    lines.push(` |-- id=${ana.pool.id} source=${ana.pool.source} status=${ana.pool.status} count=${ana.pool.itemCount}`)
+  } else {
+    lines.push(' |-- (none)')
+  }
+  lines.push('TradePlan')
+  if (ana.plan) {
+    lines.push(` |-- id=${ana.plan.id} status=${ana.plan.status} risk=${ana.plan.riskStatus} level=${ana.plan.marketLevel}`)
+    lines.push(` |-- accepted=${ana.plan.riskAcceptedCount} rejected=${ana.plan.riskFilteredCount}`)
+    lines.push(` |-- ${ana.plan.riskSummary || ''}`)
+  } else {
+    lines.push(' |-- (none)')
+  }
+  lines.push('Items')
+  for (const it of ana.items || []) {
+    lines.push(` |-- ${it.stockCode} ${it.stockName || ''}`)
+    lines.push(` |   |-- Strategy: ${it.strategyName || '-'}@${it.strategyVersion || '-'}`)
+    lines.push(` |   |-- Signal: ${it.signalTag || '-'} score=${it.signalScore ?? 0} snap=${it.signalSnapshotId || 0}`)
+    lines.push(` |   |-- Score/Rank: ${it.score ?? '-'} / ${it.poolRank || '-'}`)
+    lines.push(` |   |-- Risk: ${it.planStatus || '-'} ${it.riskCode || ''} ${it.riskMessage || ''}`)
+    lines.push(` |   |-- Execution: order=${it.orderId || 0} fill=${it.fillId || 0} px=${it.filledPrice || 0} vol=${it.filledVolume || 0}`)
+    if (it.whyNotBought) {
+      lines.push(` |   |-- WhyNotBought: ${it.whyNotBought}`)
+    }
+  }
+  return lines.join('\n')
+}
+
+async function debugGetTodayTradeAnalysis() {
+  debugBusy.value = true
+  try {
+    const ana = await GetTodayTradeAnalysis()
+    tradeAnalysisText.value = formatTradeAnalysisTree(ana)
+    const pending = (ana?.items || []).filter((i) => i.planStatus === 'pending').length
+    const skipped = (ana?.items || []).filter((i) => i.planStatus === 'skipped').length
+    message.success(`GetTodayTradeAnalysis: pending=${pending} skipped=${skipped} ${ana?.message || ''}`)
+  } catch (error) {
+    message.error(error?.message || String(error))
+  } finally {
+    debugBusy.value = false
+  }
+}
+
+async function debugGetPaperOpenBuyStatus() {
+  debugBusy.value = true
+  try {
+    const st = await GetPaperOpenBuyStatus()
+    message.info(
+      `GetPaperOpenBuyStatus: ready=${st?.executionReady} enable=${st?.enablePaperOpenBuy} `
+      + `pool=${st?.candidatePoolStatus}/${st?.candidateCount} plan=${st?.tradePlanStatus}/${st?.tradePlanCount} `
+      + `${st?.message || ''}`,
+    )
+  } catch (error) {
+    message.error(error?.message || String(error))
+  } finally {
+    debugBusy.value = false
+  }
+}
+
+async function debugRunPaperOpenBuyOnce() {
+  debugBusy.value = true
+  try {
+    const res = await RunPaperOpenBuyOnce()
+    const ok = (res?.items || []).filter((item) => item.ok).length
+    const total = (res?.items || []).length
+    message.success(`RunPaperOpenBuyOnce: ${res?.message || `${ok}/${total} 成功`}`)
+    await refresh()
+  } catch (error) {
+    message.error(error?.message || String(error))
+  } finally {
+    debugBusy.value = false
+  }
+}
+
 onMounted(async () => {
   EventsOn('tradingEvent', handleTradingEvent)
   subscribed.value = true
@@ -194,7 +351,37 @@ onBeforeUnmount(() => {
         </div>
         <p>模拟账户执行流与资产状态</p>
       </div>
-      <n-button secondary :loading="loading" @click="refresh">同步快照</n-button>
+      <div class="header-actions">
+        <!-- TEMP: 模拟建仓调试，测完可删 -->
+        <div class="temp-debug-actions">
+          <n-tag size="small" type="warning">TEMP</n-tag>
+          <n-button size="small" type="warning" secondary :loading="debugBusy" @click="debugResetPaperAccount">
+            ResetPaperAccount(1000000)
+          </n-button>
+          <n-button size="small" secondary :loading="debugBusy" @click="debugBuildCandidatePool">
+            BuildCandidatePool()
+          </n-button>
+          <n-button size="small" secondary :loading="debugBusy" @click="debugBuildTradePlan">
+            BuildTradePlan()
+          </n-button>
+          <n-button size="small" secondary :loading="debugBusy" @click="debugGetTodayTradePlan">
+            GetTodayTradePlan()
+          </n-button>
+          <n-button size="small" type="info" secondary :loading="debugBusy" @click="debugGetTodayTradeAnalysis">
+            GetTodayTradeAnalysis()
+          </n-button>
+          <n-button size="small" secondary :loading="debugBusy" @click="debugGetPaperOpenBuyStatus">
+            GetPaperOpenBuyStatus()
+          </n-button>
+          <n-button size="small" secondary :loading="debugBusy" @click="debugRunPaperOpenPrepare">
+            RunPaperOpenPrepare()
+          </n-button>
+          <n-button size="small" type="primary" secondary :loading="debugBusy" @click="debugRunPaperOpenBuyOnce">
+            RunPaperOpenBuyOnce()
+          </n-button>
+        </div>
+        <n-button secondary :loading="loading" @click="refresh">同步快照</n-button>
+      </div>
     </header>
 
     <div class="metrics">
@@ -218,6 +405,8 @@ onBeforeUnmount(() => {
     <p v-if="snapshot && !snapshot.marginApiAvailable" class="fallback-tip">
       两融服务暂不可用，当前展示普通模拟账户快照。
     </p>
+
+    <pre v-if="tradeAnalysisText" class="temp-analysis-panel">{{ tradeAnalysisText }}</pre>
 
     <n-spin :show="loading">
       <n-tabs v-model:value="activeTab" type="line" animated>
@@ -351,17 +540,44 @@ onBeforeUnmount(() => {
 .title-line { display: flex; align-items: center; gap: 8px; }
 .title-line h2 { margin: 0; font-size: 22px; }
 .dashboard-header p { margin: 5px 0 0; color: #8a8f99; font-size: 13px; }
+.header-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
+.temp-debug-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 8px; border: 1px dashed rgba(208, 48, 80, .35); border-radius: 8px; }
 .metrics { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 10px; margin: 18px 0 8px; }
 .metrics > * { padding: 14px 16px; border: 1px solid rgba(128,128,128,.16); border-radius: 8px; background: rgba(128,128,128,.04); }
 .margin-metrics { margin-top: 8px; }
 .fallback-tip { margin: 4px 0 0; color: #d89614; font-size: 12px; }
+.temp-analysis-panel {
+  margin: 12px 0;
+  padding: 12px 14px;
+  max-height: 280px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.45;
+  font-family: Consolas, 'Courier New', monospace;
+  border: 1px dashed rgba(32, 128, 240, .4);
+  border-radius: 8px;
+  background: rgba(32, 128, 240, .06);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .toolbar { display: grid; grid-template-columns: minmax(180px, 1fr) 130px 150px 150px auto; gap: 10px; margin: 12px 0; }
 .pause-control { display: flex; align-items: center; gap: 7px; white-space: nowrap; color: #777; }
 .table-scroll { max-height: calc(100vh - 330px); min-height: 220px; overflow: auto; border: 1px solid rgba(128,128,128,.15); border-radius: 8px; }
 .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.data-table thead { position: sticky; top: 0; z-index: 1; background: var(--n-color, #fff); }
-.data-table th, .data-table td { padding: 10px 12px; text-align: right; border-bottom: 1px solid rgba(128,128,128,.12); white-space: nowrap; }
-.data-table th { color: #8a8f99; font-weight: 500; }
+.data-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--n-card-color, #1e2228);
+  box-shadow: inset 0 -1px 0 rgba(128, 128, 128, 0.28);
+}
+.data-table th,
+.data-table td { padding: 10px 12px; text-align: right; border-bottom: 1px solid rgba(128,128,128,.12); white-space: nowrap; }
+.data-table th {
+  color: var(--n-text-color, #e8eaed);
+  font-weight: 600;
+  background: var(--n-card-color, #1e2228);
+}
 .data-table th:first-child, .data-table td:first-child,
 .data-table th:nth-child(2), .data-table td:nth-child(2) { text-align: left; }
 .data-table tbody tr:hover { background: rgba(24,160,88,.05); }

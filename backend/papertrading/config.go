@@ -3,8 +3,9 @@ package papertrading
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"sync"
+
+	runtimeutil "go-stock/backend/runtime"
 )
 
 const configFile = "paper_trading_mvp.json"
@@ -23,6 +24,19 @@ type Config struct {
 	// "B": 15:10 Session B close fill (observation sampling).
 	// Empty / unknown → A. Does not bypass Session Policy; only which cron is registered.
 	FillMode string `json:"fillMode,omitempty"`
+	// PositionSizerMode selects Draft buy amount: "fixed_amount" (default) | "portfolio_aware".
+	// Omitted from old JSON files → empty → normalized to fixed_amount (behavior unchanged).
+	PositionSizerMode string `json:"positionSizerMode,omitempty"`
+	// PortfolioAware is ignored unless PositionSizerMode=portfolio_aware.
+	PortfolioAware *PortfolioAwareConfig `json:"portfolioAware,omitempty"`
+}
+
+// PortfolioAwareConfig is the P2 buy-budget policy (only used when mode=portfolio_aware).
+type PortfolioAwareConfig struct {
+	MaxExposure             float64 `json:"maxExposure,omitempty"`
+	MaxSinglePositionWeight float64 `json:"maxSinglePositionWeight,omitempty"`
+	ReserveCashRatio        float64 `json:"reserveCashRatio,omitempty"`
+	MinOrderAmount          float64 `json:"minOrderAmount,omitempty"`
 }
 
 var (
@@ -31,11 +45,16 @@ var (
 )
 
 func defaultConfig() Config {
-	return Config{EnablePaperTrading: false, InitialCash: DefaultInitialCash, FillMode: FillModeA}
+	return Config{
+		EnablePaperTrading: false,
+		InitialCash:        DefaultInitialCash,
+		FillMode:           FillModeA,
+		PositionSizerMode:  PositionSizerModeFixedAmount,
+	}
 }
 
 func configPath() string {
-	return filepath.Join("data", configFile)
+	return runtimeutil.GetConfigPath(configFile)
 }
 
 // GetConfig reads data/paper_trading_mvp.json (default: disabled).
@@ -57,16 +76,12 @@ func GetConfig() Config {
 		cfg.InitialCash = DefaultInitialCash
 	}
 	cfg.FillMode = NormalizeFillMode(cfg.FillMode)
+	cfg.PositionSizerMode = NormalizePositionSizerMode(cfg.PositionSizerMode)
 
 	cfgMu.Lock()
 	cfgCached = &cfg
 	cfgMu.Unlock()
 	return cfg
-}
-
-// IsEnabled reports whether Paper Trading MVP is switched on. Default false.
-func IsEnabled() bool {
-	return GetConfig().EnablePaperTrading
 }
 
 // SaveConfig writes the config file and refreshes cache (used by tests / future UI).
@@ -75,6 +90,7 @@ func SaveConfig(cfg Config) error {
 		cfg.InitialCash = DefaultInitialCash
 	}
 	cfg.FillMode = NormalizeFillMode(cfg.FillMode)
+	cfg.PositionSizerMode = NormalizePositionSizerMode(cfg.PositionSizerMode)
 	if err := os.MkdirAll("data", 0o755); err != nil {
 		return err
 	}
@@ -104,12 +120,11 @@ func SetConfigForTest(cfg Config) {
 		cfg.InitialCash = DefaultInitialCash
 	}
 	cfg.FillMode = NormalizeFillMode(cfg.FillMode)
+	cfg.PositionSizerMode = NormalizePositionSizerMode(cfg.PositionSizerMode)
 	cfgMu.Lock()
 	cfgCached = &cfg
 	cfgMu.Unlock()
 }
 
-// EffectiveFillMode returns the exclusive fill cron mode from current config.
-func EffectiveFillMode() string {
-	return NormalizeFillMode(GetConfig().FillMode)
-}
+// GetConfig still reads/caches paper_trading_mvp.json for tests and SaveConfig.
+// Business enable/fill/cash reads should prefer tradingconfig.Default() (wired via RegisterPaperMVPLoader).

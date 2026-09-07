@@ -22,12 +22,12 @@ import (
 // startup 在应用程序启动时调用
 func (a *App) startup(ctx context.Context) {
 	defer PanicHandler()
-	runtime.EventsOn(ctx, "frontendError", func(optionalData ...interface{}) {
-		logger.SugaredLogger.Errorf("Frontend error: %v\n", optionalData)
-	})
+	runtime.EventsOn(ctx, "frontendError", handleFrontendError)
 	logger.SugaredLogger.Infof("Version:%s", Version)
 	// Perform your setup here
 	a.ctx = ctx
+	a.bindLoadingProgressEvents()
+	a.reportStartupProgress()
 	a.startTradingEventBridge(ctx)
 	a.startTaskScheduler()
 
@@ -36,7 +36,12 @@ func (a *App) startup(ctx context.Context) {
 	a.InitPaperMarginDayJobs()
 	a.InitPaperOpenBuyJobs()
 	a.InitAfterClosePlanJobs()
+	a.InitPaperTradingJobs()
+	a.InitMorningPreparationJobs()
+	a.InitTradingAutomationJobs()
+	a.InitJobRuntimeReliability()
 	a.InitStockStrategies()
+	a.emitLoadingProgress(55, "正在初始化组件...")
 
 	// 监听设置更新事件
 	runtime.EventsOn(ctx, "updateSettings", func(optionalData ...interface{}) {
@@ -89,6 +94,10 @@ func MonitorStockPrices(a *App) {
 	started := time.Now()
 	defer emitMonitorPerf(a, started)
 
+	if !watchlistPricePoll.Allow(false) {
+		return
+	}
+
 	// 检查是否至少有一个市场开市
 	isAStockOpen := isTradingTime(time.Now())
 	isHKStockOpen := IsHKTradingTime(time.Now())
@@ -97,6 +106,7 @@ func MonitorStockPrices(a *App) {
 	// 如果所有市场都不在交易时间，则提前返回
 	if !isAStockOpen && !isHKStockOpen && !isUSStockOpen {
 		logger.SugaredLogger.Debugf("当前所有市场均未开市，跳过价格监控")
+		watchlistPricePoll.MarkSuccess()
 		return
 	}
 
@@ -114,7 +124,13 @@ func MonitorStockPrices(a *App) {
 	data.NewStockDataApi().WarmIndustrySectorCacheAsync(warmCodes...)
 
 	// 股票信息处理逻辑
-	stockInfos := GetStockInfos(*dest...)
+	stockInfos, err := GetStockInfos(*dest...)
+	if err != nil {
+		watchlistPricePoll.MarkFailure()
+		logger.SugaredLogger.Errorf("MonitorStockPrices fetch error: %v", err)
+		return
+	}
+	watchlistPricePoll.MarkSuccess()
 	for _, stockInfo := range *stockInfos {
 		if strutil.HasPrefixAny(stockInfo.Code, []string{"SZ", "SH", "sh", "sz"}) && (!isTradingTime(time.Now())) {
 			continue

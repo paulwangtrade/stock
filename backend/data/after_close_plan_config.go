@@ -3,8 +3,9 @@ package data
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"sync"
+
+	runtimeutil "go-stock/backend/runtime"
 )
 
 const afterClosePlanConfigFile = "after_close_plan.json"
@@ -25,10 +26,16 @@ func defaultAfterClosePlanConfig() AfterClosePlanConfig {
 }
 
 func afterClosePlanConfigPath() string {
-	return filepath.Join("data", afterClosePlanConfigFile)
+	return runtimeutil.GetConfigPath(afterClosePlanConfigFile)
 }
 
-// GetAfterClosePlanConfig reads data/after_close_plan.json (defaults: enabled=false).
+// AfterClosePlanConfigPath is the cwd-relative path used at runtime (e.g. build/bin/data/ when exe cwd is build/bin).
+func AfterClosePlanConfigPath() string {
+	return afterClosePlanConfigPath()
+}
+
+// GetAfterClosePlanConfig reads data/after_close_plan.json relative to process cwd.
+// Missing file → enabled=false. Shipped default: repo data/after_close_plan.json (copy to build/bin/data for packaged exe).
 func GetAfterClosePlanConfig() AfterClosePlanConfig {
 	afterClosePlanMu.RLock()
 	if afterClosePlanCached != nil {

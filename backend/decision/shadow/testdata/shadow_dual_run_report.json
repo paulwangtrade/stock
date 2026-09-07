@@ -1,0 +1,38 @@
+{
+  "equal": true,
+  "diffs": [],
+  "bySlice": {
+    "signal": {
+      "equal": true,
+      "diffs": []
+    },
+    "entryZone": {
+      "equal": true,
+      "diffs": []
+    },
+    "gate": {
+      "equal": true,
+      "diffs": []
+    },
+    "risk": {
+      "equal": true,
+      "diffs": []
+    },
+    "size": {
+      "equal": true,
+      "diffs": []
+    },
+    "action": {
+      "equal": true,
+      "diffs": []
+    }
+  },
+  "leftProducer": "js_legacy",
+  "rightProducer": "go_engine",
+  "summary": "OK js_legacy ≡ go_engine",
+  "harness": "quant-decision-shadow-dual-run",
+  "phase": "Phase2-A",
+  "comparedAt": "2026-07-20T17:05:53.414Z",
+  "baselineId": "qd1:js_legacy:sz000001:2026-07-21T00:00:00.000Z:ENTER:可买",
+  "candidateId": "qd1:go_engine:sz000001:2026-07-21T00:00:00Z:ENTER:可买"
+}

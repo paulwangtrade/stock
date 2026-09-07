@@ -16,6 +16,12 @@ import (
 
 var errQuoteServiceUninitialized = errors.New("QuoteService 未初始化")
 
+// quoteBatchService is the minimal read surface used by App watchlist/realtime bridges.
+// MarketDataService and QuoteService both satisfy it.
+type quoteBatchService interface {
+	GetQuotes(codes []string) ([]marketdata.Quote, error)
+}
+
 // quoteToStockInfo 将 marketdata.Quote 转为 StockInfo 行情字段（供缓存与 Follow 叠加）。
 // 禁止映射 cost / position / profit / follow / alarm / order / plan。
 func quoteToStockInfo(q marketdata.Quote) data.StockInfo {
@@ -43,8 +49,8 @@ func formatQuoteFloat(v float64) string {
 	return strconv.FormatFloat(v, 'f', -1, 64)
 }
 
-// fetchRealtimeStockInfos 经 QuoteService 批量取行情并映射为 StockInfo（可注入 fake，无 DB）。
-func fetchRealtimeStockInfos(svc marketdata.QuoteService, codes []string) ([]data.StockInfo, error) {
+// fetchRealtimeStockInfos 经 QuoteService/MarketDataService 批量取行情并映射为 StockInfo（可注入 fake，无 DB）。
+func fetchRealtimeStockInfos(svc quoteBatchService, codes []string) ([]data.StockInfo, error) {
 	if svc == nil {
 		return nil, errQuoteServiceUninitialized
 	}

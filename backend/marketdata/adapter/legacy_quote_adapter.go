@@ -80,7 +80,16 @@ func (a *LegacyQuoteAdapter) GetQuotes(codes []string) ([]marketdata.Quote, erro
 }
 
 // stockInfoToQuote 只映射市场数据字段：持仓成本、盈亏、关注价、报警阈值等一律不进入本层。
+// Bid/Ask prefer 竞买/竞卖，空则回退买一/卖一（B1P/A1P），对齐 App RealTimePrice 级联语义。
 func stockInfoToQuote(info data.StockInfo, fetchedAt time.Time) marketdata.Quote {
+	bid := parseFloat(info.Bid)
+	if bid == 0 {
+		bid = parseFloat(info.B1P)
+	}
+	ask := parseFloat(info.Ask)
+	if ask == 0 {
+		ask = parseFloat(info.A1P)
+	}
 	return marketdata.Quote{
 		Code:          strings.TrimSpace(info.Code),
 		Name:          strings.TrimSpace(info.Name),
@@ -93,8 +102,8 @@ func stockInfoToQuote(info data.StockInfo, fetchedAt time.Time) marketdata.Quote
 		Amount:        parseFloat(info.Amount),
 		ChangePercent: info.ChangePercent,
 		ChangeValue:   info.ChangePrice,
-		Bid:           parseFloat(info.Bid),
-		Ask:           parseFloat(info.Ask),
+		Bid:           bid,
+		Ask:           ask,
 		Market:        strings.TrimSpace(info.Market),
 		Date:          strings.TrimSpace(info.Date),
 		Time:          strings.TrimSpace(info.Time),

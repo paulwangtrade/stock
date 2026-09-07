@@ -40,12 +40,12 @@ func NewApp() *App {
 // startup is called at application startup
 func (a *App) startup(ctx context.Context) {
 	defer PanicHandler()
-	runtime.EventsOn(ctx, "frontendError", func(optionalData ...interface{}) {
-		logger.SugaredLogger.Errorf("Frontend error: %v\n", optionalData)
-	})
+	runtime.EventsOn(ctx, "frontendError", handleFrontendError)
 	logger.SugaredLogger.Infof("Version:%s", Version)
 	// Perform your setup here
 	a.ctx = ctx
+	a.bindLoadingProgressEvents()
+	a.reportStartupProgress()
 	a.startTradingEventBridge(ctx)
 	a.startTaskScheduler()
 
@@ -54,6 +54,11 @@ func (a *App) startup(ctx context.Context) {
 	a.InitPaperMarginDayJobs()
 	a.InitPaperOpenBuyJobs()
 	a.InitAfterClosePlanJobs()
+	a.InitPaperTradingJobs()
+	a.InitMorningPreparationJobs()
+	a.InitTradingAutomationJobs()
+	a.InitJobRuntimeReliability()
+	a.emitLoadingProgress(55, "正在初始化组件...")
 
 	// 监听设置更新事件
 	runtime.EventsOn(ctx, "updateSettings", func(optionalData ...interface{}) {
@@ -73,15 +78,9 @@ func (a *App) startup(ctx context.Context) {
 
 // domReady is called after front-end resources have been loaded
 func (a *App) domReady(ctx context.Context) {
-	// Add your action here
-	//ticker := time.NewTicker(time.Second)
-	//defer ticker.Stop()
-	////定时更新数据
-	//go func() {
-	//	for range ticker.C {
-	//		runtime.WindowSetTitle(ctx, "go-stock "+time.Now().Format("2006-01-02 15:04:05"))
-	//	}
-	//}()
+	defer a.completeLoadingProgress()
+	a.emitLoadingProgress(70, "正在加载自选股...")
+	a.emitLoadingProgress(90, "准备就绪...")
 }
 
 // beforeClose is called when the application is about to quit,
@@ -265,6 +264,10 @@ func MonitorStockPrices(a *App) {
 	started := time.Now()
 	defer emitMonitorPerf(a, started)
 
+	if !watchlistPricePoll.Allow(false) {
+		return
+	}
+
 	// 检查是否至少有一个市场开市
 	isAStockOpen := isTradingTime(time.Now())
 	isHKStockOpen := IsHKTradingTime(time.Now())
@@ -273,6 +276,7 @@ func MonitorStockPrices(a *App) {
 	// 如果所有市场都不在交易时间，则提前返回
 	if !isAStockOpen && !isHKStockOpen && !isUSStockOpen {
 		logger.SugaredLogger.Debugf("当前所有市场均未开市，跳过价格监控")
+		watchlistPricePoll.MarkSuccess()
 		return
 	}
 
@@ -290,7 +294,13 @@ func MonitorStockPrices(a *App) {
 	data.NewStockDataApi().WarmIndustrySectorCacheAsync(warmCodes...)
 
 	// 股票信息处理逻辑
-	stockInfos := GetStockInfos(*dest...)
+	stockInfos, err := GetStockInfos(*dest...)
+	if err != nil {
+		watchlistPricePoll.MarkFailure()
+		logger.SugaredLogger.Errorf("MonitorStockPrices fetch error: %v", err)
+		return
+	}
+	watchlistPricePoll.MarkSuccess()
 	for _, stockInfo := range *stockInfos {
 		if strutil.HasPrefixAny(stockInfo.Code, []string{"SZ", "SH", "sh", "sz"}) && (!isTradingTime(time.Now())) {
 			continue

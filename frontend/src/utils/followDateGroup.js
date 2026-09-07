@@ -11,6 +11,7 @@ import {
 } from '../../wailsjs/go/main/App'
 import { data } from '../../wailsjs/go/models'
 import { getFollowDateGroupSettings } from './signalSettingsStore'
+import { invalidateFollowListCache } from './watchlistFollowListCache.js'
 
 export const DATE_GROUP_RE = /^\d{4}-\d{2}-\d{2}$/
 export const MONTH_GROUP_RE = /^\d{4}-\d{2}$/
@@ -125,6 +126,7 @@ export async function followWithDateGroup(code, followFn) {
   const r = await followFn(code)
   let groupInfo = null
   if (r === '关注成功') {
+    invalidateFollowListCache()
     try {
       groupInfo = await addStockToFollowDateGroup(code)
     } catch (err) {

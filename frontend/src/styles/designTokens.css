@@ -1,0 +1,37 @@
+/**
+ * Phase16.26-A design tokens — A-share research UI.
+ * Up/profit = red; down/loss = green. Brand = blue. Opportunity = orange.
+ * Keep in sync with utils/designTokens.js.
+ */
+:root {
+  /* Brand */
+  --color-brand-primary: #2080f0;
+
+  /* Market (行情 / 盈亏) */
+  --market-up: #ec0000;
+  --market-down: #00b578;
+
+  /* Opportunity */
+  --color-opportunity: #f0a020;
+
+  /* Risk / warning */
+  --color-warning: #f0a020;
+
+  /* Neutral */
+  --color-neutral: #8c8c8c;
+
+  /* System status mirrors (optional hooks; Naive overrides via JS) */
+  --color-sys-success: #18a058;
+  --color-sys-danger: #d03050;
+}
+
+.gs-market-up {
+  color: var(--market-up);
+}
+.gs-market-down {
+  color: var(--market-down);
+}
+.gs-market-flat,
+.gs-market-empty {
+  color: var(--color-neutral);
+}

@@ -31,6 +31,8 @@ type CandidatePoolListResponse struct {
 }
 
 // CandidatePoolHandler 候选池只读 HTTP API（不改自选/快照扫描逻辑）。
+// Deprecated (Phase13-A5): 本路径名实为研究快照投影；新契约请用
+// GET /api/research/candidates（Research Candidate Pool）。落库 Trade Candidate 仍为 models.CandidatePool。
 type CandidatePoolHandler struct{}
 
 func NewCandidatePoolHandler() *CandidatePoolHandler {

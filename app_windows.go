@@ -30,9 +30,7 @@ const (
 // startup is called at application startup
 func (a *App) startup(ctx context.Context) {
 	defer PanicHandler()
-	runtime.EventsOn(ctx, "frontendError", func(optionalData ...interface{}) {
-		logger.SugaredLogger.Errorf("Frontend error: %v\n", optionalData)
-	})
+	runtime.EventsOn(ctx, "frontendError", handleFrontendError)
 	//logger.SugaredLogger.Infof("Version:%s", Version)
 	// Perform your setup here
 	a.ctx = ctx
@@ -46,6 +44,9 @@ func (a *App) startup(ctx context.Context) {
 	a.InitPaperOpenBuyJobs()
 	a.InitAfterClosePlanJobs()
 	a.InitPaperTradingJobs() // Phase10-C.2-A: align track-B paper_sim_* cron with linux/darwin
+	a.InitMorningPreparationJobs() // Phase10-C.8.1: morning readiness / materialize crons
+	a.InitTradingAutomationJobs()  // Phase10-C.8.2: automation policy crons
+	a.InitJobRuntimeReliability()
 	a.InitStockStrategies()
 
 	// 创建系统托盘

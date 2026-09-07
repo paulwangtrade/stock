@@ -40,6 +40,7 @@ func (a *planItemExecutorAdapter) ExecutePlanItem(item models.TradePlanItem, opt
 		Reason:      opts.Reason,
 		StrategyTag: opts.StrategyTag,
 		AutoFill:    opts.AutoFill,
+		Plan:        opts.Plan,
 	})
 	if tradeOrder == nil {
 		return nil, err

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import {
   NButton,
   NDataTable,
@@ -14,6 +14,11 @@ import {
   useMessage,
 } from 'naive-ui'
 import * as WailsApp from '../../wailsjs/go/main/App'
+import {
+  createManualTradeIntent,
+  confirmManualTradeIntent,
+  executeManualTradeIntent,
+} from '../api/manualTrade'
 import { evaluateTradeRiskGate } from '../utils/riskGate'
 import { getLastMarketModeKey } from '../utils/marketStatusBar'
 import {
@@ -32,6 +37,11 @@ import {
   orderTypeText,
   positionTypeText,
 } from '../utils/tradingFormat'
+import { EventsOn, EventsOff } from '../../wailsjs/runtime'
+
+const props = defineProps({
+  prefill: { type: Object, default: null },
+})
 
 const message = useMessage()
 const appMethod = name => WailsApp[name]
@@ -46,6 +56,20 @@ const form = reactive({
   reason: '',
 })
 
+function applyPrefill(p) {
+  if (!p) return
+  if (p.stockCode) form.stockCode = String(p.stockCode)
+  if (p.stockName) form.stockName = String(p.stockName)
+  if (Number(p.price) > 0) form.price = Number(p.price)
+  form.orderType = 'normal_buy'
+  if (!form.reason) form.reason = '模拟交易'
+}
+
+watch(() => props.prefill, (v) => applyPrefill(v), { immediate: true, deep: true })
+
+function onPaperBuyPrefill(payload) {
+  applyPrefill(payload)
+}
 const margin = computed(() => snap.value?.margin || {})
 const positions = computed(() => (snap.value?.positions || []).map(item => ({
   ...item,
@@ -135,6 +159,14 @@ async function submit() {
       return
     }
   }
+  if (!form.stockCode.trim()) {
+    message.warning('股票代码不能为空')
+    return
+  }
+  if (!(Number(form.volume) > 0) || !(Number(form.price) > 0)) {
+    message.warning('请填写有效的价格与数量')
+    return
+  }
   try {
     if (isMarginOrderType(kind)) {
       const submitMarginOrder = appMethod('SubmitPaperMarginOrder')
@@ -151,21 +183,34 @@ async function submit() {
         volume: Number(form.volume),
         reason: form.reason || '模拟执行台',
       })
-    } else {
-      await WailsApp.SubmitPaperOrder({
-        accountId: snap.value?.account?.id || 0,
-        stockCode: form.stockCode.trim(),
-        stockName: form.stockName.trim() || form.stockCode.trim(),
-        side,
-        price: Number(form.price),
-        volume: Number(form.volume),
-        reason: form.reason || '模拟执行台',
-        strategyTag: 'manual',
-        autoFill: true,
-      })
+      message.success('模拟成交完成')
+      await refresh()
+      return
     }
-    message.success('模拟成交完成')
-    await refresh()
+
+    // 普通单：ManualTrade Intent → ExecutionService（禁止直连纸面会计 Submit）
+    const created = await createManualTradeIntent({
+      account_id: snap.value?.account?.id || 0,
+      symbol: form.stockCode.trim(),
+      stock_name: form.stockName.trim() || form.stockCode.trim(),
+      side,
+      price: Number(form.price),
+      volume: Number(form.volume),
+      reason: form.reason || '模拟交易',
+      order_kind: 'normal',
+    })
+    await confirmManualTradeIntent(created.id)
+    const exec = await executeManualTradeIntent(created.id)
+    if (exec.status === 'submitted') {
+      message.success(`模拟成交完成（订单 #${exec.order_id || ''}）`)
+      await refresh()
+      return
+    }
+    message.error(
+      exec.error_message ||
+        exec.error_code ||
+        `模拟成交失败（${exec.status || 'rejected'}）`,
+    )
   } catch (e) {
     message.error(e?.message || String(e))
   }
@@ -218,7 +263,14 @@ async function runRiskScan() {
   }
 }
 
-onMounted(refresh)
+onMounted(() => {
+  refresh()
+  EventsOn('paperBuyPrefill', onPaperBuyPrefill)
+})
+
+onBeforeUnmount(() => {
+  EventsOff('paperBuyPrefill')
+})
 </script>
 
 <template>

@@ -36,8 +36,9 @@ func InitLogger() {
 	//生成core
 	//multiWriteSyncer := zapcore.NewMultiWriteSyncer(writerSyncer, zapcore.AddSync(os.Stdout)) //AddSync将io.Writer转换成WriteSyncer的类型
 	//同时输出到控制台 和 指定的日志文件中
-	infoFileCore := zapcore.NewCore(encoder, zapcore.NewMultiWriteSyncer(infoFileWriteSyncer, zapcore.AddSync(os.Stdout)), lowPriority)
-	errorFileCore := zapcore.NewCore(encoder, zapcore.NewMultiWriteSyncer(errorFileWriteSyncer, zapcore.AddSync(os.Stdout)), highPriority)
+	// Phase13-V.5: scrub API Key / Token / abs paths at sink (no caller changes).
+	infoFileCore := zapcore.NewCore(encoder, wrapRedact(zapcore.NewMultiWriteSyncer(infoFileWriteSyncer, zapcore.AddSync(os.Stdout))), lowPriority)
+	errorFileCore := zapcore.NewCore(encoder, wrapRedact(zapcore.NewMultiWriteSyncer(errorFileWriteSyncer, zapcore.AddSync(os.Stdout))), highPriority)
 
 	//将infocore 和 errcore 加入core切片
 	var coreArr []zapcore.Core
@@ -110,26 +111,50 @@ func getEncoder() zapcore.Encoder {
 
 // core 三个参数之  日志输出路径
 func getInfoWriterSyncer() zapcore.WriteSyncer {
+	return getInfoWriterSyncerDir("./logs")
+}
 
-	//引入第三方库 Lumberjack 加入日志切割功能
+func getErrorWriterSyncer() zapcore.WriteSyncer {
+	return getErrorWriterSyncerDir("./logs")
+}
+
+func getInfoWriterSyncerDir(logDir string) zapcore.WriteSyncer {
 	infoLumberIO := &lumberjack.Logger{
-		Filename:   "./logs/info.log",
+		Filename:   logDir + "/info.log",
 		MaxSize:    10, // megabytes
 		MaxBackups: 100,
-		MaxAge:     28,    // days
-		Compress:   false, //Compress确定是否应该使用gzip压缩已旋转的日志文件。默认值是不执行压缩。
+		MaxAge:     28,
+		Compress:   false,
 	}
 	return zapcore.AddSync(infoLumberIO)
 }
 
-func getErrorWriterSyncer() zapcore.WriteSyncer {
-	//引入第三方库 Lumberjack 加入日志切割功能
+func getErrorWriterSyncerDir(logDir string) zapcore.WriteSyncer {
 	lumberWriteSyncer := &lumberjack.Logger{
-		Filename:   "./logs/error.log",
+		Filename:   logDir + "/error.log",
 		MaxSize:    10, // megabytes
 		MaxBackups: 100,
-		MaxAge:     28,    // days
-		Compress:   false, //Compress确定是否应该使用gzip压缩已旋转的日志文件。默认值是不执行压缩。
+		MaxAge:     28,
+		Compress:   false,
 	}
 	return zapcore.AddSync(lumberWriteSyncer)
+}
+
+// InitWithDir reinitialises the global Logger and SugaredLogger using the
+// supplied absolute log directory (Phase16.16-B).
+// It replaces the loggers created by init()/InitLogger(), so any messages
+// logged between package init and this call will have gone to ./logs/ (safe
+// during the brief bootstrap window).
+func InitWithDir(logDir string) {
+	encoder := getEncoder()
+	highPriority := zap.LevelEnablerFunc(func(lev zapcore.Level) bool {
+		return lev >= zap.ErrorLevel
+	})
+	lowPriority := zap.LevelEnablerFunc(func(lev zapcore.Level) bool {
+		return lev < zap.ErrorLevel && lev >= zap.DebugLevel
+	})
+	infoCore := zapcore.NewCore(encoder, wrapRedact(zapcore.NewMultiWriteSyncer(getInfoWriterSyncerDir(logDir), zapcore.AddSync(os.Stdout))), lowPriority)
+	errorCore := zapcore.NewCore(encoder, wrapRedact(zapcore.NewMultiWriteSyncer(getErrorWriterSyncerDir(logDir), zapcore.AddSync(os.Stdout))), highPriority)
+	Logger = zap.New(zapcore.NewTee(infoCore, errorCore), zap.AddCaller())
+	SugaredLogger = Logger.Sugar()
 }

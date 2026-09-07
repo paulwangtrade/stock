@@ -59,6 +59,19 @@ const attentionRow = {
 }
 
 {
+  const oppWithName = { ...opp, candidate_name: '阳光电源' }
+  const cards = toOpportunityCards(oppWithName)
+  assert.equal(cards[0].candidate_stock.display.display_name, '阳光电源')
+  assert.equal(cards[0].holding_stock.display.display_name, UNKNOWN_STOCK_NAME)
+}
+
+{
+  const oppWithName = { ...opp, candidate_name: '阳光电源' }
+  const cards = toOpportunityCards(oppWithName, { sz000858: '五粮液' })
+  assert.equal(cards[0].candidate_stock.display.display_name, '阳光电源')
+}
+
+{
   const hints = collectOpportunityNameHints({
     daily_summary: {
       position_attention: [{ stock_code: 'sz000021', stock_name: '深科技' }],

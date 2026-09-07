@@ -19,10 +19,11 @@ type SnapshotOptions struct {
 	AsOf        time.Time
 }
 
-// Service loads a read-only Portfolio Snapshot. Implementations must not write
+// Service loads a read-only Portfolio Snapshot / Dashboard. Implementations must not write
 // paper_sim_* / TradePlan / orders, and must not create missing accounts.
 type Service interface {
 	Snapshot(opts SnapshotOptions) (*Snapshot, error)
+	Dashboard(opts DashboardOptions) (*PortfolioDashboardView, error)
 }
 
 type dbService struct{}

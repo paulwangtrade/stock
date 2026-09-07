@@ -25,10 +25,10 @@ type AccountSlice struct {
 
 // DecisionCounts is stock-level decision histogram (not a sell queue).
 type DecisionCounts struct {
-	HoldNormalCount     int `json:"hold_normal_count"`
-	HoldWatchCount      int `json:"hold_watch_count"`
-	HoldReviewCount     int `json:"hold_review_count"`
-	ExitCandidateCount  int `json:"exit_candidate_count"`
+	HoldNormalCount    int `json:"hold_normal_count"`
+	HoldWatchCount     int `json:"hold_watch_count"`
+	HoldReviewCount    int `json:"hold_review_count"`
+	ExitCandidateCount int `json:"exit_candidate_count"`
 }
 
 // RiskDistribution is Evaluation risk_state histogram (facts, not decisions).
@@ -41,14 +41,14 @@ type RiskDistribution struct {
 
 // DecisionMarketValue weights decision states by evaluation (overlay) market value.
 type DecisionMarketValue struct {
-	Basis              string  `json:"basis"`
-	Total              float64 `json:"total"`
-	HoldNormal         float64 `json:"hold_normal"`
-	HoldWatch          float64 `json:"hold_watch"`
-	HoldReview         float64 `json:"hold_review"`
-	ExitCandidate      float64 `json:"exit_candidate"`
-	HoldWatchWeight    float64 `json:"hold_watch_weight"`
-	HoldReviewWeight   float64 `json:"hold_review_weight"`
+	Basis            string  `json:"basis"`
+	Total            float64 `json:"total"`
+	HoldNormal       float64 `json:"hold_normal"`
+	HoldWatch        float64 `json:"hold_watch"`
+	HoldReview       float64 `json:"hold_review"`
+	ExitCandidate    float64 `json:"exit_candidate"`
+	HoldWatchWeight  float64 `json:"hold_watch_weight"`
+	HoldReviewWeight float64 `json:"hold_review_weight"`
 }
 
 // HoldingLink joins one symbol's evaluation facts with its decision (observation only).
@@ -67,28 +67,28 @@ type HoldingLink struct {
 
 // PortfolioSummary is the combination-level observation DTO (Phase10-D.9).
 type PortfolioSummary struct {
-	AsOf                    string               `json:"as_of,omitempty"`
-	Account                 AccountSlice         `json:"account"`
-	PositionCount           int                  `json:"position_count"`
-	EvalHoldingCount        int                  `json:"eval_holding_count"`
-	DecisionCounts          DecisionCounts       `json:"decision_counts"`
-	RiskDistribution        RiskDistribution     `json:"risk_distribution"`
-	DecisionMarketValue     DecisionMarketValue  `json:"decision_market_value"`
-	PortfolioDecisionState  string               `json:"portfolio_decision_state"`
-	PortfolioDecisionReason string               `json:"portfolio_decision_reason"`
-	Holdings                []HoldingLink        `json:"holdings"`
-	ExitCandidateEnabled    bool                 `json:"exit_candidate_enabled"`
-	Action                  string               `json:"action"`
-	DataSourceNote          string               `json:"data_source_note"`
+	AsOf                    string              `json:"as_of,omitempty"`
+	Account                 AccountSlice        `json:"account"`
+	PositionCount           int                 `json:"position_count"`
+	EvalHoldingCount        int                 `json:"eval_holding_count"`
+	DecisionCounts          DecisionCounts      `json:"decision_counts"`
+	RiskDistribution        RiskDistribution    `json:"risk_distribution"`
+	DecisionMarketValue     DecisionMarketValue `json:"decision_market_value"`
+	PortfolioDecisionState  string              `json:"portfolio_decision_state"`
+	PortfolioDecisionReason string              `json:"portfolio_decision_reason"`
+	Holdings                []HoldingLink       `json:"holdings"`
+	ExitCandidateEnabled    bool                `json:"exit_candidate_enabled"`
+	Action                  string              `json:"action"`
+	DataSourceNote          string              `json:"data_source_note"`
 }
 
 // BuildPortfolioObservation aggregates Snapshot + Evaluation + Decision.
 // Pure: does not mutate inputs, does not read/write DB, does not emit sell/rebalance.
 func BuildPortfolioObservation(snap *portfolio.Snapshot, eval *papertrading.HoldingEvalObservationView, decision *View) *PortfolioSummary {
 	out := &PortfolioSummary{
-		Action:           actionNone,
-		DataSourceNote:   portfolioDataSourceNote,
-		Holdings:         []HoldingLink{},
+		Action:                  actionNone,
+		DataSourceNote:          portfolioDataSourceNote,
+		Holdings:                []HoldingLink{},
 		PortfolioDecisionState:  StateHoldNormal,
 		PortfolioDecisionReason: ReasonNone,
 	}
