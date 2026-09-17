@@ -72,7 +72,13 @@ Root cause: missing Foundation panel module (blocker above), not the tab-wiring 
 
 ### Frontend tests
 
-`npm run test:quant` not re-run as a gate for this change: the only code edit is async tab mount; build already fails on unresolved import before tests would add signal.
+```text
+cd frontend && npm run test:quant
+→ PASS (position-model / backtest-engine / paper-trading /
+        trading-stream / intradaday-t / margin-risk / frontend-performance)
+```
+
+Note: these scripts do not import `researchIndex.vue`; they do not cover the missing Panel resolve.
 
 ## Constraints compliance
 
