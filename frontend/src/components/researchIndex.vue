@@ -12,6 +12,7 @@ const StockChangesMonitor = defineAsyncComponent(() => import('./stockChangesMon
 const StockStrategyManager = defineAsyncComponent(() => import('./stockStrategyManager.vue'))
 const SignalBacktestPanel = defineAsyncComponent(() => import('./SignalBacktestPanel.vue'))
 const PaperTradingPanel = defineAsyncComponent(() => import('./PaperTradingPanel.vue'))
+const ResearchExperimentFoundationPanel = defineAsyncComponent(() => import('./ResearchExperimentFoundationPanel.vue'))
 
 const nowTab = ref('AI分析报告')
 const route = useRoute()
@@ -77,6 +78,9 @@ function updateTab(name) {
       </n-tab-pane>
       <n-tab-pane name="模拟盘" display-directive="if">
         <PaperTradingPanel />
+      </n-tab-pane>
+      <n-tab-pane name="研究实验" display-directive="if">
+        <ResearchExperimentFoundationPanel />
       </n-tab-pane>
       <n-tab-pane name="定时任务" display-directive="if">
         <CronTaskManager />
