@@ -27,6 +27,8 @@ import { getSignalOptions } from '../utils/signalSettingsStore'
 import { resolveEffectiveSignalDayKey, resolveSignalLastBarIndex } from '../utils/tradingSession'
 import {
   applyTechnicalIndicators,
+  buildComparisonObservationPayload,
+  COMPARISON_OBSERVATION_PRESETS,
   defaultTechnicalIndicators,
   hasActiveTechnicalIndicator,
   resetTechnicalIndicators,
@@ -43,6 +45,7 @@ import {
 const message = useMessage()
 const dialog = useDialog()
 const loading = ref(false)
+const importingPack = ref(false)
 const strategyList = ref([])
 const showEdit = ref(false)
 const editingId = ref(0)
@@ -291,8 +294,15 @@ function openCreate() {
   showEdit.value = true
 }
 
+function findStrategyPreset(presetId) {
+  return (
+    STRATEGY_PRESETS.find((x) => x.id === presetId) ||
+    COMPARISON_OBSERVATION_PRESETS.find((x) => x.id === presetId)
+  )
+}
+
 function applyStrategyPreset(presetId) {
-  const p = STRATEGY_PRESETS.find((x) => x.id === presetId)
+  const p = findStrategyPreset(presetId)
   if (!p) return
   resetForm()
   form.name = p.name
@@ -300,19 +310,108 @@ function applyStrategyPreset(presetId) {
   form.queryText = p.queryText || ''
   form.description = p.description || ''
   form.pageSize = p.pageSize || 50
-  form.cronExpr = p.cronExpr || ''
-  form.enable = !!p.enable && !!p.cronExpr
+  if (p.observationOnly) {
+    form.cronExpr = ''
+    form.enable = false
+  } else {
+    form.cronExpr = p.cronExpr || ''
+    form.enable = !!p.enable && !!p.cronExpr
+  }
   if (p.applyTechnical) {
     p.applyTechnical(technical)
     technicalTouched.value = true
   }
   showEdit.value = true
+  if (p.observationOnly) {
+    message.info('对比观察模板：未勾选启用定时，保存后不会进入交易宇宙')
+  }
 }
 
-const presetOptions = STRATEGY_PRESETS.map((p) => ({
-  label: p.name,
-  key: p.id,
-}))
+const presetOptions = [
+  {
+    type: 'group',
+    label: '冰点',
+    key: 'preset-ice',
+    children: STRATEGY_PRESETS.map((p) => ({ label: p.name, key: p.id })),
+  },
+  {
+    type: 'group',
+    label: '对比观察（不启用定时）',
+    key: 'preset-cmp',
+    children: COMPARISON_OBSERVATION_PRESETS.map((p) => ({ label: p.name, key: p.id })),
+  },
+]
+
+async function listStrategyNames() {
+  const names = new Set()
+  const pageSize = 200
+  for (let page = 1; page <= 20; page++) {
+    const res = await GetStockStrategyList({
+      page,
+      pageSize,
+      name: '',
+      queryType: '',
+    })
+    const rows = res?.data || []
+    for (const row of rows) names.add(String(row.name || '').trim())
+    const total = Number(res?.total) || 0
+    if (!rows.length || page * pageSize >= total) break
+  }
+  return names
+}
+
+async function importComparisonPack() {
+  if (importingPack.value) return
+  importingPack.value = true
+  try {
+    const existing = await listStrategyNames()
+    let created = 0
+    let skipped = 0
+    const failed = []
+    for (const preset of COMPARISON_OBSERVATION_PRESETS) {
+      const name = String(preset.name || '').trim()
+      if (existing.has(name)) {
+        skipped++
+        continue
+      }
+      let payload
+      try {
+        payload = buildComparisonObservationPayload(preset)
+      } catch (err) {
+        failed.push(`${name}: ${err}`)
+        continue
+      }
+      if (payload.enable || payload.cronExpr) {
+        failed.push(`${name}: 拒绝写入已启用或带定时的策略`)
+        continue
+      }
+      const msg = await CreateStockStrategy(payload)
+      if (String(msg).includes('成功')) {
+        created++
+        existing.add(name)
+      } else {
+        failed.push(`${name}: ${msg}`)
+      }
+    }
+    if (created > 0) {
+      message.success(`已导入 ${created} 条对比观察策略，定时未启用，不会进入交易宇宙`)
+      pagination.page = 1
+      await loadList()
+    } else if (!failed.length) {
+      message.info('对比策略包已在列表中，本次未改已有策略')
+    }
+    if (skipped > 0 && (created > 0 || failed.length > 0)) {
+      message.info(`跳过已存在的 ${skipped} 条同名策略`)
+    }
+    if (failed.length) {
+      message.error(failed.join('；'))
+    }
+  } catch (e) {
+    message.error(`导入对比策略包失败：${e}`)
+  } finally {
+    importingPack.value = false
+  }
+}
 
 function openEdit(row) {
   editingId.value = row.id
@@ -1152,8 +1251,14 @@ onBeforeUnmount(() => {
   <div class="strategy-page">
     <div class="strategy-page-header">
     <n-space justify="space-between" align="center" wrap>
-      <n-text depth="2">保存自然语言或技术面条件，支持定时执行、冰点/买点扫描与历史记录。</n-text>
+      <n-text depth="2">保存自然语言或技术面条件，支持定时执行、冰点/买点扫描与历史记录。对比策略包只做观察：导入后不勾选启用定时，不会进入交易宇宙。</n-text>
       <n-space wrap>
+        <n-tooltip>
+          <template #trigger>
+            <n-button :loading="importingPack" @click="importComparisonPack">导入对比策略包</n-button>
+          </template>
+          写入价值、放量、超跌和三组技术面对照策略。定时保持关闭，同名已存在则跳过。运行结果只供对比，不是委托。
+        </n-tooltip>
         <n-dropdown
           trigger="click"
           :options="presetOptions"

@@ -229,6 +229,21 @@ func technicalIndicatorsSummary(ind *models.TechnicalIndicators) []string {
 	if ind.SHORTAVGARRAY {
 		parts = append(parts, "均线空头")
 	}
+	if ind.LONGAVGARRAY {
+		parts = append(parts, "均线多头")
+	}
+	if ind.BREAKUPMA5DAYS {
+		parts = append(parts, "向上突破5日均线")
+	}
+	if ind.DOWNNARROWVOLUME {
+		parts = append(parts, "下跌无量")
+	}
+	if ind.UPPERLARGEVOLUME {
+		parts = append(parts, "连涨放量")
+	}
+	if ind.UPSIDEVOLUME {
+		parts = append(parts, "放量上攻")
+	}
 	if ind.DOWNNDAY >= 3 {
 		parts = append(parts, fmt.Sprintf("连跌≥%d天", ind.DOWNNDAY))
 	}
