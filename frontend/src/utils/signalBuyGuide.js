@@ -133,7 +133,7 @@ export function buildSignalFilterOptions(prefix = []) {
   ]
 }
 
-/** 股票筛选页专用：仅 强/趋/转/突/弹/买 */
+/** 股票筛选页专用：买点标签，以及截面动量观察标签 XS_MOM_TOP */
 export function buildScreenSignalFilterOptions() {
   return SCREEN_SNAPSHOT_SIGNAL_TAGS.map((t) => ({ label: t, value: t }))
 }

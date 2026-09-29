@@ -20,6 +20,8 @@ var SignalScanBatch = (() => {
   // scripts/scansignals/scan-batch.ts
   var scan_batch_exports = {};
   __export(scan_batch_exports, {
+    XS_MOM_STRATEGY_ID: () => XS_MOM_STRATEGY_ID,
+    XS_MOM_TAG: () => XS_MOM_TAG,
     runSignalScanBatch: () => runSignalScanBatch
   });
 
@@ -1509,7 +1511,7 @@ var SignalScanBatch = (() => {
 
   // frontend/src/utils/signalSettings.js
   var DEFAULT_SCREEN_STRATEGY_ID = "default";
-  var DEFAULT_SCREEN_STRATEGY_NAME = "\u9ED8\u8BA4\u7B56\u7565";
+  var DEFAULT_SCREEN_STRATEGY_NAME = "\u9ED8\u8BA4\u53C2\u6570\u9884\u8BBE";
   var DEFAULT_SIGNAL_SETTINGS = {
     automation: DEFAULT_QUANT_AUTOMATION,
     display: {
@@ -1895,6 +1897,26 @@ var SignalScanBatch = (() => {
     }
     return base;
   }
+  function resolveRawPresetList(raw) {
+    if (!raw || typeof raw !== "object") return [];
+    if (Array.isArray(raw.signalPresets) && raw.signalPresets.length) return raw.signalPresets;
+    if (Array.isArray(raw.screenStrategies) && raw.screenStrategies.length) return raw.screenStrategies;
+    return [];
+  }
+  function resolveRawActivePresetId(raw, fallback) {
+    if (!raw || typeof raw !== "object") return fallback;
+    const fromNew = String(raw.activeSignalPresetId || "").trim();
+    if (fromNew) return fromNew;
+    const fromOld = String(raw.activeScreenStrategyId || "").trim();
+    if (fromOld) return fromOld;
+    return fallback;
+  }
+  function mirrorSignalPresetAliases(base) {
+    if (!base || typeof base !== "object") return base;
+    base.signalPresets = base.screenStrategies;
+    base.activeSignalPresetId = base.activeScreenStrategyId;
+    return base;
+  }
   function cloneDefaultSignalSettings() {
     const base = deepClone(DEFAULT_SIGNAL_SETTINGS);
     base.activeScreenStrategyId = DEFAULT_SCREEN_STRATEGY_ID;
@@ -1905,7 +1927,7 @@ var SignalScanBatch = (() => {
         settings: cloneDefaultSignalSettingsCore()
       }
     ];
-    return base;
+    return mirrorSignalPresetAliases(base);
   }
   function mergeSignalSettings(raw) {
     const base = cloneDefaultSignalSettings();
@@ -1925,11 +1947,14 @@ var SignalScanBatch = (() => {
       if (!raw[key] || typeof raw[key] !== "object") continue;
       base[key] = { ...base[key], ...raw[key] };
     }
-    base.activeScreenStrategyId = String(raw.activeScreenStrategyId || base.activeScreenStrategyId || DEFAULT_SCREEN_STRATEGY_ID);
-    const rawStrategies = Array.isArray(raw.screenStrategies) ? raw.screenStrategies : [];
+    base.activeScreenStrategyId = resolveRawActivePresetId(
+      raw,
+      base.activeScreenStrategyId || DEFAULT_SCREEN_STRATEGY_ID
+    );
+    const rawStrategies = resolveRawPresetList(raw);
     const strategies = rawStrategies.map((item, index) => {
       const id = String(item?.id || "").trim() || `strategy-${index + 1}`;
-      const name = String(item?.name || "").trim() || `\u7B56\u7565 ${index + 1}`;
+      const name = String(item?.name || "").trim() || `\u53C2\u6570\u9884\u8BBE ${index + 1}`;
       const settings = mergeSignalStrategySettings(item?.settings || {});
       return { id, name, settings };
     }).filter((item) => item.id && item.name);
@@ -1948,7 +1973,7 @@ var SignalScanBatch = (() => {
       ];
       base.activeScreenStrategyId = DEFAULT_SCREEN_STRATEGY_ID;
     }
-    return base;
+    return mirrorSignalPresetAliases(base);
   }
   function parseSignalParams(raw) {
     if (!raw) return cloneDefaultSignalSettings();
@@ -2047,11 +2072,149 @@ var SignalScanBatch = (() => {
   }
 
   // frontend/src/utils/signalTagConstants.js
-  var SCREEN_SNAPSHOT_SIGNAL_TAGS = ["\u5F3A", "\u8D8B", "\u8F6C", "\u7A81", "\u5F39", "\u4E70"];
+  var SCREEN_SNAPSHOT_SIGNAL_TAGS = ["\u5F3A", "\u8D8B", "\u8F6C", "\u7A81", "\u5F39", "\u4E70", "XS_MOM_TOP"];
   var SCREEN_SNAPSHOT_SIGNAL_TAG_SET = new Set(SCREEN_SNAPSHOT_SIGNAL_TAGS);
 
   // scripts/scansignals/scan-batch.ts
+  var XS_MOM_STRATEGY_ID = "ext_xsmom_v1";
+  var XS_MOM_TAG = "XS_MOM_TOP";
+  var XS_MOM_DEFAULT_LOOKBACK = 20;
+  var XS_MOM_DEFAULT_TOP_N = 20;
+  function readXsMomParams(signalParamsJson) {
+    const out = {
+      lookback: XS_MOM_DEFAULT_LOOKBACK,
+      topN: XS_MOM_DEFAULT_TOP_N,
+      rsiMax: 0,
+      scanMode: ""
+    };
+    if (!signalParamsJson) return out;
+    try {
+      const raw = JSON.parse(signalParamsJson);
+      const lookback = Number(raw?.xsmomLookback);
+      const topN = Number(raw?.xsmomTopN);
+      const rsiMax = Number(raw?.xsmomRsiMax);
+      if (Number.isFinite(lookback) && lookback >= 1) out.lookback = Math.floor(lookback);
+      if (Number.isFinite(topN) && topN >= 1) out.topN = Math.floor(topN);
+      if (Number.isFinite(rsiMax) && rsiMax > 0) out.rsiMax = rsiMax;
+      out.scanMode = String(raw?.scanMode || raw?.xsmomMode || "").trim();
+    } catch {
+    }
+    return out;
+  }
+  function isCrossSectionMomentumScan(strategyId, scanMode) {
+    const sid = String(strategyId || "").trim();
+    if (!sid || sid === "default") return false;
+    if (sid === XS_MOM_STRATEGY_ID) return true;
+    return scanMode === XS_MOM_STRATEGY_ID || scanMode === "xsmom";
+  }
+  function finitePositive(n) {
+    return typeof n === "number" && Number.isFinite(n) && n > 0;
+  }
+  function lookbackReturn(closes, lastIdx, lookback) {
+    if (!Array.isArray(closes) || lastIdx < lookback || lastIdx >= closes.length) return null;
+    const now = closes[lastIdx];
+    const prev = closes[lastIdx - lookback];
+    if (!finitePositive(now) || !finitePositive(prev)) return null;
+    const ret = now / prev - 1;
+    if (!Number.isFinite(ret)) return null;
+    return ret;
+  }
+  function latestRsi(closes, lastIdx, period) {
+    if (!Array.isArray(closes) || lastIdx < 0 || period < 2) return null;
+    try {
+      const series = calcRSI(closes.slice(0, lastIdx + 1), period);
+      const v = series?.[series.length - 1];
+      return typeof v === "number" && Number.isFinite(v) ? v : null;
+    } catch {
+      return null;
+    }
+  }
+  function rsiPeriodFromParams(signalParamsJson) {
+    try {
+      const settings = signalParamsJson ? parseSignalParams(signalParamsJson) : cloneDefaultSignalSettings();
+      const p = Number(settings?.common?.rsiPeriod);
+      if (Number.isFinite(p) && p >= 2) return Math.floor(p);
+    } catch {
+    }
+    return 14;
+  }
+  function runCrossSectionMomentumBatch(input, params) {
+    const stocks = input?.stocks || [];
+    const rsiPeriod = rsiPeriodFromParams(input?.signalParamsJson);
+    const eligible = [];
+    for (const s of stocks) {
+      try {
+        const closes = s?.closes;
+        if (!Array.isArray(closes) || closes.length === 0) continue;
+        const lastIdx = s.lastBarIndex != null && s.lastBarIndex >= 0 ? Math.min(s.lastBarIndex, closes.length - 1) : closes.length - 1;
+        if (lastIdx < 0) continue;
+        const ret = lookbackReturn(closes, lastIdx, params.lookback);
+        if (ret == null || ret <= 0) continue;
+        const rsi = latestRsi(closes, lastIdx, rsiPeriod);
+        if (params.rsiMax > 0 && rsi != null && rsi >= params.rsiMax) continue;
+        eligible.push({ stock: s, lastIdx, ret, rsi, price: closes[lastIdx] });
+      } catch {
+        continue;
+      }
+    }
+    eligible.sort((a, b) => {
+      if (a.ret !== b.ret) return b.ret - a.ret;
+      return String(a.stock.code || "").localeCompare(String(b.stock.code || ""));
+    });
+    const picked = eligible.slice(0, params.topN);
+    const items = [];
+    if (!SCREEN_SNAPSHOT_SIGNAL_TAG_SET.has(XS_MOM_TAG)) {
+      return { items, hitTotal: 0 };
+    }
+    picked.forEach((c, i) => {
+      const s = c.stock;
+      const row = s.row || {};
+      const rank = i + 1;
+      const pct = (c.ret * 100).toFixed(2);
+      const rsiText = c.rsi == null ? "\u2014" : c.rsi.toFixed(1);
+      const dayKey = s.dayKeys?.[c.lastIdx] || "";
+      items.push({
+        SECUCODE: row.SECUCODE || s.secucode || s.code,
+        SECURITY_CODE: row.SECURITY_CODE || "",
+        SECURITY_NAME_ABBR: row.SECURITY_NAME_ABBR || s.name || "",
+        NEW_PRICE: row.NEW_PRICE ?? "",
+        CHANGE_RATE: row.CHANGE_RATE ?? "",
+        HIGH_PRICE: row.HIGH_PRICE ?? "",
+        LOW_PRICE: row.LOW_PRICE ?? "",
+        PRE_CLOSE_PRICE: row.PRE_CLOSE_PRICE ?? "",
+        VOLUME: row.VOLUME ?? "",
+        DEAL_AMOUNT: row.DEAL_AMOUNT ?? "",
+        TURNOVERRATE: row.TURNOVERRATE ?? "",
+        VOLUME_RATIO: row.VOLUME_RATIO ?? "",
+        INDUSTRY: row.INDUSTRY ?? "",
+        CONCEPT: row.CONCEPT ?? "",
+        MARKET: row.MARKET ?? "",
+        tag: XS_MOM_TAG,
+        recentSignalDaysAgo: 0,
+        statusText: `\u622A\u9762\u52A8\u91CF \xB7 ${params.lookback}\u65E5\u6536\u76CA +${pct}% \xB7 \u6392\u540D ${rank}/${eligible.length} \xB7 RSI ${rsiText}`,
+        sortRank: 1e3 - i,
+        rsi: c.rsi,
+        schema_version: "signal_event.v1",
+        signal_price: c.price,
+        signal_time: dayKey || void 0,
+        signal_price_source: "kline_close",
+        signal_days_ago: 0,
+        signal_bar_role: "signal",
+        signal_bar_index: c.lastIdx,
+        signal_price_status: "frozen",
+        ok: true
+      });
+    });
+    return { items, hitTotal: items.length };
+  }
   function runSignalScanBatch(input) {
+    const mom = readXsMomParams(input?.signalParamsJson);
+    if (isCrossSectionMomentumScan(input?.strategyId, mom.scanMode)) {
+      return runCrossSectionMomentumBatch(input, mom);
+    }
+    return runIcePointScanBatch(input);
+  }
+  function runIcePointScanBatch(input) {
     const stocks = input?.stocks || [];
     const indexMa20ByDay = buildIndexMa20ByDay(new Map(Object.entries(input?.indexClose || {})), 20);
     let baseSettings = cloneDefaultSignalSettings();

@@ -20,6 +20,8 @@ func CalcResearchSignalScore(tag string, daysAgo *int, rsi float64) float64 {
 	baseByTag := map[string]float64{
 		"强": 92, "趋": 84, "加": 86, "转": 80, "突": 78, "弹": 72, "买": 68,
 		"冰": 52, "减": 16, "止": 28, "冲": 22, "卖": 22,
+		// 截面动量观察标签：高于默认研究阈值 60，且不借用冰点买点分。
+		"XS_MOM_TOP": 76,
 	}
 	base, ok := baseByTag[strings.TrimSpace(tag)]
 	if !ok {
@@ -51,7 +53,7 @@ func CalcResearchSignalScore(tag string, daysAgo *int, rsi float64) float64 {
 // PredictDirectionFromTag 由信号标签推断预测方向。
 func PredictDirectionFromTag(tag string) string {
 	switch strings.TrimSpace(tag) {
-	case "强", "趋", "加", "转", "突", "弹", "买", "冰":
+	case "强", "趋", "加", "转", "突", "弹", "买", "冰", "XS_MOM_TOP":
 		return "看多"
 	case "减", "止", "冲", "卖":
 		return "看空"
