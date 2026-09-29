@@ -116,9 +116,16 @@ const BUY_GUIDE_BY_TAG = {
     buy: '出买后 1～2 日不破位，回踩再小仓试',
     avoid: '仍在冰点区提前抢、无收阳；MA20 下行中 MA5<MA10 的弱反弹',
   },
+  冰: {
+    tag: '冰',
+    level: '观察',
+    watch: 'RSI 低于冰点阈值，处于冰点区',
+    buy: '—',
+    avoid: '冰点区内不是买点，只观察是否离开冰点',
+  },
 }
 
-export const SIGNAL_BUY_GUIDE_ROWS = SIGNAL_TAG_DISPLAY_ORDER.filter((t) => t !== '冰')
+export const SIGNAL_BUY_GUIDE_ROWS = SIGNAL_TAG_DISPLAY_ORDER
   .map((t) => BUY_GUIDE_BY_TAG[t])
   .map((row) => row ? { ...row, displayTag: formatSignalTagLabel(row.tag) } : row)
   .filter(Boolean)
@@ -126,16 +133,25 @@ export const SIGNAL_BUY_GUIDE_ROWS = SIGNAL_TAG_DISPLAY_ORDER.filter((t) => t !=
 export function buildSignalFilterOptions(prefix = []) {
   return [
     ...prefix,
-    ...SIGNAL_TAG_DISPLAY_ORDER.filter((t) => t !== '冰').map((t) => ({
+    ...SIGNAL_TAG_DISPLAY_ORDER.map((t) => ({
       label: formatSignalTagLabel(t),
       value: t,
     })),
   ]
 }
 
-/** 股票筛选页专用：买点标签，以及截面动量观察标签 XS_MOM_TOP */
+const SCREEN_TAG_LABELS = {
+  XS_MOM_TOP: '截面动量',
+  MA_TREND: '均线趋势',
+  BREAKOUT_N: '突破观察',
+}
+
+/** 股票筛选页专用：买点标签，以及观察扫描标签 */
 export function buildScreenSignalFilterOptions() {
-  return SCREEN_SNAPSHOT_SIGNAL_TAGS.map((t) => ({ label: t, value: t }))
+  return SCREEN_SNAPSHOT_SIGNAL_TAGS.map((t) => ({
+    label: SCREEN_TAG_LABELS[t] ? `${t} ${SCREEN_TAG_LABELS[t]}` : t,
+    value: t,
+  }))
 }
 
 /** @deprecated 请用 getReboundScreenMaxRsi() */
@@ -159,6 +175,9 @@ export const SIGNAL_TAG_COLORS = {
   冲: { color: 'rgba(234, 88, 12, 0.16)', textColor: '#ea580c', borderColor: 'rgba(234, 88, 12, 0.45)' },
   加: { color: 'rgba(34, 197, 94, 0.14)', textColor: '#16a34a', borderColor: 'rgba(34, 197, 94, 0.45)' },
   卖: { color: 'rgba(38, 166, 154, 0.14)', textColor: '#26a69a', borderColor: 'rgba(38, 166, 154, 0.45)' },
+  XS_MOM_TOP: { color: 'rgba(14, 165, 233, 0.14)', textColor: '#0284c7', borderColor: 'rgba(14, 165, 233, 0.45)' },
+  MA_TREND: { color: 'rgba(168, 85, 247, 0.14)', textColor: '#9333ea', borderColor: 'rgba(168, 85, 247, 0.45)' },
+  BREAKOUT_N: { color: 'rgba(234, 179, 8, 0.18)', textColor: '#ca8a04', borderColor: 'rgba(234, 179, 8, 0.5)' },
 }
 
 export function getSignalTagColor(tag) {

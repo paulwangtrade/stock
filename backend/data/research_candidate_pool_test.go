@@ -36,6 +36,18 @@ func TestCalcResearchSignalScore_XsMomTopAboveDefaultMin(t *testing.T) {
 	require.Equal(t, "看多", PredictDirectionFromTag("XS_MOM_TOP"))
 }
 
+func TestCalcResearchSignalScore_ObserveEnginesAboveDefaultMin(t *testing.T) {
+	days := 0
+	ma := CalcResearchSignalScore("MA_TREND", &days, 50)
+	bo := CalcResearchSignalScore("BREAKOUT_N", &days, 50)
+	require.Equal(t, 74.0, ma)
+	require.Equal(t, 73.0, bo)
+	require.Greater(t, ma, DefaultResearchCandidateMinScore)
+	require.Greater(t, bo, DefaultResearchCandidateMinScore)
+	require.Equal(t, "看多", PredictDirectionFromTag("MA_TREND"))
+	require.Equal(t, "看多", PredictDirectionFromTag("BREAKOUT_N"))
+}
+
 func TestNormalizeFollowableCode(t *testing.T) {
 	require.Equal(t, "sh600000", normalizeFollowableCode("600000.SH", "600000"))
 	require.Equal(t, "sz000001", normalizeFollowableCode("000001.SZ", ""))

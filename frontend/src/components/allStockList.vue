@@ -246,6 +246,8 @@ const selectedScreenStrategyParams = computed(() => {
   if (!settings) return null
   return getScreenStrategySettingsById(settings, selectedScreenStrategyId.value)
 })
+const selectedScreenStrategyNote = computed(() => selectedScreenStrategy.value?.usageNote || '')
+const selectedScreenStrategyPlanned = computed(() => selectedScreenStrategy.value?.engineStatus === 'planned')
 const reboundScreenMaxRsi = computed(() => getReboundScreenMaxRsi(selectedScreenStrategyParams.value))
 const signalFilterPassOptions = computed(() => ({
   maxRsi: reboundScreenMaxRsi.value,
@@ -1002,6 +1004,10 @@ async function onBackendSignalScanDone(ev) {
 }
 
 async function runBackendSnapshotScan() {
+  if (selectedScreenStrategyPlanned.value) {
+    message.warning('算法尚未接入')
+    return
+  }
   if (await IsSignalScanRunning()) {
     message.warning('后台扫描进行中，请稍候')
     await refreshScanTaskView()
@@ -2561,9 +2567,11 @@ const toNumber = (value, defaultValue = 0) => {
         v-model:value="selectedScreenStrategyId"
         :options="screenStrategyOptions"
         placeholder="选股策略"
-        style="width: 160px"
+        style="width: 200px"
         @update:value="onScreenStrategyChange"
       />
+      <n-tag v-if="selectedScreenStrategyPlanned" size="small" type="warning" :bordered="false">算法尚未接入</n-tag>
+      <n-text v-if="selectedScreenStrategyNote" depth="3" class="snapshot-hint">{{ selectedScreenStrategyNote }}</n-text>
       <n-select
         v-model:value="selectedSnapshotHistoryValue"
         placeholder="历史快照"

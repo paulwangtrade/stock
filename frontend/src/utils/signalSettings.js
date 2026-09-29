@@ -5,6 +5,105 @@ import { DEFAULT_QUANT_AUTOMATION, mergeQuantAutomation } from './quantAutomatio
 export const DEFAULT_SCREEN_STRATEGY_ID = 'default'
 export const DEFAULT_SCREEN_STRATEGY_NAME = '默认参数预设'
 
+/** 冰点参数变体模板。确认后新建用户预设，不占用系统扫描 id。 */
+export const ICE_POINT_TEMPLATE_ID = 'ice_point'
+
+export const ENGINE_STATUS_READY = 'ready'
+export const ENGINE_STATUS_PLANNED = 'planned'
+
+export const SCREEN_STRATEGY_SCAN_ICE = 'ice'
+export const SCREEN_STRATEGY_SCAN_XSMOM = 'xsmom'
+export const SCREEN_STRATEGY_SCAN_MA_TREND = 'ma_trend'
+export const SCREEN_STRATEGY_SCAN_BREAKOUT = 'breakout'
+
+/** 设置页帮助：这些策略不进本页日线快照。 */
+export const SNAPSHOT_SCAN_OUT_OF_SCOPE_NOTE =
+  '不适合本页快照扫描，后续另入口：Dual Thrust 日内、Qlib Alpha158、价值+质量基本面、跨资产双动量。'
+
+/**
+ * 稳定 id 的系统预设。merge 时按 id 补齐，不覆盖已有旋钮。
+ * engineStatus=planned：可选中并显示说明，生成快照应提示算法尚未接入。
+ */
+export const BUILTIN_SCREEN_STRATEGIES = [
+  {
+    id: DEFAULT_SCREEN_STRATEGY_ID,
+    name: DEFAULT_SCREEN_STRATEGY_NAME,
+    templateId: ICE_POINT_TEMPLATE_ID,
+    engineStatus: ENGINE_STATUS_READY,
+    scanKind: SCREEN_STRATEGY_SCAN_ICE,
+    usageNote: '经典冰点信号观察（冰/强/趋/转/突/弹/买），非买卖指令。',
+  },
+  {
+    id: 'ext_xsmom_v1',
+    name: '截面动量V1',
+    templateId: 'ext_xsmom_v1',
+    engineStatus: ENGINE_STATUS_READY,
+    scanKind: SCREEN_STRATEGY_SCAN_XSMOM,
+    usageNote: '近20日收益截面Top观察，非买卖指令。',
+  },
+  {
+    id: 'ext_ma_trend_v1',
+    name: '均线趋势V1',
+    templateId: 'ext_ma_trend_v1',
+    engineStatus: ENGINE_STATUS_READY,
+    scanKind: SCREEN_STRATEGY_SCAN_MA_TREND,
+    usageNote: '收盘站上MA20且MA20高于MA60的趋势观察，非买卖指令。',
+  },
+  {
+    id: 'ext_breakout_v1',
+    name: '突破观察V1',
+    templateId: 'ext_breakout_v1',
+    engineStatus: ENGINE_STATUS_READY,
+    scanKind: SCREEN_STRATEGY_SCAN_BREAKOUT,
+    usageNote: '收盘突破近20日高点（唐奇安）的观察名单，非买卖指令。',
+  },
+  {
+    id: 'ext_vol_mom_v1',
+    name: '量价动量V1',
+    templateId: 'ext_vol_mom_v1',
+    engineStatus: ENGINE_STATUS_PLANNED,
+    scanKind: 'vol_mom',
+    usageNote: '量价齐升观察。算法尚未接入，生成快照不会产出标签。',
+  },
+  {
+    id: 'ext_ma_pullback_v1',
+    name: '均线回踩V1',
+    templateId: 'ext_ma_pullback_v1',
+    engineStatus: ENGINE_STATUS_PLANNED,
+    scanKind: 'ma_pullback',
+    usageNote: '升势中回踩均线的观察。算法尚未接入，生成快照不会产出标签。',
+  },
+  {
+    id: 'ext_meanrev_watch_v1',
+    name: '均值回归观察V1',
+    templateId: 'ext_meanrev_watch_v1',
+    engineStatus: ENGINE_STATUS_PLANNED,
+    scanKind: 'meanrev',
+    usageNote: '价格偏离均线后的回归观察。算法尚未接入，生成快照不会产出标签。',
+  },
+]
+
+/** 新建预设弹窗的模板。fixed_engine 只选中已有内置，不另建 id。 */
+export const PRESET_CREATE_TEMPLATES = [
+  {
+    id: ICE_POINT_TEMPLATE_ID,
+    name: '冰点参数变体',
+    group: '冰点参数',
+    kind: 'ice_params',
+    engineStatus: ENGINE_STATUS_READY,
+    usageNote: '在经典冰点规则上保存一套自己的阈值，仅供观察，非买卖指令。',
+  },
+  ...BUILTIN_SCREEN_STRATEGIES.filter((item) => item.scanKind !== SCREEN_STRATEGY_SCAN_ICE).map((item) => ({
+    id: item.id,
+    name: item.name,
+    group: '系统扫描',
+    kind: 'fixed_engine',
+    builtinId: item.id,
+    engineStatus: item.engineStatus,
+    usageNote: item.usageNote,
+  })),
+]
+
 export const DEFAULT_SIGNAL_SETTINGS = {
   automation: DEFAULT_QUANT_AUTOMATION,
   display: {
@@ -144,23 +243,94 @@ function cloneDefaultSignalSettingsCore() {
   return base
 }
 
+function builtinCatalogById(id) {
+  const key = String(id || '').trim()
+  return BUILTIN_SCREEN_STRATEGIES.find((item) => item.id === key) || null
+}
+
+function applyBuiltinCatalogMeta(record, catalog) {
+  return {
+    id: catalog.id,
+    name: catalog.name,
+    settings: record?.settings || cloneDefaultSignalSettingsCore(),
+    usageNote: catalog.usageNote,
+    templateId: catalog.templateId,
+    engineStatus: catalog.engineStatus,
+    scanKind: catalog.scanKind,
+    builtin: true,
+  }
+}
+
+function freshBuiltinStrategy(catalog) {
+  return applyBuiltinCatalogMeta({ settings: cloneDefaultSignalSettingsCore() }, catalog)
+}
+
+function normalizeStoredStrategy(item, index) {
+  const id = String(item?.id || '').trim() || `strategy-${index + 1}`
+  const settings = mergeSignalStrategySettings(item?.settings || {})
+  const catalog = builtinCatalogById(id)
+  if (catalog) return applyBuiltinCatalogMeta({ settings }, catalog)
+  const name = String(item?.name || '').trim() || `参数预设 ${index + 1}`
+  const engineStatus = item?.engineStatus === ENGINE_STATUS_PLANNED ? ENGINE_STATUS_PLANNED : ENGINE_STATUS_READY
+  const scanKind = String(item?.scanKind || SCREEN_STRATEGY_SCAN_ICE).trim() || SCREEN_STRATEGY_SCAN_ICE
+  return {
+    id,
+    name,
+    settings,
+    usageNote: String(item?.usageNote || '').trim(),
+    templateId: String(item?.templateId || ICE_POINT_TEMPLATE_ID).trim() || ICE_POINT_TEMPLATE_ID,
+    engineStatus,
+    scanKind,
+    builtin: false,
+  }
+}
+
+/** 内置按目录顺序放前面；已有内置保留旋钮，只刷新名称与说明。用户预设附在后面。 */
+function ensureBuiltinScreenStrategies(strategies) {
+  const pending = new Map()
+  for (const item of strategies || []) {
+    if (item?.id && !pending.has(item.id)) pending.set(item.id, item)
+  }
+  const merged = []
+  for (const catalog of BUILTIN_SCREEN_STRATEGIES) {
+    const existing = pending.get(catalog.id)
+    merged.push(existing ? applyBuiltinCatalogMeta(existing, catalog) : freshBuiltinStrategy(catalog))
+    pending.delete(catalog.id)
+  }
+  for (const item of strategies || []) {
+    if (item?.id && pending.has(item.id)) {
+      merged.push(item)
+      pending.delete(item.id)
+    }
+  }
+  return merged
+}
+
 /** 设置页字段定义：scale=100 表示 UI 以 % 展示（存小数） */
 export const SIGNAL_PARAM_SECTIONS = [
   {
     key: 'common',
     title: '通用',
     groups: [
-      { id: 'core', title: 'RSI / 均线', desc: '冰、买、止、减共用的基础指标' },
+      { id: 'core', title: 'RSI / 均线', desc: '买、止、减共用的基础指标；冰点阈值在「冰」' },
       { id: 'env', title: '强买环境' },
     ],
     fields: [
       { key: 'rsiPeriod', label: 'RSI 周期', group: 'core', type: 'int', min: 5, max: 30, step: 1 },
-      { key: 'iceThreshold', label: '冰点阈值', group: 'core', type: 'number', min: 10, max: 45, step: 1 },
       { key: 'overbought', label: '止 · RSI 阈值', group: 'core', type: 'number', min: 60, max: 90, step: 1 },
-      { key: 'lookback', label: '出冰回溯', group: 'core', type: 'int', min: 1, max: 20, step: 1, suffix: '日' },
       { key: 'maPeriod', label: '减 · MA 周期', group: 'core', type: 'int', min: 5, max: 60, step: 1 },
       { key: 'volPeriod', label: '均量周期', group: 'core', type: 'int', min: 3, max: 20, step: 1 },
       { key: 'requireIndexBull', label: '强买须上证 MA20 上', group: 'env', type: 'bool' },
+    ],
+  },
+  {
+    key: 'ice',
+    title: '冰',
+    /** 旋钮仍写在 common，避免改存储键。 */
+    storeSection: 'common',
+    fields: [
+      { key: 'iceThreshold', label: '冰点阈值', type: 'number', min: 10, max: 45, step: 1 },
+      { key: 'lookback', label: '出冰回溯', type: 'int', min: 1, max: 20, step: 1, suffix: '日' },
     ],
   },
   {
@@ -474,7 +644,9 @@ export const SIGNAL_FIELD_HINTS = {
 export function getSignalFieldHint(sectionKey, field) {
   if (!field) return ''
   if (field.hint) return field.hint
-  return SIGNAL_FIELD_HINTS[sectionKey]?.[field.key] || ''
+  const section = SIGNAL_PARAM_SECTIONS.find((item) => item.key === sectionKey)
+  const storeKey = section?.storeSection || sectionKey
+  return SIGNAL_FIELD_HINTS[storeKey]?.[field.key] || SIGNAL_FIELD_HINTS[sectionKey]?.[field.key] || ''
 }
 
 function deepClone(obj) {
@@ -525,13 +697,7 @@ function mirrorSignalPresetAliases(base) {
 export function cloneDefaultSignalSettings() {
   const base = deepClone(DEFAULT_SIGNAL_SETTINGS)
   base.activeScreenStrategyId = DEFAULT_SCREEN_STRATEGY_ID
-  base.screenStrategies = [
-    {
-      id: DEFAULT_SCREEN_STRATEGY_ID,
-      name: DEFAULT_SCREEN_STRATEGY_NAME,
-      settings: cloneDefaultSignalSettingsCore(),
-    },
-  ]
+  base.screenStrategies = BUILTIN_SCREEN_STRATEGIES.map((catalog) => freshBuiltinStrategy(catalog))
   return mirrorSignalPresetAliases(base)
 }
 
@@ -562,30 +728,87 @@ export function mergeSignalSettings(raw) {
     base.activeScreenStrategyId || DEFAULT_SCREEN_STRATEGY_ID,
   )
   const rawStrategies = resolveRawPresetList(raw)
-  const strategies = rawStrategies
-    .map((item, index) => {
-      const id = String(item?.id || '').trim() || `strategy-${index + 1}`
-      const name = String(item?.name || '').trim() || `参数预设 ${index + 1}`
-      const settings = mergeSignalStrategySettings(item?.settings || {})
-      return { id, name, settings }
-    })
+  let strategies = rawStrategies
+    .map((item, index) => normalizeStoredStrategy(item, index))
     .filter((item) => item.id && item.name)
-  if (strategies.length) {
-    base.screenStrategies = strategies
-    if (!strategies.some((item) => item.id === base.activeScreenStrategyId)) {
-      base.activeScreenStrategyId = strategies[0].id
-    }
-  } else {
-    base.screenStrategies = [
-      {
-        id: DEFAULT_SCREEN_STRATEGY_ID,
-        name: DEFAULT_SCREEN_STRATEGY_NAME,
-        settings: mergeSignalStrategySettings(base),
-      },
+  if (!strategies.length) {
+    const catalog = builtinCatalogById(DEFAULT_SCREEN_STRATEGY_ID)
+    strategies = [
+      applyBuiltinCatalogMeta({ settings: mergeSignalStrategySettings(base) }, catalog),
     ]
+  }
+  base.screenStrategies = ensureBuiltinScreenStrategies(strategies)
+  if (!base.screenStrategies.some((item) => item.id === base.activeScreenStrategyId)) {
     base.activeScreenStrategyId = DEFAULT_SCREEN_STRATEGY_ID
   }
   return mirrorSignalPresetAliases(base)
+}
+
+export function createScreenStrategyId() {
+  return `strategy-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+}
+
+export function getPresetCreateTemplate(templateId) {
+  return PRESET_CREATE_TEMPLATES.find((item) => item.id === templateId) || null
+}
+
+export function isBuiltinScreenStrategyId(strategyId) {
+  return Boolean(builtinCatalogById(strategyId))
+}
+
+/**
+ * 新建预设。系统扫描模板只选中已有内置；冰点模板复制旋钮并写入 usageNote / templateId。
+ * @returns {{ ok: boolean, settings: object, action: string, message: string, strategyId?: string }}
+ */
+export function applyCreatePreset(settings, input = {}) {
+  const s = mergeSignalSettings(settings)
+  const template = getPresetCreateTemplate(input.templateId)
+  if (!template) {
+    return { ok: false, settings: s, action: 'reject', message: '请选择策略模板' }
+  }
+  if (template.kind === 'fixed_engine') {
+    const builtinId = template.builtinId || template.id
+    if (!s.screenStrategies.some((item) => item.id === builtinId)) {
+      return { ok: false, settings: s, action: 'reject', message: '未找到系统内置预设' }
+    }
+    s.activeScreenStrategyId = builtinId
+    return {
+      ok: true,
+      settings: mirrorSignalPresetAliases(s),
+      action: 'select_builtin',
+      message: '已是系统内置',
+      strategyId: builtinId,
+    }
+  }
+  const name = String(input.name || '').trim()
+  if (!name) {
+    return { ok: false, settings: s, action: 'reject', message: '请填写预设名称' }
+  }
+  const copyFromId = String(input.copyFromId || DEFAULT_SCREEN_STRATEGY_ID).trim() || DEFAULT_SCREEN_STRATEGY_ID
+  const source = s.screenStrategies.find((item) => item.id === copyFromId)
+    || s.screenStrategies.find((item) => item.id === DEFAULT_SCREEN_STRATEGY_ID)
+  let id = String(input.id || '').trim()
+  if (!id || builtinCatalogById(id)) id = createScreenStrategyId()
+  const noteSource = input.usageNote != null ? input.usageNote : template.usageNote
+  const item = {
+    id,
+    name,
+    settings: extractSignalStrategySettings(source?.settings || {}),
+    usageNote: String(noteSource || '').trim(),
+    templateId: template.id,
+    engineStatus: ENGINE_STATUS_READY,
+    scanKind: SCREEN_STRATEGY_SCAN_ICE,
+    builtin: false,
+  }
+  s.screenStrategies = [...s.screenStrategies, item]
+  s.activeScreenStrategyId = item.id
+  return {
+    ok: true,
+    settings: mirrorSignalPresetAliases(s),
+    action: 'created',
+    message: '',
+    strategyId: item.id,
+  }
 }
 
 export function parseSignalParams(raw) {
@@ -767,6 +990,15 @@ export function restoreSignalSection(settings, sectionKey) {
   const next = mergeSignalSettings(settings)
   if (sectionKey === 'display' && DEFAULT_SIGNAL_SETTINGS.display) {
     next.display = JSON.parse(JSON.stringify(DEFAULT_SIGNAL_SETTINGS.display))
+    return next
+  }
+  if (sectionKey === 'ice') {
+    const defaults = DEFAULT_SIGNAL_SETTINGS.common
+    next.common = {
+      ...next.common,
+      iceThreshold: defaults.iceThreshold,
+      lookback: defaults.lookback,
+    }
     return next
   }
   if (DEFAULT_SIGNAL_SETTINGS[sectionKey]) {

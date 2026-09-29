@@ -29,6 +29,7 @@ const expanded = ref([])
 const SECTION_META = {
   display: { tag: '展示', desc: '自选卡片等界面表现' },
   common: { tag: '通用', desc: '' },
+  ice: { tag: '冰', desc: 'RSI 低于冰点阈值时标「冰」，只作观察；出冰后才可能标「买」。' },
   sell: { tag: '止/减', desc: '减 = 主卖；止 = 有浮盈时的辅助止盈' },
   strong: { tag: '强', desc: '强化买：放量、指数环境、确认站稳' },
   trend: { tag: '趋', desc: '上升趋势中回踩均线；可选次日收阳确认' },
@@ -79,7 +80,16 @@ function uiValue(sectionKey, field, stored) {
   return stored
 }
 
-function onFieldUpdate(sectionKey, field, val) {
+function sectionStoreKey(sectionOrKey) {
+  if (sectionOrKey && typeof sectionOrKey === 'object') {
+    return sectionOrKey.storeSection || sectionOrKey.key
+  }
+  const section = SIGNAL_PARAM_SECTIONS.find((item) => item.key === sectionOrKey)
+  return section?.storeSection || sectionOrKey
+}
+
+function onFieldUpdate(sectionOrKey, field, val) {
+  const sectionKey = sectionStoreKey(sectionOrKey)
   const next = mergeSignalSettings(model.value)
   let stored = val
   if (field.scale && val != null) {
@@ -138,7 +148,7 @@ function gridStyle(group) {
     <div class="signal-settings__head">
       <n-text depth="3" class="signal-settings__hint">
         <template v-if="showSignalRules">
-          调整 K 线信号识别规则；列表主标签优先级：止/减 &gt; 强 &gt; 趋 &gt; 转 &gt; 突 &gt; 弹 &gt; 买。修改后请点击页面底部「保存设置」生效。
+          调整 K 线信号识别规则；列表主标签优先级：止/减 &gt; 强 &gt; 趋 &gt; 转 &gt; 突 &gt; 弹 &gt; 买 &gt; 冰。修改后请点击页面底部「保存设置」生效。
           <br />
           参数调整只影响未来扫描结果，不会修改历史交易计划和已保存策略解释。
           <br />
@@ -291,20 +301,20 @@ function gridStyle(group) {
               <span class="signal-param-label">{{ field.label }}</span>
               <n-switch
                 v-if="field.type === 'bool'"
-                :value="model[section.key][field.key]"
-                @update:value="(v) => onFieldUpdate(section.key, field, v)"
+                :value="model[sectionStoreKey(section)][field.key]"
+                @update:value="(v) => onFieldUpdate(section, field, v)"
               />
               <n-input-number
                 v-else
                 size="small"
                 class="signal-param-input"
                 :show-button="field.type === 'int' || !field.scale"
-                :value="uiValue(section.key, field, model[section.key][field.key])"
+                :value="uiValue(sectionStoreKey(section), field, model[sectionStoreKey(section)][field.key])"
                 :min="field.scale ? field.min * field.scale : field.min"
                 :max="field.scale ? field.max * field.scale : field.max"
                 :step="field.scale ? field.step * field.scale : field.step"
                 :precision="fieldUiPrecision(field)"
-                @update:value="(v) => onFieldUpdate(section.key, field, v)"
+                @update:value="(v) => onFieldUpdate(section, field, v)"
               >
                 <template v-if="field.suffix" #suffix>{{ field.suffix }}</template>
               </n-input-number>
