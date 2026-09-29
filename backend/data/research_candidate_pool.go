@@ -20,8 +20,10 @@ func CalcResearchSignalScore(tag string, daysAgo *int, rsi float64) float64 {
 	baseByTag := map[string]float64{
 		"强": 92, "趋": 84, "加": 86, "转": 80, "突": 78, "弹": 72, "买": 68,
 		"冰": 52, "减": 16, "止": 28, "冲": 22, "卖": 22,
-		// 截面动量观察标签：高于默认研究阈值 60，且不借用冰点买点分。
+		// 观察扫描标签：高于默认研究阈值 60，且不借用冰点买点分。
 		"XS_MOM_TOP": 76,
+		"MA_TREND":   74,
+		"BREAKOUT_N": 73,
 	}
 	base, ok := baseByTag[strings.TrimSpace(tag)]
 	if !ok {
@@ -53,7 +55,7 @@ func CalcResearchSignalScore(tag string, daysAgo *int, rsi float64) float64 {
 // PredictDirectionFromTag 由信号标签推断预测方向。
 func PredictDirectionFromTag(tag string) string {
 	switch strings.TrimSpace(tag) {
-	case "强", "趋", "加", "转", "突", "弹", "买", "冰", "XS_MOM_TOP":
+	case "强", "趋", "加", "转", "突", "弹", "买", "冰", "XS_MOM_TOP", "MA_TREND", "BREAKOUT_N":
 		return "看多"
 	case "减", "止", "冲", "卖":
 		return "看空"
@@ -96,7 +98,7 @@ func normalizeFollowableCode(secucode, securityCode string) string {
 // 允许：空/NULL（旧数据）、all、research_candidate；排除 universe 等非研究用途。
 // 不删除任何 snapshot 行。
 const (
-	researchCandidatePurposeScope = "research_candidate"
+	researchCandidatePurposeScope        = "research_candidate"
 	researchCandidateSnapshotScopeClause = "(scope IS NULL OR scope = '' OR scope = ? OR scope = ?)"
 )
 
@@ -383,8 +385,8 @@ func mapToFlexibleRow(codeHint string, m map[string]any) (flexibleSnapshotRow, b
 		return flexibleSnapshotRow{}, false
 	}
 	row := flexibleSnapshotRow{
-		Code: firstString(m, "code", "stock_code", "stockCode", "SECURITY_CODE", "SECUCODE"),
-		Name: firstString(m, "name", "stock_name", "stockName", "SECURITY_NAME_ABBR"),
+		Code:      firstString(m, "code", "stock_code", "stockCode", "SECURITY_CODE", "SECUCODE"),
+		Name:      firstString(m, "name", "stock_name", "stockName", "SECURITY_NAME_ABBR"),
 		Direction: firstString(m, "direction", "predict_direction", "predictDirection"),
 		Reason:    firstString(m, "reason", "statusText", "status_text"),
 		Tag:       firstString(m, "tag", "signal_tag", "signalTag"),

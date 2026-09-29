@@ -1,5 +1,5 @@
 <script setup>
-import {computed, h, onBeforeUnmount, onMounted, ref} from "vue";
+import {computed, h, onBeforeUnmount, onMounted, ref, watch} from "vue";
 import {
   AddPrompt,
   DelPrompt,
@@ -21,11 +21,17 @@ import {
   signalSettingsState,
 } from "../utils/signalSettingsStore";
 import {
+  applyCreatePreset,
+  createScreenStrategyId,
   DEFAULT_SCREEN_STRATEGY_ID,
   extractSignalStrategySettings,
+  getPresetCreateTemplate,
+  ICE_POINT_TEMPLATE_ID,
   mergeSignalSettings,
+  PRESET_CREATE_TEMPLATES,
   serializeSignalParams,
   setActiveScreenStrategy,
+  SNAPSHOT_SCAN_OUT_OF_SCOPE_NOTE,
 } from "../utils/signalSettings";
 
 const message = useMessage()
@@ -71,47 +77,107 @@ const globalDisplaySettings = computed({
     }
   },
 })
+const activeStrategyMeta = computed(() => {
+  const s = mergeSignalSettings(signalSettingsState.value)
+  return s.screenStrategies.find((item) => item.id === s.activeScreenStrategyId) || null
+})
+const activeStrategyBuiltin = computed(() => Boolean(activeStrategyMeta.value?.builtin))
+const activeStrategyUsageNote = computed(() => activeStrategyMeta.value?.usageNote || '')
+const activeStrategyPlanned = computed(() => activeStrategyMeta.value?.engineStatus === 'planned')
+const activeStrategyUsesIceKnobs = computed(() => (activeStrategyMeta.value?.scanKind || 'ice') === 'ice')
 const activeStrategyName = computed({
-  get: () => {
-    const s = mergeSignalSettings(signalSettingsState.value)
-    return s.screenStrategies.find((item) => item.id === s.activeScreenStrategyId)?.name || ''
-  },
+  get: () => activeStrategyMeta.value?.name || '',
   set: (name) => {
+    if (activeStrategyBuiltin.value) return
     const nextName = String(name || '').trim()
     if (!nextName) return
     const s = mergeSignalSettings(signalSettingsState.value)
     const idx = s.screenStrategies.findIndex((item) => item.id === s.activeScreenStrategyId)
-    if (idx >= 0) {
+    if (idx >= 0 && !s.screenStrategies[idx].builtin) {
       s.screenStrategies[idx] = { ...s.screenStrategies[idx], name: nextName }
       signalSettingsState.value = s
     }
   },
 })
 
-function createStrategyId() {
-  return `strategy-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+const showCreatePresetModal = ref(false)
+const createPresetForm = ref({
+  name: '',
+  templateId: ICE_POINT_TEMPLATE_ID,
+  usageNote: '',
+  copyFromId: DEFAULT_SCREEN_STRATEGY_ID,
+})
+const createPresetTemplateIsFixed = computed(() => getPresetCreateTemplate(createPresetForm.value.templateId)?.kind === 'fixed_engine')
+const createPresetTemplateOptions = computed(() => {
+  const groups = new Map()
+  for (const item of PRESET_CREATE_TEMPLATES) {
+    if (!groups.has(item.group)) groups.set(item.group, [])
+    const suffix = item.engineStatus === 'planned' ? '（尚未接入）' : ''
+    groups.get(item.group).push({ label: `${item.name}${suffix}`, value: item.id })
+  }
+  return [...groups.entries()].map(([label, children]) => ({
+    type: 'group',
+    label,
+    key: label,
+    children,
+  }))
+})
+
+watch(() => createPresetForm.value.templateId, (templateId, prev) => {
+  const template = getPresetCreateTemplate(templateId)
+  if (!template) return
+  createPresetForm.value.usageNote = template.usageNote || ''
+  if (template.kind === 'fixed_engine') {
+    createPresetForm.value.name = template.name
+    return
+  }
+  if (prev && getPresetCreateTemplate(prev)?.kind === 'fixed_engine') {
+    createPresetForm.value.name = ''
+  }
+})
+
+function openCreatePresetModal() {
+  const template = getPresetCreateTemplate(ICE_POINT_TEMPLATE_ID)
+  createPresetForm.value = {
+    name: '',
+    templateId: ICE_POINT_TEMPLATE_ID,
+    usageNote: template?.usageNote || '',
+    copyFromId: DEFAULT_SCREEN_STRATEGY_ID,
+  }
+  showCreatePresetModal.value = true
 }
 
-function addScreenStrategy() {
-  const s = mergeSignalSettings(signalSettingsState.value)
-  const current = s.screenStrategies.find((item) => item.id === s.activeScreenStrategyId) || s.screenStrategies[0]
-  const item = {
-    id: createStrategyId(),
-    name: `参数预设 ${s.screenStrategies.length + 1}`,
-    settings: extractSignalStrategySettings(current?.settings || s),
+function confirmCreatePreset() {
+  const result = applyCreatePreset(signalSettingsState.value, { ...createPresetForm.value })
+  if (!result.ok) {
+    message.warning(result.message || '无法新建预设')
+    return
   }
-  s.screenStrategies = [...s.screenStrategies, item]
-  s.activeScreenStrategyId = item.id
-  signalSettingsState.value = s
+  signalSettingsState.value = result.settings
+  showCreatePresetModal.value = false
+  if (result.action === 'select_builtin') {
+    message.info(result.message || '已是系统内置')
+    return
+  }
+  message.success('已新建参数预设')
 }
 
 function duplicateScreenStrategy() {
   const s = mergeSignalSettings(signalSettingsState.value)
   const current = s.screenStrategies.find((item) => item.id === s.activeScreenStrategyId) || s.screenStrategies[0]
+  if (!current || current.scanKind !== 'ice') {
+    message.warning('系统扫描预设不可复制成第二套算法，请使用「新建预设」')
+    return
+  }
   const item = {
-    id: createStrategyId(),
+    id: createScreenStrategyId(),
     name: `${current.name} 副本`,
     settings: extractSignalStrategySettings(current.settings),
+    usageNote: current.usageNote || '',
+    templateId: current.templateId || ICE_POINT_TEMPLATE_ID,
+    engineStatus: 'ready',
+    scanKind: 'ice',
+    builtin: false,
   }
   s.screenStrategies = [...s.screenStrategies, item]
   s.activeScreenStrategyId = item.id
@@ -120,6 +186,11 @@ function duplicateScreenStrategy() {
 
 function deleteScreenStrategy() {
   const s = mergeSignalSettings(signalSettingsState.value)
+  const current = s.screenStrategies.find((item) => item.id === s.activeScreenStrategyId)
+  if (current?.builtin) {
+    message.warning('系统内置预设不可删除')
+    return
+  }
   if (s.screenStrategies.length <= 1) {
     message.warning('至少保留一个参数预设')
     return
@@ -710,18 +781,30 @@ function deletePrompt(ID) {
                     <n-select
                       v-model:value="activeStrategyId"
                       :options="strategyOptions"
-                      style="width: 180px"
+                      style="width: 200px"
                     />
                     <n-input
                       v-model:value="activeStrategyName"
+                      :disabled="activeStrategyBuiltin"
                       placeholder="参数预设名称"
                       style="width: 180px"
                     />
-                    <n-button size="small" tertiary type="primary" @click="addScreenStrategy">新建预设</n-button>
-                    <n-button size="small" tertiary @click="duplicateScreenStrategy">复制</n-button>
-                    <n-button size="small" tertiary type="error" @click="deleteScreenStrategy">删除</n-button>
+                    <n-button size="small" tertiary type="primary" @click="openCreatePresetModal">新建预设</n-button>
+                    <n-button size="small" tertiary :disabled="!activeStrategyUsesIceKnobs" @click="duplicateScreenStrategy">复制</n-button>
+                    <n-button size="small" tertiary type="error" :disabled="activeStrategyBuiltin" @click="deleteScreenStrategy">删除</n-button>
+                    <n-tag v-if="activeStrategyBuiltin" size="small" :bordered="false">系统内置</n-tag>
+                    <n-tag v-if="activeStrategyPlanned" size="small" type="warning" :bordered="false">算法尚未接入</n-tag>
                     <n-text depth="3" style="font-size: 12px">信号参数预设（非交易 Strategy）；股票筛选页可按预设筛选或生成快照</n-text>
                   </n-space>
+                  <n-text v-if="activeStrategyUsageNote" depth="2" style="display: block; margin-top: 8px; font-size: 13px">
+                    {{ activeStrategyUsageNote }}
+                  </n-text>
+                  <n-text v-if="!activeStrategyUsesIceKnobs" depth="3" style="display: block; margin-top: 4px; font-size: 12px">
+                    此预设使用独立观察扫描，下方冰点旋钮不参与该策略快照。
+                  </n-text>
+                  <n-text depth="3" style="display: block; margin-top: 4px; font-size: 12px">
+                    {{ SNAPSHOT_SCAN_OUT_OF_SCOPE_NOTE }}
+                  </n-text>
                 </div>
                 <SignalSettingsPanel v-model="activeStrategySettings" :show-display="false" />
               </n-card>
@@ -778,6 +861,50 @@ function deletePrompt(ID) {
       </n-space>
     </n-form>
   </n-flex>
+
+  <n-modal v-model:show="showCreatePresetModal" :mask-closable="false">
+    <n-card style="width: 560px; text-align: left" title="新建参数预设" :bordered="false" role="dialog" aria-modal="true">
+      <n-form label-placement="left" label-width="108">
+        <n-form-item label="名称" :required="!createPresetTemplateIsFixed">
+          <n-input
+            v-model:value="createPresetForm.name"
+            :disabled="createPresetTemplateIsFixed"
+            placeholder="例如：宽松冰点"
+          />
+        </n-form-item>
+        <n-form-item label="策略模板" required>
+          <n-select
+            v-model:value="createPresetForm.templateId"
+            :options="createPresetTemplateOptions"
+          />
+        </n-form-item>
+        <n-form-item label="用途说明">
+          <n-input
+            v-model:value="createPresetForm.usageNote"
+            type="textarea"
+            :disabled="createPresetTemplateIsFixed"
+            placeholder="一句话说明这套预设用来观察什么"
+            :autosize="{ minRows: 2, maxRows: 4 }"
+          />
+        </n-form-item>
+        <n-form-item v-if="!createPresetTemplateIsFixed" label="复制参数自">
+          <n-select
+            v-model:value="createPresetForm.copyFromId"
+            :options="strategyOptions"
+          />
+        </n-form-item>
+      </n-form>
+      <n-text depth="3" style="font-size: 12px">
+        系统扫描模板不会新建副本，确认后直接选中已有预设。信号观察不等于买卖指令。{{ SNAPSHOT_SCAN_OUT_OF_SCOPE_NOTE }}
+      </n-text>
+      <template #footer>
+        <n-flex justify="end">
+          <n-button @click="showCreatePresetModal = false">取消</n-button>
+          <n-button type="primary" @click="confirmCreatePreset">确定</n-button>
+        </n-flex>
+      </template>
+    </n-card>
+  </n-modal>
 
   <n-modal v-model:show="showManagePromptsModal" closable :mask-closable="false">
     <n-card style="width: 800px; height: 600px; text-align: left" :bordered="false"

@@ -24,17 +24,17 @@ func initSignalScanVM() {
 }
 
 type signalScanStockInput struct {
-	Code          string         `json:"code"`
-	Name          string         `json:"name"`
-	Secucode      string         `json:"secucode,omitempty"`
-	Closes        []float64      `json:"closes"`
-	Opens         []float64      `json:"opens"`
-	Highs         []float64      `json:"highs"`
-	Lows          []float64      `json:"lows"`
-	Volumes       []float64      `json:"volumes"`
-	DayKeys       []string       `json:"dayKeys"`
-	LastBarIndex  int            `json:"lastBarIndex,omitempty"`
-	Row           map[string]any `json:"row,omitempty"`
+	Code         string         `json:"code"`
+	Name         string         `json:"name"`
+	Secucode     string         `json:"secucode,omitempty"`
+	Closes       []float64      `json:"closes"`
+	Opens        []float64      `json:"opens"`
+	Highs        []float64      `json:"highs"`
+	Lows         []float64      `json:"lows"`
+	Volumes      []float64      `json:"volumes"`
+	DayKeys      []string       `json:"dayKeys"`
+	LastBarIndex int            `json:"lastBarIndex,omitempty"`
+	Row          map[string]any `json:"row,omitempty"`
 }
 
 type signalScanBatchInput struct {
@@ -43,7 +43,7 @@ type signalScanBatchInput struct {
 	SignalParamsJSON string                 `json:"signalParamsJson,omitempty"`
 	IncludeSell      bool                   `json:"includeSell"`
 	// StrategyID selects the JS scan mode. Empty / "default" stays ice-point.
-	// "ext_xsmom_v1" runs cross-sectional momentum inside the same bundle.
+	// ext_xsmom_v1 / ext_ma_trend_v1 / ext_breakout_v1 run observation scans in the same bundle.
 	StrategyID string `json:"strategyId,omitempty"`
 }
 

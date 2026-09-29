@@ -18,20 +18,25 @@ import (
 )
 
 const (
-	signalScanKlineBars       = 120
-	signalScanFetchPageSize   = 500
-	signalScanKlineConcurrency = 32
-	signalScanJSChunkSize     = 400
+	signalScanKlineBars         = 120
+	signalScanFetchPageSize     = 500
+	signalScanKlineConcurrency  = 32
+	signalScanJSChunkSize       = 400
 	signalScanDefaultStrategyID = "default"
 )
 
-// extXsMomV1StrategyID is the observation-only cross-sectional momentum scan.
-// It must never be written as strategy_id=default (snapshot delete keys differ).
-const extXsMomV1StrategyID = "ext_xsmom_v1"
+// Observation scan ids. They must never be written as strategy_id=default
+// (snapshot delete keys differ). Per-stock engines stay on the 400-name chunk;
+// only cross-sectional momentum ranks the full prepared set in one JS call.
+const (
+	extXsMomV1StrategyID    = "ext_xsmom_v1"
+	extMaTrendV1StrategyID  = "ext_ma_trend_v1"
+	extBreakoutV1StrategyID = "ext_breakout_v1"
+)
 
-// signalScanBatchSpan is how many prepared names share one JS cross-section.
-// Ice-point stays on the historical 400-name chunk. Momentum ranks the full
-// prepared universe in one call so top-N is not an arbitrary slice.
+// signalScanBatchSpan is how many prepared names share one JS call.
+// Ice-point, MA trend, and Donchian breakout stay on the historical 400-name chunk.
+// Momentum ranks the full prepared universe in one call so top-N is not an arbitrary slice.
 func signalScanBatchSpan(strategyID string, prepared int) int {
 	if strings.TrimSpace(strategyID) == extXsMomV1StrategyID && prepared > 0 {
 		return prepared

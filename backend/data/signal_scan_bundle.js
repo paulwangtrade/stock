@@ -20,6 +20,10 @@ var SignalScanBatch = (() => {
   // scripts/scansignals/scan-batch.ts
   var scan_batch_exports = {};
   __export(scan_batch_exports, {
+    BREAKOUT_STRATEGY_ID: () => BREAKOUT_STRATEGY_ID,
+    BREAKOUT_TAG: () => BREAKOUT_TAG,
+    MA_TREND_STRATEGY_ID: () => MA_TREND_STRATEGY_ID,
+    MA_TREND_TAG: () => MA_TREND_TAG,
     XS_MOM_STRATEGY_ID: () => XS_MOM_STRATEGY_ID,
     XS_MOM_TAG: () => XS_MOM_TAG,
     runSignalScanBatch: () => runSignalScanBatch
@@ -1512,6 +1516,90 @@ var SignalScanBatch = (() => {
   // frontend/src/utils/signalSettings.js
   var DEFAULT_SCREEN_STRATEGY_ID = "default";
   var DEFAULT_SCREEN_STRATEGY_NAME = "\u9ED8\u8BA4\u53C2\u6570\u9884\u8BBE";
+  var ICE_POINT_TEMPLATE_ID = "ice_point";
+  var ENGINE_STATUS_READY = "ready";
+  var ENGINE_STATUS_PLANNED = "planned";
+  var SCREEN_STRATEGY_SCAN_ICE = "ice";
+  var SCREEN_STRATEGY_SCAN_XSMOM = "xsmom";
+  var SCREEN_STRATEGY_SCAN_MA_TREND = "ma_trend";
+  var SCREEN_STRATEGY_SCAN_BREAKOUT = "breakout";
+  var BUILTIN_SCREEN_STRATEGIES = [
+    {
+      id: DEFAULT_SCREEN_STRATEGY_ID,
+      name: DEFAULT_SCREEN_STRATEGY_NAME,
+      templateId: ICE_POINT_TEMPLATE_ID,
+      engineStatus: ENGINE_STATUS_READY,
+      scanKind: SCREEN_STRATEGY_SCAN_ICE,
+      usageNote: "\u7ECF\u5178\u51B0\u70B9\u4FE1\u53F7\u89C2\u5BDF\uFF08\u5F3A/\u8D8B/\u8F6C/\u7A81/\u5F39/\u4E70\uFF09\uFF0C\u975E\u4E70\u5356\u6307\u4EE4\u3002"
+    },
+    {
+      id: "ext_xsmom_v1",
+      name: "\u622A\u9762\u52A8\u91CFV1",
+      templateId: "ext_xsmom_v1",
+      engineStatus: ENGINE_STATUS_READY,
+      scanKind: SCREEN_STRATEGY_SCAN_XSMOM,
+      usageNote: "\u8FD120\u65E5\u6536\u76CA\u622A\u9762Top\u89C2\u5BDF\uFF0C\u975E\u4E70\u5356\u6307\u4EE4\u3002"
+    },
+    {
+      id: "ext_ma_trend_v1",
+      name: "\u5747\u7EBF\u8D8B\u52BFV1",
+      templateId: "ext_ma_trend_v1",
+      engineStatus: ENGINE_STATUS_READY,
+      scanKind: SCREEN_STRATEGY_SCAN_MA_TREND,
+      usageNote: "\u6536\u76D8\u7AD9\u4E0AMA20\u4E14MA20\u9AD8\u4E8EMA60\u7684\u8D8B\u52BF\u89C2\u5BDF\uFF0C\u975E\u4E70\u5356\u6307\u4EE4\u3002"
+    },
+    {
+      id: "ext_breakout_v1",
+      name: "\u7A81\u7834\u89C2\u5BDFV1",
+      templateId: "ext_breakout_v1",
+      engineStatus: ENGINE_STATUS_READY,
+      scanKind: SCREEN_STRATEGY_SCAN_BREAKOUT,
+      usageNote: "\u6536\u76D8\u7A81\u7834\u8FD120\u65E5\u9AD8\u70B9\uFF08\u5510\u5947\u5B89\uFF09\u7684\u89C2\u5BDF\u540D\u5355\uFF0C\u975E\u4E70\u5356\u6307\u4EE4\u3002"
+    },
+    {
+      id: "ext_vol_mom_v1",
+      name: "\u91CF\u4EF7\u52A8\u91CFV1",
+      templateId: "ext_vol_mom_v1",
+      engineStatus: ENGINE_STATUS_PLANNED,
+      scanKind: "vol_mom",
+      usageNote: "\u91CF\u4EF7\u9F50\u5347\u89C2\u5BDF\u3002\u7B97\u6CD5\u5C1A\u672A\u63A5\u5165\uFF0C\u751F\u6210\u5FEB\u7167\u4E0D\u4F1A\u4EA7\u51FA\u6807\u7B7E\u3002"
+    },
+    {
+      id: "ext_ma_pullback_v1",
+      name: "\u5747\u7EBF\u56DE\u8E29V1",
+      templateId: "ext_ma_pullback_v1",
+      engineStatus: ENGINE_STATUS_PLANNED,
+      scanKind: "ma_pullback",
+      usageNote: "\u5347\u52BF\u4E2D\u56DE\u8E29\u5747\u7EBF\u7684\u89C2\u5BDF\u3002\u7B97\u6CD5\u5C1A\u672A\u63A5\u5165\uFF0C\u751F\u6210\u5FEB\u7167\u4E0D\u4F1A\u4EA7\u51FA\u6807\u7B7E\u3002"
+    },
+    {
+      id: "ext_meanrev_watch_v1",
+      name: "\u5747\u503C\u56DE\u5F52\u89C2\u5BDFV1",
+      templateId: "ext_meanrev_watch_v1",
+      engineStatus: ENGINE_STATUS_PLANNED,
+      scanKind: "meanrev",
+      usageNote: "\u4EF7\u683C\u504F\u79BB\u5747\u7EBF\u540E\u7684\u56DE\u5F52\u89C2\u5BDF\u3002\u7B97\u6CD5\u5C1A\u672A\u63A5\u5165\uFF0C\u751F\u6210\u5FEB\u7167\u4E0D\u4F1A\u4EA7\u51FA\u6807\u7B7E\u3002"
+    }
+  ];
+  var PRESET_CREATE_TEMPLATES = [
+    {
+      id: ICE_POINT_TEMPLATE_ID,
+      name: "\u51B0\u70B9\u53C2\u6570\u53D8\u4F53",
+      group: "\u51B0\u70B9\u53C2\u6570",
+      kind: "ice_params",
+      engineStatus: ENGINE_STATUS_READY,
+      usageNote: "\u5728\u7ECF\u5178\u51B0\u70B9\u89C4\u5219\u4E0A\u4FDD\u5B58\u4E00\u5957\u81EA\u5DF1\u7684\u9608\u503C\uFF0C\u4EC5\u4F9B\u89C2\u5BDF\uFF0C\u975E\u4E70\u5356\u6307\u4EE4\u3002"
+    },
+    ...BUILTIN_SCREEN_STRATEGIES.filter((item) => item.scanKind !== SCREEN_STRATEGY_SCAN_ICE).map((item) => ({
+      id: item.id,
+      name: item.name,
+      group: "\u7CFB\u7EDF\u626B\u63CF",
+      kind: "fixed_engine",
+      builtinId: item.id,
+      engineStatus: item.engineStatus,
+      usageNote: item.usageNote
+    }))
+  ];
   var DEFAULT_SIGNAL_SETTINGS = {
     automation: DEFAULT_QUANT_AUTOMATION,
     display: {
@@ -1648,6 +1736,63 @@ var SignalScanBatch = (() => {
     delete base.activeScreenStrategyId;
     delete base.screenStrategies;
     return base;
+  }
+  function builtinCatalogById(id) {
+    const key = String(id || "").trim();
+    return BUILTIN_SCREEN_STRATEGIES.find((item) => item.id === key) || null;
+  }
+  function applyBuiltinCatalogMeta(record, catalog) {
+    return {
+      id: catalog.id,
+      name: catalog.name,
+      settings: record?.settings || cloneDefaultSignalSettingsCore(),
+      usageNote: catalog.usageNote,
+      templateId: catalog.templateId,
+      engineStatus: catalog.engineStatus,
+      scanKind: catalog.scanKind,
+      builtin: true
+    };
+  }
+  function freshBuiltinStrategy(catalog) {
+    return applyBuiltinCatalogMeta({ settings: cloneDefaultSignalSettingsCore() }, catalog);
+  }
+  function normalizeStoredStrategy(item, index) {
+    const id = String(item?.id || "").trim() || `strategy-${index + 1}`;
+    const settings = mergeSignalStrategySettings(item?.settings || {});
+    const catalog = builtinCatalogById(id);
+    if (catalog) return applyBuiltinCatalogMeta({ settings }, catalog);
+    const name = String(item?.name || "").trim() || `\u53C2\u6570\u9884\u8BBE ${index + 1}`;
+    const engineStatus = item?.engineStatus === ENGINE_STATUS_PLANNED ? ENGINE_STATUS_PLANNED : ENGINE_STATUS_READY;
+    const scanKind = String(item?.scanKind || SCREEN_STRATEGY_SCAN_ICE).trim() || SCREEN_STRATEGY_SCAN_ICE;
+    return {
+      id,
+      name,
+      settings,
+      usageNote: String(item?.usageNote || "").trim(),
+      templateId: String(item?.templateId || ICE_POINT_TEMPLATE_ID).trim() || ICE_POINT_TEMPLATE_ID,
+      engineStatus,
+      scanKind,
+      builtin: false
+    };
+  }
+  function ensureBuiltinScreenStrategies(strategies) {
+    const pending = /* @__PURE__ */ new Map();
+    for (const item of strategies || []) {
+      if (item?.id && !pending.has(item.id)) pending.set(item.id, item);
+    }
+    const merged = [];
+    for (const catalog of BUILTIN_SCREEN_STRATEGIES) {
+      const existing = pending.get(catalog.id);
+      merged.push(existing ? applyBuiltinCatalogMeta(existing, catalog) : freshBuiltinStrategy(catalog));
+      pending.delete(catalog.id);
+    }
+    for (const item of strategies || []) {
+      if (item?.id && pending.has(item.id)) {
+        merged.push(item);
+        pending.delete(item.id);
+      }
+    }
+    return merged;
   }
   var SIGNAL_PARAM_SECTIONS = [
     {
@@ -1920,13 +2065,7 @@ var SignalScanBatch = (() => {
   function cloneDefaultSignalSettings() {
     const base = deepClone(DEFAULT_SIGNAL_SETTINGS);
     base.activeScreenStrategyId = DEFAULT_SCREEN_STRATEGY_ID;
-    base.screenStrategies = [
-      {
-        id: DEFAULT_SCREEN_STRATEGY_ID,
-        name: DEFAULT_SCREEN_STRATEGY_NAME,
-        settings: cloneDefaultSignalSettingsCore()
-      }
-    ];
+    base.screenStrategies = BUILTIN_SCREEN_STRATEGIES.map((catalog) => freshBuiltinStrategy(catalog));
     return mirrorSignalPresetAliases(base);
   }
   function mergeSignalSettings(raw) {
@@ -1952,25 +2091,15 @@ var SignalScanBatch = (() => {
       base.activeScreenStrategyId || DEFAULT_SCREEN_STRATEGY_ID
     );
     const rawStrategies = resolveRawPresetList(raw);
-    const strategies = rawStrategies.map((item, index) => {
-      const id = String(item?.id || "").trim() || `strategy-${index + 1}`;
-      const name = String(item?.name || "").trim() || `\u53C2\u6570\u9884\u8BBE ${index + 1}`;
-      const settings = mergeSignalStrategySettings(item?.settings || {});
-      return { id, name, settings };
-    }).filter((item) => item.id && item.name);
-    if (strategies.length) {
-      base.screenStrategies = strategies;
-      if (!strategies.some((item) => item.id === base.activeScreenStrategyId)) {
-        base.activeScreenStrategyId = strategies[0].id;
-      }
-    } else {
-      base.screenStrategies = [
-        {
-          id: DEFAULT_SCREEN_STRATEGY_ID,
-          name: DEFAULT_SCREEN_STRATEGY_NAME,
-          settings: mergeSignalStrategySettings(base)
-        }
+    let strategies = rawStrategies.map((item, index) => normalizeStoredStrategy(item, index)).filter((item) => item.id && item.name);
+    if (!strategies.length) {
+      const catalog = builtinCatalogById(DEFAULT_SCREEN_STRATEGY_ID);
+      strategies = [
+        applyBuiltinCatalogMeta({ settings: mergeSignalStrategySettings(base) }, catalog)
       ];
+    }
+    base.screenStrategies = ensureBuiltinScreenStrategies(strategies);
+    if (!base.screenStrategies.some((item) => item.id === base.activeScreenStrategyId)) {
       base.activeScreenStrategyId = DEFAULT_SCREEN_STRATEGY_ID;
     }
     return mirrorSignalPresetAliases(base);
@@ -2072,12 +2201,24 @@ var SignalScanBatch = (() => {
   }
 
   // frontend/src/utils/signalTagConstants.js
-  var SCREEN_SNAPSHOT_SIGNAL_TAGS = ["\u5F3A", "\u8D8B", "\u8F6C", "\u7A81", "\u5F39", "\u4E70", "XS_MOM_TOP"];
+  var SCREEN_SNAPSHOT_SIGNAL_TAGS = ["\u5F3A", "\u8D8B", "\u8F6C", "\u7A81", "\u5F39", "\u4E70", "XS_MOM_TOP", "MA_TREND", "BREAKOUT_N"];
   var SCREEN_SNAPSHOT_SIGNAL_TAG_SET = new Set(SCREEN_SNAPSHOT_SIGNAL_TAGS);
 
   // scripts/scansignals/scan-batch.ts
   var XS_MOM_STRATEGY_ID = "ext_xsmom_v1";
   var XS_MOM_TAG = "XS_MOM_TOP";
+  var MA_TREND_STRATEGY_ID = "ext_ma_trend_v1";
+  var MA_TREND_TAG = "MA_TREND";
+  var BREAKOUT_STRATEGY_ID = "ext_breakout_v1";
+  var BREAKOUT_TAG = "BREAKOUT_N";
+  var PLANNED_STRATEGY_IDS = /* @__PURE__ */ new Set([
+    "ext_vol_mom_v1",
+    "ext_ma_pullback_v1",
+    "ext_meanrev_watch_v1"
+  ]);
+  var MA_TREND_DEFAULT_SHORT = 20;
+  var MA_TREND_DEFAULT_LONG = 60;
+  var BREAKOUT_DEFAULT_N = 20;
   var XS_MOM_DEFAULT_LOOKBACK = 20;
   var XS_MOM_DEFAULT_TOP_N = 20;
   function readXsMomParams(signalParamsJson) {
@@ -2100,12 +2241,6 @@ var SignalScanBatch = (() => {
     } catch {
     }
     return out;
-  }
-  function isCrossSectionMomentumScan(strategyId, scanMode) {
-    const sid = String(strategyId || "").trim();
-    if (!sid || sid === "default") return false;
-    if (sid === XS_MOM_STRATEGY_ID) return true;
-    return scanMode === XS_MOM_STRATEGY_ID || scanMode === "xsmom";
   }
   function finitePositive(n) {
     return typeof n === "number" && Number.isFinite(n) && n > 0;
@@ -2207,11 +2342,162 @@ var SignalScanBatch = (() => {
     });
     return { items, hitTotal: items.length };
   }
-  function runSignalScanBatch(input) {
-    const mom = readXsMomParams(input?.signalParamsJson);
-    if (isCrossSectionMomentumScan(input?.strategyId, mom.scanMode)) {
-      return runCrossSectionMomentumBatch(input, mom);
+  function readTopLevelParams(signalParamsJson) {
+    if (!signalParamsJson) return {};
+    try {
+      const raw = JSON.parse(signalParamsJson);
+      return raw && typeof raw === "object" ? raw : {};
+    } catch {
+      return {};
     }
+  }
+  function positiveIntParam(raw, key, fallback, min = 2) {
+    const n = Number(raw?.[key]);
+    if (Number.isFinite(n) && n >= min) return Math.floor(n);
+    return fallback;
+  }
+  function resolveScanEngine(strategyId, scanMode) {
+    const sid = String(strategyId || "").trim();
+    if (!sid || sid === "default") return "ice";
+    if (sid === XS_MOM_STRATEGY_ID) return "xsmom";
+    if (sid === MA_TREND_STRATEGY_ID) return "ma_trend";
+    if (sid === BREAKOUT_STRATEGY_ID) return "breakout";
+    if (PLANNED_STRATEGY_IDS.has(sid)) return "planned";
+    if (scanMode === XS_MOM_STRATEGY_ID || scanMode === "xsmom") return "xsmom";
+    if (scanMode === MA_TREND_STRATEGY_ID || scanMode === "ma_trend") return "ma_trend";
+    if (scanMode === BREAKOUT_STRATEGY_ID || scanMode === "breakout") return "breakout";
+    if (PLANNED_STRATEGY_IDS.has(scanMode)) return "planned";
+    return "ice";
+  }
+  function smaAt2(values, idx, period) {
+    if (!Array.isArray(values) || period < 2 || idx < period - 1 || idx >= values.length) return null;
+    let sum = 0;
+    for (let i = idx - period + 1; i <= idx; i++) {
+      const v = values[i];
+      if (!finitePositive(v)) return null;
+      sum += v;
+    }
+    return sum / period;
+  }
+  function priorWindowHigh(values, idx, lookback) {
+    if (!Array.isArray(values) || lookback < 2 || idx < lookback || idx >= values.length) return null;
+    let max = -Infinity;
+    for (let i = idx - lookback; i < idx; i++) {
+      const v = values[i];
+      if (typeof v !== "number" || !Number.isFinite(v) || v <= 0) return null;
+      if (v > max) max = v;
+    }
+    return Number.isFinite(max) ? max : null;
+  }
+  function observationItem(stock, lastIdx, tag, statusText, price, rsi) {
+    const row = stock.row || {};
+    const dayKey = stock.dayKeys?.[lastIdx] || "";
+    return {
+      SECUCODE: row.SECUCODE || stock.secucode || stock.code,
+      SECURITY_CODE: row.SECURITY_CODE || "",
+      SECURITY_NAME_ABBR: row.SECURITY_NAME_ABBR || stock.name || "",
+      NEW_PRICE: row.NEW_PRICE ?? "",
+      CHANGE_RATE: row.CHANGE_RATE ?? "",
+      HIGH_PRICE: row.HIGH_PRICE ?? "",
+      LOW_PRICE: row.LOW_PRICE ?? "",
+      PRE_CLOSE_PRICE: row.PRE_CLOSE_PRICE ?? "",
+      VOLUME: row.VOLUME ?? "",
+      DEAL_AMOUNT: row.DEAL_AMOUNT ?? "",
+      TURNOVERRATE: row.TURNOVERRATE ?? "",
+      VOLUME_RATIO: row.VOLUME_RATIO ?? "",
+      INDUSTRY: row.INDUSTRY ?? "",
+      CONCEPT: row.CONCEPT ?? "",
+      MARKET: row.MARKET ?? "",
+      tag,
+      recentSignalDaysAgo: 0,
+      statusText,
+      sortRank: 800,
+      rsi,
+      schema_version: "signal_event.v1",
+      signal_price: price,
+      signal_time: dayKey || void 0,
+      signal_price_source: "kline_close",
+      signal_days_ago: 0,
+      signal_bar_role: "signal",
+      signal_bar_index: lastIdx,
+      signal_price_status: "frozen",
+      ok: true
+    };
+  }
+  function runMaTrendBatch(input, raw) {
+    let shortP = positiveIntParam(raw, "maTrendShort", MA_TREND_DEFAULT_SHORT);
+    let longP = positiveIntParam(raw, "maTrendLong", MA_TREND_DEFAULT_LONG);
+    if (shortP >= longP) {
+      shortP = MA_TREND_DEFAULT_SHORT;
+      longP = MA_TREND_DEFAULT_LONG;
+    }
+    const rsiPeriod = rsiPeriodFromParams(input?.signalParamsJson);
+    const items = [];
+    if (!SCREEN_SNAPSHOT_SIGNAL_TAG_SET.has(MA_TREND_TAG)) return { items, hitTotal: 0 };
+    for (const s of input?.stocks || []) {
+      try {
+        const closes = s?.closes;
+        if (!Array.isArray(closes) || closes.length === 0) continue;
+        const lastIdx = s.lastBarIndex != null && s.lastBarIndex >= 0 ? Math.min(s.lastBarIndex, closes.length - 1) : closes.length - 1;
+        if (lastIdx < 0) continue;
+        const close = closes[lastIdx];
+        const maShort = smaAt2(closes, lastIdx, shortP);
+        const maLong = smaAt2(closes, lastIdx, longP);
+        if (!finitePositive(close) || maShort == null || maLong == null) continue;
+        if (!(close > maShort && maShort > maLong)) continue;
+        const rsi = latestRsi(closes, lastIdx, rsiPeriod);
+        items.push(observationItem(
+          s,
+          lastIdx,
+          MA_TREND_TAG,
+          `\u5747\u7EBF\u8D8B\u52BF \xB7 \u6536\u76D8\u7AD9\u4E0AMA${shortP}\u4E14MA${shortP}>MA${longP}`,
+          close,
+          rsi
+        ));
+      } catch {
+        continue;
+      }
+    }
+    return { items, hitTotal: items.length };
+  }
+  function runBreakoutBatch(input, raw) {
+    const lookback = positiveIntParam(raw, "breakoutLookback", positiveIntParam(raw, "breakoutN", BREAKOUT_DEFAULT_N));
+    const rsiPeriod = rsiPeriodFromParams(input?.signalParamsJson);
+    const items = [];
+    if (!SCREEN_SNAPSHOT_SIGNAL_TAG_SET.has(BREAKOUT_TAG)) return { items, hitTotal: 0 };
+    for (const s of input?.stocks || []) {
+      try {
+        const closes = s?.closes;
+        if (!Array.isArray(closes) || closes.length === 0) continue;
+        const lastIdx = s.lastBarIndex != null && s.lastBarIndex >= 0 ? Math.min(s.lastBarIndex, closes.length - 1) : closes.length - 1;
+        if (lastIdx < 0) continue;
+        const close = closes[lastIdx];
+        const highs = Array.isArray(s.highs) && s.highs.length === closes.length ? s.highs : closes;
+        const priorHigh = priorWindowHigh(highs, lastIdx, lookback);
+        if (!finitePositive(close) || priorHigh == null || !(close > priorHigh)) continue;
+        const rsi = latestRsi(closes, lastIdx, rsiPeriod);
+        items.push(observationItem(
+          s,
+          lastIdx,
+          BREAKOUT_TAG,
+          `\u7A81\u7834\u89C2\u5BDF \xB7 \u6536\u76D8\u7A81\u7834\u8FD1${lookback}\u65E5\u9AD8\u70B9`,
+          close,
+          rsi
+        ));
+      } catch {
+        continue;
+      }
+    }
+    return { items, hitTotal: items.length };
+  }
+  function runSignalScanBatch(input) {
+    const raw = readTopLevelParams(input?.signalParamsJson);
+    const scanMode = String(raw?.scanMode || raw?.xsmomMode || "").trim();
+    const engine = resolveScanEngine(input?.strategyId, scanMode);
+    if (engine === "xsmom") return runCrossSectionMomentumBatch(input, readXsMomParams(input?.signalParamsJson));
+    if (engine === "ma_trend") return runMaTrendBatch(input, raw);
+    if (engine === "breakout") return runBreakoutBatch(input, raw);
+    if (engine === "planned") return { items: [], hitTotal: 0, engineStatus: "planned" };
     return runIcePointScanBatch(input);
   }
   function runIcePointScanBatch(input) {
