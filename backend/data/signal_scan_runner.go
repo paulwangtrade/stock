@@ -42,6 +42,9 @@ type signalScanBatchInput struct {
 	IndexClose       map[string]float64     `json:"indexClose"`
 	SignalParamsJSON string                 `json:"signalParamsJson,omitempty"`
 	IncludeSell      bool                   `json:"includeSell"`
+	// StrategyID selects the JS scan mode. Empty / "default" stays ice-point.
+	// "ext_xsmom_v1" runs cross-sectional momentum inside the same bundle.
+	StrategyID string `json:"strategyId,omitempty"`
 }
 
 type signalScanBatchOutput struct {

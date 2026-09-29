@@ -25,6 +25,20 @@ const (
 	signalScanDefaultStrategyID = "default"
 )
 
+// extXsMomV1StrategyID is the observation-only cross-sectional momentum scan.
+// It must never be written as strategy_id=default (snapshot delete keys differ).
+const extXsMomV1StrategyID = "ext_xsmom_v1"
+
+// signalScanBatchSpan is how many prepared names share one JS cross-section.
+// Ice-point stays on the historical 400-name chunk. Momentum ranks the full
+// prepared universe in one call so top-N is not an arbitrary slice.
+func signalScanBatchSpan(strategyID string, prepared int) int {
+	if strings.TrimSpace(strategyID) == extXsMomV1StrategyID && prepared > 0 {
+		return prepared
+	}
+	return signalScanJSChunkSize
+}
+
 type SignalScanProgress struct {
 	Phase   string `json:"phase"`
 	Done    int    `json:"done"`
@@ -282,8 +296,9 @@ func (a *SignalScanApi) RunFullMarketSnapshot(session string, signalParamsOverri
 	wg.Wait()
 
 	allItems := make([]map[string]any, 0, 256)
-	for i := 0; i < len(prepared); i += signalScanJSChunkSize {
-		end := i + signalScanJSChunkSize
+	span := signalScanBatchSpan(strategyID, len(prepared))
+	for i := 0; i < len(prepared); i += span {
+		end := i + span
 		if end > len(prepared) {
 			end = len(prepared)
 		}
@@ -296,6 +311,7 @@ func (a *SignalScanApi) RunFullMarketSnapshot(session string, signalParamsOverri
 			IndexClose:       indexClose,
 			SignalParamsJSON: signalParams,
 			IncludeSell:      true,
+			StrategyID:       strategyID,
 		})
 		if err != nil {
 			logger.SugaredLogger.Errorf("signal scan js chunk %d: %v", i/signalScanJSChunkSize, err)
