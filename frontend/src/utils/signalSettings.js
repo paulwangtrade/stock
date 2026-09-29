@@ -31,7 +31,7 @@ export const BUILTIN_SCREEN_STRATEGIES = [
     templateId: ICE_POINT_TEMPLATE_ID,
     engineStatus: ENGINE_STATUS_READY,
     scanKind: SCREEN_STRATEGY_SCAN_ICE,
-    usageNote: '经典冰点信号观察（强/趋/转/突/弹/买），非买卖指令。',
+    usageNote: '经典冰点信号观察（冰/强/趋/转/突/弹/买），非买卖指令。',
   },
   {
     id: 'ext_xsmom_v1',
@@ -312,17 +312,25 @@ export const SIGNAL_PARAM_SECTIONS = [
     key: 'common',
     title: '通用',
     groups: [
-      { id: 'core', title: 'RSI / 均线', desc: '冰、买、止、减共用的基础指标' },
+      { id: 'core', title: 'RSI / 均线', desc: '买、止、减共用的基础指标；冰点阈值在「冰」' },
       { id: 'env', title: '强买环境' },
     ],
     fields: [
       { key: 'rsiPeriod', label: 'RSI 周期', group: 'core', type: 'int', min: 5, max: 30, step: 1 },
-      { key: 'iceThreshold', label: '冰点阈值', group: 'core', type: 'number', min: 10, max: 45, step: 1 },
       { key: 'overbought', label: '止 · RSI 阈值', group: 'core', type: 'number', min: 60, max: 90, step: 1 },
-      { key: 'lookback', label: '出冰回溯', group: 'core', type: 'int', min: 1, max: 20, step: 1, suffix: '日' },
       { key: 'maPeriod', label: '减 · MA 周期', group: 'core', type: 'int', min: 5, max: 60, step: 1 },
       { key: 'volPeriod', label: '均量周期', group: 'core', type: 'int', min: 3, max: 20, step: 1 },
       { key: 'requireIndexBull', label: '强买须上证 MA20 上', group: 'env', type: 'bool' },
+    ],
+  },
+  {
+    key: 'ice',
+    title: '冰',
+    /** 旋钮仍写在 common，避免改存储键。 */
+    storeSection: 'common',
+    fields: [
+      { key: 'iceThreshold', label: '冰点阈值', type: 'number', min: 10, max: 45, step: 1 },
+      { key: 'lookback', label: '出冰回溯', type: 'int', min: 1, max: 20, step: 1, suffix: '日' },
     ],
   },
   {
@@ -636,7 +644,9 @@ export const SIGNAL_FIELD_HINTS = {
 export function getSignalFieldHint(sectionKey, field) {
   if (!field) return ''
   if (field.hint) return field.hint
-  return SIGNAL_FIELD_HINTS[sectionKey]?.[field.key] || ''
+  const section = SIGNAL_PARAM_SECTIONS.find((item) => item.key === sectionKey)
+  const storeKey = section?.storeSection || sectionKey
+  return SIGNAL_FIELD_HINTS[storeKey]?.[field.key] || SIGNAL_FIELD_HINTS[sectionKey]?.[field.key] || ''
 }
 
 function deepClone(obj) {
@@ -980,6 +990,15 @@ export function restoreSignalSection(settings, sectionKey) {
   const next = mergeSignalSettings(settings)
   if (sectionKey === 'display' && DEFAULT_SIGNAL_SETTINGS.display) {
     next.display = JSON.parse(JSON.stringify(DEFAULT_SIGNAL_SETTINGS.display))
+    return next
+  }
+  if (sectionKey === 'ice') {
+    const defaults = DEFAULT_SIGNAL_SETTINGS.common
+    next.common = {
+      ...next.common,
+      iceThreshold: defaults.iceThreshold,
+      lookback: defaults.lookback,
+    }
     return next
   }
   if (DEFAULT_SIGNAL_SETTINGS[sectionKey]) {

@@ -1530,7 +1530,7 @@ var SignalScanBatch = (() => {
       templateId: ICE_POINT_TEMPLATE_ID,
       engineStatus: ENGINE_STATUS_READY,
       scanKind: SCREEN_STRATEGY_SCAN_ICE,
-      usageNote: "\u7ECF\u5178\u51B0\u70B9\u4FE1\u53F7\u89C2\u5BDF\uFF08\u5F3A/\u8D8B/\u8F6C/\u7A81/\u5F39/\u4E70\uFF09\uFF0C\u975E\u4E70\u5356\u6307\u4EE4\u3002"
+      usageNote: "\u7ECF\u5178\u51B0\u70B9\u4FE1\u53F7\u89C2\u5BDF\uFF08\u51B0/\u5F3A/\u8D8B/\u8F6C/\u7A81/\u5F39/\u4E70\uFF09\uFF0C\u975E\u4E70\u5356\u6307\u4EE4\u3002"
     },
     {
       id: "ext_xsmom_v1",
@@ -1799,17 +1799,25 @@ var SignalScanBatch = (() => {
       key: "common",
       title: "\u901A\u7528",
       groups: [
-        { id: "core", title: "RSI / \u5747\u7EBF", desc: "\u51B0\u3001\u4E70\u3001\u6B62\u3001\u51CF\u5171\u7528\u7684\u57FA\u7840\u6307\u6807" },
+        { id: "core", title: "RSI / \u5747\u7EBF", desc: "\u4E70\u3001\u6B62\u3001\u51CF\u5171\u7528\u7684\u57FA\u7840\u6307\u6807\uFF1B\u51B0\u70B9\u9608\u503C\u5728\u300C\u51B0\u300D" },
         { id: "env", title: "\u5F3A\u4E70\u73AF\u5883" }
       ],
       fields: [
         { key: "rsiPeriod", label: "RSI \u5468\u671F", group: "core", type: "int", min: 5, max: 30, step: 1 },
-        { key: "iceThreshold", label: "\u51B0\u70B9\u9608\u503C", group: "core", type: "number", min: 10, max: 45, step: 1 },
         { key: "overbought", label: "\u6B62 \xB7 RSI \u9608\u503C", group: "core", type: "number", min: 60, max: 90, step: 1 },
-        { key: "lookback", label: "\u51FA\u51B0\u56DE\u6EAF", group: "core", type: "int", min: 1, max: 20, step: 1, suffix: "\u65E5" },
         { key: "maPeriod", label: "\u51CF \xB7 MA \u5468\u671F", group: "core", type: "int", min: 5, max: 60, step: 1 },
         { key: "volPeriod", label: "\u5747\u91CF\u5468\u671F", group: "core", type: "int", min: 3, max: 20, step: 1 },
         { key: "requireIndexBull", label: "\u5F3A\u4E70\u987B\u4E0A\u8BC1 MA20 \u4E0A", group: "env", type: "bool" }
+      ]
+    },
+    {
+      key: "ice",
+      title: "\u51B0",
+      /** 旋钮仍写在 common，避免改存储键。 */
+      storeSection: "common",
+      fields: [
+        { key: "iceThreshold", label: "\u51B0\u70B9\u9608\u503C", type: "number", min: 10, max: 45, step: 1 },
+        { key: "lookback", label: "\u51FA\u51B0\u56DE\u6EAF", type: "int", min: 1, max: 20, step: 1, suffix: "\u65E5" }
       ]
     },
     {
@@ -2201,7 +2209,7 @@ var SignalScanBatch = (() => {
   }
 
   // frontend/src/utils/signalTagConstants.js
-  var SCREEN_SNAPSHOT_SIGNAL_TAGS = ["\u5F3A", "\u8D8B", "\u8F6C", "\u7A81", "\u5F39", "\u4E70", "XS_MOM_TOP", "MA_TREND", "BREAKOUT_N"];
+  var SCREEN_SNAPSHOT_SIGNAL_TAGS = ["\u5F3A", "\u8D8B", "\u8F6C", "\u7A81", "\u5F39", "\u4E70", "\u51B0", "XS_MOM_TOP", "MA_TREND", "BREAKOUT_N"];
   var SCREEN_SNAPSHOT_SIGNAL_TAG_SET = new Set(SCREEN_SNAPSHOT_SIGNAL_TAGS);
 
   // scripts/scansignals/scan-batch.ts

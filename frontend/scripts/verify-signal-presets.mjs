@@ -6,10 +6,12 @@ import assert from 'node:assert/strict'
 import {
   BUILTIN_SCREEN_STRATEGIES,
   ICE_POINT_TEMPLATE_ID,
+  SIGNAL_PARAM_SECTIONS,
   applyCreatePreset,
   mergeSignalSettings,
   SNAPSHOT_SCAN_OUT_OF_SCOPE_NOTE,
 } from '../src/utils/signalSettings.js'
+import { SCREEN_SNAPSHOT_SIGNAL_TAGS } from '../src/utils/signalTagConstants.js'
 
 const builtinIds = [
   'default',
@@ -107,6 +109,22 @@ function testFixedEngineDoesNotDuplicate() {
   assert.equal(planned.settings.screenStrategies.find((item) => item.id === 'ext_meanrev_watch_v1').engineStatus, 'planned')
 }
 
+function testIceTagIsSelectable() {
+  assert.ok(SCREEN_SNAPSHOT_SIGNAL_TAGS.includes('冰'))
+  assert.ok(SCREEN_SNAPSHOT_SIGNAL_TAGS.includes('强'))
+  assert.ok(SCREEN_SNAPSHOT_SIGNAL_TAGS.includes('买'))
+  // 筛选多选直接映射这份白名单；「冰」没有中文别名，选项就是「冰」。
+  const screenLabels = SCREEN_SNAPSHOT_SIGNAL_TAGS.map((tag) => tag)
+  assert.ok(screenLabels.includes('冰'))
+  const iceSection = SIGNAL_PARAM_SECTIONS.find((item) => item.key === 'ice')
+  assert.equal(iceSection.title, '冰')
+  assert.equal(iceSection.storeSection, 'common')
+  assert.ok(iceSection.fields.some((field) => field.key === 'iceThreshold'))
+  assert.ok(iceSection.fields.some((field) => field.key === 'lookback'))
+  const common = SIGNAL_PARAM_SECTIONS.find((item) => item.key === 'common')
+  assert.equal(common.fields.some((field) => field.key === 'iceThreshold'), false)
+}
+
 function testRejectsBlankNameAndListsScope() {
   const rejected = applyCreatePreset(mergeSignalSettings({}), {
     name: '   ',
@@ -119,6 +137,7 @@ function testRejectsBlankNameAndListsScope() {
   assert.equal(BUILTIN_SCREEN_STRATEGIES.length, builtinIds.length)
 }
 
+testIceTagIsSelectable()
 testMergeKeepsDefaultKnobsAndAddsBuiltins()
 testCreateIceCopiesKnobs()
 testFixedEngineDoesNotDuplicate()

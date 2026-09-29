@@ -116,9 +116,16 @@ const BUY_GUIDE_BY_TAG = {
     buy: '出买后 1～2 日不破位，回踩再小仓试',
     avoid: '仍在冰点区提前抢、无收阳；MA20 下行中 MA5<MA10 的弱反弹',
   },
+  冰: {
+    tag: '冰',
+    level: '观察',
+    watch: 'RSI 低于冰点阈值，处于冰点区',
+    buy: '—',
+    avoid: '冰点区内不是买点，只观察是否离开冰点',
+  },
 }
 
-export const SIGNAL_BUY_GUIDE_ROWS = SIGNAL_TAG_DISPLAY_ORDER.filter((t) => t !== '冰')
+export const SIGNAL_BUY_GUIDE_ROWS = SIGNAL_TAG_DISPLAY_ORDER
   .map((t) => BUY_GUIDE_BY_TAG[t])
   .map((row) => row ? { ...row, displayTag: formatSignalTagLabel(row.tag) } : row)
   .filter(Boolean)
@@ -126,7 +133,7 @@ export const SIGNAL_BUY_GUIDE_ROWS = SIGNAL_TAG_DISPLAY_ORDER.filter((t) => t !=
 export function buildSignalFilterOptions(prefix = []) {
   return [
     ...prefix,
-    ...SIGNAL_TAG_DISPLAY_ORDER.filter((t) => t !== '冰').map((t) => ({
+    ...SIGNAL_TAG_DISPLAY_ORDER.map((t) => ({
       label: formatSignalTagLabel(t),
       value: t,
     })),

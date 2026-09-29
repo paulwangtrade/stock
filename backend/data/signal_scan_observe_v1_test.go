@@ -2,6 +2,26 @@ package data
 
 import "testing"
 
+func TestRunSignalScanBatchJS_DefaultEmitsIceTag(t *testing.T) {
+	// 长下跌让 RSI 留在冰点区。破均线发生在更早的 K 线，快照只看最后一根，
+	// 所以开放标签是「冰」而不是「减」。
+	const n = 80
+	closes := make([]float64, n)
+	for i := 0; i < n; i++ {
+		closes[i] = 100 - float64(i)
+	}
+	out, err := RunSignalScanBatchJS(signalScanBatchInput{
+		StrategyID: signalScanDefaultStrategyID,
+		Stocks:     []signalScanStockInput{xsMomStock("sz000011", "冰", closes)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.HitTotal != 1 || len(out.Items) != 1 || out.Items[0]["tag"] != "冰" {
+		t.Fatalf("hits=%d tags=%v, want 冰", out.HitTotal, tagsOf(out))
+	}
+}
+
 func TestSignalScanBatchSpan_PerStockEnginesStayChunked(t *testing.T) {
 	for _, id := range []string{extMaTrendV1StrategyID, extBreakoutV1StrategyID} {
 		if id == signalScanDefaultStrategyID || id == extXsMomV1StrategyID {

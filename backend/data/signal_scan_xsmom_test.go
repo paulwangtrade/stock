@@ -126,7 +126,7 @@ func TestRunSignalScanBatchJS_DefaultStrategyIgnoresMomentumMode(t *testing.T) {
 		xsMomStock("sz000003", "高", xsMomSeries(n, 10, 15)),
 		xsMomStock("sz000001", "中", xsMomSeries(n, 10, 12)),
 	}
-	iceTags := map[string]bool{"强": true, "趋": true, "转": true, "突": true, "弹": true, "买": true}
+	iceTags := map[string]bool{"强": true, "趋": true, "转": true, "突": true, "弹": true, "买": true, "冰": true}
 	for _, sid := range []string{"", "default"} {
 		out, err := RunSignalScanBatchJS(signalScanBatchInput{
 			StrategyID:       sid,

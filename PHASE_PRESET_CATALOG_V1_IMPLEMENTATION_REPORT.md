@@ -59,6 +59,12 @@ Bundle 由源码重建，不是手改：
 npx --yes esbuild@0.25.5 scripts/scansignals/scan-batch.ts --bundle --platform=neutral --format=iife --global-name=SignalScanBatch --outfile=backend/data/signal_scan_bundle.js
 ```
 
+## 「冰」标签
+
+默认冰点扫描在 RSI 处于冰点区、且最后一根没有更高优先级标签时，本来就会算出「冰」。先前快照白名单不含「冰」，所以快照和筛选多选都看不到。
+
+现在「冰」进入快照白名单和筛选选项。设置页单独有「冰」折叠（冰点阈值、出冰回溯），数值仍写在 `common`，不换存储键。筛选多选的选项来自 `buildScreenSignalFilterOptions()`，包含「冰」。
+
 ## 未改
 
 `BuildCandidatePool`、Trade Candidate、TradePlan、Approve/Freeze、Broker、Research 列表「只看最新一条快照」的过滤方式。桌面壳里的弹窗点击未在本环境跑通（Wails 应用，没有浏览器里的设置页）。
