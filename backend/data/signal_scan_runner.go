@@ -24,17 +24,17 @@ func initSignalScanVM() {
 }
 
 type signalScanStockInput struct {
-	Code          string         `json:"code"`
-	Name          string         `json:"name"`
-	Secucode      string         `json:"secucode,omitempty"`
-	Closes        []float64      `json:"closes"`
-	Opens         []float64      `json:"opens"`
-	Highs         []float64      `json:"highs"`
-	Lows          []float64      `json:"lows"`
-	Volumes       []float64      `json:"volumes"`
-	DayKeys       []string       `json:"dayKeys"`
-	LastBarIndex  int            `json:"lastBarIndex,omitempty"`
-	Row           map[string]any `json:"row,omitempty"`
+	Code         string         `json:"code"`
+	Name         string         `json:"name"`
+	Secucode     string         `json:"secucode,omitempty"`
+	Closes       []float64      `json:"closes"`
+	Opens        []float64      `json:"opens"`
+	Highs        []float64      `json:"highs"`
+	Lows         []float64      `json:"lows"`
+	Volumes      []float64      `json:"volumes"`
+	DayKeys      []string       `json:"dayKeys"`
+	LastBarIndex int            `json:"lastBarIndex,omitempty"`
+	Row          map[string]any `json:"row,omitempty"`
 }
 
 type signalScanBatchInput struct {
@@ -42,6 +42,7 @@ type signalScanBatchInput struct {
 	IndexClose       map[string]float64     `json:"indexClose"`
 	SignalParamsJSON string                 `json:"signalParamsJson,omitempty"`
 	IncludeSell      bool                   `json:"includeSell"`
+	StrategyID       string                 `json:"strategyId,omitempty"`
 }
 
 type signalScanBatchOutput struct {

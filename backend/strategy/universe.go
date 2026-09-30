@@ -75,7 +75,8 @@ func isSTName(name string) bool {
 // collectUniverse 优先启用 StockStrategy 最新 run，否则自选（经 data API，不直连 DB）。
 func collectUniverse() universeBuildResult {
 	api := data.NewStockStrategyApi()
-	if strat, err := api.GetFirstEnabled(); err == nil && strat != nil {
+	// Enabled observation strategies stay out of the TradePlan universe unless feedsTradePlan is on.
+	if strat, err := api.GetFirstTradePlanSource(); err == nil && strat != nil {
 		if run, rerr := api.GetLatestRun(strat.ID); rerr == nil && run != nil && run.ResultJSON != "" {
 			items := parseStrategyRunItems(strat, run)
 			if len(items) > 0 {

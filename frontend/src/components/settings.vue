@@ -27,6 +27,7 @@ import {
   serializeSignalParams,
   setActiveScreenStrategy,
 } from "../utils/signalSettings";
+import { isObservationStrategyId, observationStrategyById } from "../utils/observationStrategies";
 
 const message = useMessage()
 
@@ -118,7 +119,13 @@ function duplicateScreenStrategy() {
   signalSettingsState.value = s
 }
 
+const activeObservationPreset = computed(() => observationStrategyById(activeStrategyId.value))
+
 function deleteScreenStrategy() {
+  if (isObservationStrategyId(activeStrategyId.value)) {
+    message.warning('内置观察策略预设不能删除')
+    return
+  }
   const s = mergeSignalSettings(signalSettingsState.value)
   if (s.screenStrategies.length <= 1) {
     message.warning('至少保留一个参数预设')
@@ -722,6 +729,9 @@ function deletePrompt(ID) {
                     <n-button size="small" tertiary type="error" @click="deleteScreenStrategy">删除</n-button>
                     <n-text depth="3" style="font-size: 12px">信号参数预设（非交易 Strategy）；股票筛选页可按预设筛选或生成快照</n-text>
                   </n-space>
+                  <n-text v-if="activeObservationPreset" depth="3" style="display: block; margin-top: 8px; font-size: 12px">
+                    {{ activeObservationPreset.name }}（{{ activeObservationPreset.strategyId }}）· 观察名单，默认不进入模拟交易计划。{{ activeObservationPreset.blurb }}
+                  </n-text>
                 </div>
                 <SignalSettingsPanel v-model="activeStrategySettings" :show-display="false" />
               </n-card>

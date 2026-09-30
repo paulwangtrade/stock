@@ -17,6 +17,62 @@ func TestRunSignalScanBatchJS_Empty(t *testing.T) {
 	}
 }
 
+func TestRunSignalScanBatchJS_ObservationBreakoutDoesNotUseIcePath(t *testing.T) {
+	n := 21
+	closes := make([]float64, n)
+	opens := make([]float64, n)
+	highs := make([]float64, n)
+	lows := make([]float64, n)
+	volumes := make([]float64, n)
+	for i := 0; i < n; i++ {
+		closes[i] = 10
+		opens[i] = 10
+		highs[i] = 10
+		lows[i] = 9.9
+		volumes[i] = 100
+	}
+	closes[n-1] = 11
+	opens[n-1] = 10.2
+	highs[n-1] = 12
+	lows[n-1] = 10.1
+	volumes[n-1] = 200
+
+	stock := signalScanStockInput{
+		Code: "sh600036", Name: "招商银行",
+		Closes: closes, Opens: opens, Highs: highs, Lows: lows, Volumes: volumes,
+	}
+	hit, err := RunSignalScanBatchJS(signalScanBatchInput{
+		Stocks:     []signalScanStockInput{stock},
+		StrategyID: StrategyIDVolBreakout,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hit.HitTotal != 1 {
+		t.Fatalf("expected 1 observation hit, got %d", hit.HitTotal)
+	}
+	if hit.Items[0]["strategy_id"] != StrategyIDVolBreakout {
+		t.Fatalf("strategy_id = %v", hit.Items[0]["strategy_id"])
+	}
+	if hit.Items[0]["tag"] != "买" {
+		t.Fatalf("tag = %v", hit.Items[0]["tag"])
+	}
+
+	quiet := stock
+	quiet.Volumes = append([]float64(nil), volumes...)
+	quiet.Volumes[n-1] = 100
+	miss, err := RunSignalScanBatchJS(signalScanBatchInput{
+		Stocks:     []signalScanStockInput{quiet},
+		StrategyID: StrategyIDVolBreakout,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if miss.HitTotal != 0 {
+		t.Fatalf("expected volume fail-closed, got %d", miss.HitTotal)
+	}
+}
+
 func TestRunSignalScanBatchJS_VMInit(t *testing.T) {
 	_, err := RunSignalScanBatchJS(signalScanBatchInput{
 		Stocks: []signalScanStockInput{

@@ -13,6 +13,10 @@ import {
   parseSignalParams,
 } from '../../frontend/src/utils/signalSettings'
 import { SCREEN_SNAPSHOT_SIGNAL_TAG_SET } from '../../frontend/src/utils/signalTagConstants'
+import {
+  isObservationStrategyId,
+  runObservationScanBatch,
+} from '../../frontend/src/utils/observationStrategies'
 
 type StockInput = {
   code: string
@@ -33,9 +37,15 @@ type ScanInput = {
   indexClose?: Record<string, number>
   signalParamsJson?: string
   includeSell?: boolean
+  /** 内置观察策略 id。命中时走观察筛，不走冰点 summarizeBuySignal。 */
+  strategyId?: string
 }
 
 export function runSignalScanBatch(input: ScanInput) {
+  const strategyId = String(input?.strategyId || '').trim()
+  if (isObservationStrategyId(strategyId)) {
+    return runObservationScanBatch(strategyId, input?.stocks || [])
+  }
   const stocks = input?.stocks || []
   const indexMa20ByDay = buildIndexMa20ByDay(new Map(Object.entries(input?.indexClose || {})), 20)
   let baseSettings = cloneDefaultSignalSettings()
