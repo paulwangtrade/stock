@@ -25,11 +25,15 @@ import {
   NSpace,
   NSpin,
   NStatistic,
+  NTabPane,
+  NTabs,
   NTag,
   NText,
   NTooltip,
   useMessage,
 } from 'naive-ui'
+import ExternalMirrorPanel from './ExternalMirrorPanel.vue'
+import { LIVE_BROKER_PLACEHOLDER, PAPER_SIM_MIRROR_HINT } from '../utils/externalMirrorEntry.js'
 import { getPortfolioDashboard } from '../api/portfolioDashboard'
 import { getPortfolioSnapshot } from '../api/portfolioSnapshot'
 import { getPaperExitEvaluation } from '../api/paperObservation'
@@ -149,6 +153,7 @@ function formatQty(v) {
   return n.toLocaleString('zh-CN')
 }
 
+const accountBook = ref('paper_sim')
 const found = computed(() => !!snapshot.value?.found)
 const tradeDate = computed(() => snapshot.value?.tradeDate || dash.value?.tradeDate || '')
 const disclaimer = computed(
@@ -1113,9 +1118,11 @@ onMounted(refresh)
 
 <template>
   <div class="portfolio-dashboard">
+    <n-text strong style="font-size: 16px">我的组合</n-text>
+    <n-tabs v-model:value="accountBook" type="line" style="margin-top: 8px" animated>
+      <n-tab-pane name="paper_sim" tab="模拟量化">
     <n-space justify="space-between" align="center" style="margin-bottom: 12px">
       <n-space align="center" :wrap="true">
-        <n-text strong style="font-size: 16px">我的组合</n-text>
         <n-tag size="small" type="info" :bordered="false">模拟账户 · 只读</n-tag>
         <n-tag size="small" :bordered="false">持仓快照</n-tag>
         <n-text v-if="tradeDate" depth="3">业务日 {{ tradeDate }}</n-text>
@@ -1124,6 +1131,9 @@ onMounted(refresh)
       <n-button :loading="loading" @click="refresh">刷新</n-button>
     </n-space>
 
+    <n-alert type="info" :bordered="false" style="margin-bottom: 10px">
+      {{ PAPER_SIM_MIRROR_HINT }}
+    </n-alert>
     <n-alert type="warning" :bordered="false" style="margin-bottom: 14px">
       {{ disclaimer }}
     </n-alert>
@@ -1327,6 +1337,17 @@ onMounted(refresh)
         </n-text>
       </template>
     </n-spin>
+      </n-tab-pane>
+      <n-tab-pane name="external_mirror" tab="实盘镜像（观察）">
+        <ExternalMirrorPanel />
+      </n-tab-pane>
+      <n-tab-pane name="live_broker" tab="实盘券商（未启用）">
+        <n-alert type="default" :bordered="false" style="margin-top: 8px">
+          {{ LIVE_BROKER_PLACEHOLDER }}
+        </n-alert>
+        <n-empty description="Track-A 未启用" style="margin-top: 16px" />
+      </n-tab-pane>
+    </n-tabs>
   </div>
 </template>
 

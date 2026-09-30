@@ -11,8 +11,8 @@ import (
 	"go-stock/backend/data"
 	"go-stock/backend/database"
 	"go-stock/backend/db"
-	log "go-stock/backend/logger"
 	"go-stock/backend/healthcheck"
+	log "go-stock/backend/logger"
 	"go-stock/backend/models"
 	"go-stock/backend/version"
 	"os"
@@ -33,6 +33,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"go-stock/backend/api"
+	"go-stock/backend/externalmirror"
 	goruntime "go-stock/backend/runtime"
 	"go-stock/backend/strategysnapshot"
 )
@@ -291,18 +292,19 @@ func main() {
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 			Middleware: api.ChainAssetMiddleware(
-				api.StrategyIntentsAssetMiddleware,  // Phase13-B1-A: Strategy Intent read-only
-				api.StrategySchemasAssetMiddleware, // Phase13-B3-A: Strategy Schema read-only
+				api.StrategyIntentsAssetMiddleware,    // Phase13-B1-A: Strategy Intent read-only
+				api.StrategySchemasAssetMiddleware,    // Phase13-B3-A: Strategy Schema read-only
 				api.ResearchCandidatesAssetMiddleware, // Phase13-A5 MVP-1: Research Candidate Pool
 				api.CandidatePoolAssetMiddleware,
 				api.RealOrdersAssetMiddleware,
 				api.TradePlansAssetMiddleware,
-				api.PaperTradingAssetMiddleware, // Phase10-C.2-A: observation + POST /run
-				api.ExitReviewAssetMiddleware,   // Phase14-D3: POST /api/exit-review/outcome
-				api.OpportunitiesAssetMiddleware, // Phase14-G1.1: opportunity user actions
-				api.WatchlistAssetMiddleware,     // Phase16.26-C2.1: GET /api/watchlist
-				api.PortfolioDashboardAssetMiddleware, // Phase11-B.2: GET /api/portfolio/dashboard
-				api.TradingDayMonitorAssetMiddleware,  // Phase11-C: GET /api/trading/day-monitor
+				api.PaperTradingAssetMiddleware,           // Phase10-C.2-A: observation + POST /run
+				api.ExitReviewAssetMiddleware,             // Phase14-D3: POST /api/exit-review/outcome
+				api.OpportunitiesAssetMiddleware,          // Phase14-G1.1: opportunity user actions
+				api.WatchlistAssetMiddleware,              // Phase16.26-C2.1: GET /api/watchlist
+				api.PortfolioDashboardAssetMiddleware,     // Phase11-B.2: GET /api/portfolio/dashboard
+				api.ExternalMirrorAssetMiddleware,         // 实盘镜像观察 CRUD（不写 paper_sim）
+				api.TradingDayMonitorAssetMiddleware,      // Phase11-C: GET /api/trading/day-monitor
 				api.DailyInvestmentSummaryAssetMiddleware, // Phase11-E: GET /api/investment/daily-summary
 				api.OpsTradingDayAssetMiddleware,
 				api.RecoveryReadinessAssetMiddleware,
@@ -393,6 +395,9 @@ func updateMultipleModel() {
 func AutoMigrate() {
 	if _, err := applyApplicationMigrations(); err != nil {
 		log.SugaredLogger.Errorf("schema migration registry failed; app continues with trading blocked: %v", err)
+	}
+	if err := externalmirror.EnsureSchema(db.Dao); err != nil {
+		log.SugaredLogger.Errorf("external mirror schema: %v", err)
 	}
 	validation := validateApplicationSchema()
 	if !validation.Ready() {
