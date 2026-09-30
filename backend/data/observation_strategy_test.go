@@ -42,8 +42,8 @@ func TestObservationStrategies_SeedDefaultsAndCronDoesNotFeed(t *testing.T) {
 	require.NoError(t, api.EnsureObservationStrategies())
 
 	page := api.List(&models.StockStrategyQuery{QueryType: ObservationQueryType, Page: 1, PageSize: 20})
-	require.Equal(t, 3, page.Total)
-	require.Len(t, page.Data, 3)
+	require.Equal(t, 4, page.Total)
+	require.Len(t, page.Data, 4)
 
 	byID := map[string]models.StockStrategy{}
 	for _, row := range page.Data {
@@ -54,15 +54,19 @@ func TestObservationStrategies_SeedDefaultsAndCronDoesNotFeed(t *testing.T) {
 		require.False(t, observationFeedsTradePlan(&row), id)
 		require.Equal(t, ObservationQueryType, row.QueryType)
 	}
-	for _, id := range []string{"ext_ma_pullback", "ext_vol_breakout", "ext_dd_bounce"} {
+	for _, id := range []string{"ext_ma_pullback", "ext_vol_breakout", "ext_dd_bounce", "ext_rounded_bottom_v1"} {
 		require.Contains(t, byID, id)
 	}
+	rounded := byID["ext_rounded_bottom_v1"]
+	require.Equal(t, "圆弧底近似（观察）", rounded.Name)
+	require.Contains(t, rounded.Description, "1.3倍")
+	require.NotContains(t, rounded.Description, "高胜率")
 
 	main := api.List(&models.StockStrategyQuery{Page: 1, PageSize: 20})
 	require.Equal(t, 1, main.Total)
 	require.Equal(t, "eastmoney_nl", main.Data[0].QueryType)
 
-	for _, id := range []string{"ext_ma_pullback", "ext_vol_breakout", "ext_dd_bounce"} {
+	for _, id := range []string{"ext_ma_pullback", "ext_vol_breakout", "ext_dd_bounce", "ext_rounded_bottom_v1"} {
 		row := byID[id]
 		row.Enable = true
 		row.CronExpr = defaultObservationCron
@@ -295,5 +299,141 @@ func ddOversoldBars() []observationBar {
 	bars[59].Close = 88
 	bars[59].High = 88.4
 	bars[59].Low = 86.5
+	return bars
+}
+
+func TestRoundedBottom_HitMissSkip(t *testing.T) {
+	hit := roundedBottomHitBars()
+	require.True(t, evalRoundedBottom(hit))
+	require.GreaterOrEqual(t, len(hit), roundedBottomMinBars)
+
+	quiet := roundedBottomHitBars()
+	quiet[len(quiet)-1].Volume = 1299
+	require.False(t, evalRoundedBottom(quiet), "volume below 1.3x prior average")
+
+	wide := roundedBottomHitBars()
+	wide[70].High = 110
+	wide[70].Low = 80
+	require.False(t, evalRoundedBottom(wide), "recent range is not narrower")
+
+	shallow := roundedBottomHitBars()
+	for i := 21; i <= 68; i++ {
+		if shallow[i].Close < 97 {
+			shallow[i].Close = 97
+		}
+		if shallow[i].High < shallow[i].Close {
+			shallow[i].High = shallow[i].Close
+		}
+		if shallow[i].Low > shallow[i].High {
+			shallow[i].Low = shallow[i].High
+		}
+	}
+	require.False(t, evalRoundedBottom(shallow), "close drawdown under 12%")
+
+	wick := roundedBottomHitBars()
+	for i := 21; i <= 68; i++ {
+		if wick[i].Close < 98 {
+			wick[i].Close = 98
+		}
+		if wick[i].Open < wick[i].Close {
+			wick[i].Open = wick[i].Close - 0.1
+		}
+		if wick[i].High < wick[i].Close {
+			wick[i].High = wick[i].Close
+		}
+	}
+	wick[55].Low = 85
+	require.False(t, evalRoundedBottom(wick), "lower wick without close drawdown")
+
+	require.False(t, evalRoundedBottom(hit[:40]), "too few bars")
+	require.False(t, evalRoundedBottom(nil))
+
+	missingVol := roundedBottomHitBars()
+	missingVol[70].Volume = 0
+	require.False(t, evalRoundedBottom(missingVol), "missing volume")
+
+	badPrice := roundedBottomHitBars()
+	badPrice[30].Close = 0
+	require.False(t, evalRoundedBottom(badPrice), "invalid price")
+
+	badHigh := roundedBottomHitBars()
+	badHigh[40].High = 1
+	badHigh[40].Low = 2
+	require.False(t, evalRoundedBottom(badHigh), "high below low")
+}
+
+func TestRunRoundedBottom_SkipsSTAndDoesNotFeedTradePlan(t *testing.T) {
+	api := setupObservationStrategyDB(t)
+	require.NoError(t, api.EnsureObservationStrategies())
+	page := api.List(&models.StockStrategyQuery{QueryType: ObservationQueryType, Page: 1, PageSize: 20})
+	var row models.StockStrategy
+	for _, item := range page.Data {
+		if observationStrategyID(&item) == "ext_rounded_bottom_v1" {
+			row = item
+			break
+		}
+	}
+	require.NotZero(t, row.ID)
+	require.False(t, row.Enable)
+	require.False(t, observationFeedsTradePlan(&row))
+
+	original := loadObservationUniverse
+	loadObservationUniverse = func(int) []observationSymbol {
+		return []observationSymbol{
+			{Code: "sz000001", Name: "平安银行", Bars: roundedBottomHitBars()},
+			{Code: "sz000002", Name: "ST圆弧", Bars: roundedBottomHitBars()},
+			{Code: "sh600000", Name: "缺量样本", Bars: func() []observationBar {
+				bars := roundedBottomHitBars()
+				bars[len(bars)-1].Volume = 0
+				return bars
+			}()},
+		}
+	}
+	t.Cleanup(func() { loadObservationUniverse = original })
+
+	view := api.RunStrategy(&row)
+	require.Equal(t, 0, view.Code, view.Message)
+	require.Equal(t, 1, view.StockCount)
+	require.Equal(t, "success", view.Message)
+	require.Contains(t, view.TraceInfo, "圆弧底近似（观察）")
+	require.Contains(t, view.TraceInfo, "不是交易指令")
+	require.NotContains(t, view.TraceInfo, "高胜率")
+	list, ok := view.DataList.([]map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "000001", list[0]["SECURITY_CODE"])
+	require.Equal(t, "平安银行", list[0]["SECURITY_NAME_ABBR"])
+
+	got, err := api.GetByID(row.ID)
+	require.NoError(t, err)
+	require.False(t, observationFeedsTradePlan(got))
+	require.False(t, got.Enable)
+	require.Empty(t, got.CronExpr)
+	require.Empty(t, api.ListObservationFeedingTradePlan())
+}
+
+func roundedBottomHitBars() []observationBar {
+	const n = 80
+	bars := make([]observationBar, n)
+	for i := 0; i < n; i++ {
+		bars[i] = observationBar{Open: 99.8, Close: 100, High: 100.2, Low: 99.6, Volume: 1000}
+	}
+	for i := 25; i <= 54; i++ {
+		c := 99 - float64(i-25)*0.2
+		bars[i].Open = c + 0.1
+		bars[i].Close = c
+		bars[i].High = c + 0.3
+		bars[i].Low = c - 0.4
+		if bars[i].Low < 92 {
+			bars[i].Low = 92
+		}
+	}
+	bars[55] = observationBar{Open: 88.2, Close: 88, High: 88.4, Low: 85, Volume: 1000}
+	for i := 56; i <= 58; i++ {
+		bars[i] = observationBar{Open: 87.8, Close: 88, High: 88.5, Low: 87.6, Volume: 1000}
+	}
+	for i := 59; i <= 78; i++ {
+		bars[i] = observationBar{Open: 89.9, Close: 90, High: 90.4, Low: 89.7, Volume: 1000}
+	}
+	bars[79] = observationBar{Open: 90.6, Close: 92, High: 92.2, Low: 90.5, Volume: 1300}
 	return bars
 }
