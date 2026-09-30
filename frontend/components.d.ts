@@ -48,6 +48,7 @@ declare module 'vue' {
     Market: typeof import('./src/components/market.vue')['default']
     MarketStatusBar: typeof import('./src/components/MarketStatusBar.vue')['default']
     MoneyTrend: typeof import('./src/components/moneyTrend.vue')['default']
+    MultiStrategyComparePanel: typeof import('./src/components/MultiStrategyComparePanel.vue')['default']
     NewsList: typeof import('./src/components/newsList.vue')['default']
     ObservationMessageCenter: typeof import('./src/components/ObservationMessageCenter.vue')['default']
     OpportunityProjectionDrawer: typeof import('./src/components/OpportunityProjectionDrawer.vue')['default']
