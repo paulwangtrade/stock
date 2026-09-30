@@ -28,6 +28,8 @@ const {
   assert.equal(isPaperSimPosition({ source: 'paper_sim' }), true)
   assert.equal(isPaperSimPosition({ accountType: 'real' }), false)
   assert.equal(isPaperSimPosition({ isSelfHolding: true }), false)
+  assert.equal(isPaperSimPosition({ source: 'external_mirror', availableQty: 100, totalQty: 100 }), false)
+  assert.equal(isPaperSimPosition({ tab: 'external_mirror', availableQty: 100 }), false)
 }
 
 {
@@ -36,6 +38,10 @@ const {
   assert.equal(canShowSellButton({ availableQty: 100, totalQty: 0 }), false)
   assert.equal(canShowSellButton({ availableQty: 100, totalQty: 200, canSell: false }), false)
   assert.equal(canShowSellButton({ availableQty: 100, totalQty: 200, accountType: 'real' }), false)
+  assert.equal(
+    canShowSellButton({ availableQty: 100, totalQty: 200, source: 'external_mirror' }),
+    false,
+  )
 }
 
 {

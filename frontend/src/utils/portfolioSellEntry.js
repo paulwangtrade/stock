@@ -1,6 +1,6 @@
 /**
  * Paper sim portfolio sell entry helpers (Phase14-A-R1-B).
- * Only for paper_sim snapshot / quant holdings — never self-holdings tab.
+ * Only for paper_sim snapshot / quant holdings — never external_mirror or self-holdings.
  */
 
 /** Normalize available sellable qty from snapshot or quant row shapes. */
@@ -22,12 +22,15 @@ export function maxSellQuantity(row) {
  */
 export function isPaperSimPosition(row) {
   if (!row || typeof row !== 'object') return false
-  if (row.isSelfHolding === true || row.tab === 'self') return false
+  if (row.isSelfHolding === true || row.tab === 'self' || row.tab === 'external_mirror' || row.tab === 'mirror') {
+    return false
+  }
   const src = String(
     row.source ?? row.accountType ?? row.account_type ?? row.account ?? '',
   )
     .trim()
     .toLowerCase()
+  if (src === 'external_mirror' || src === 'mirror') return false
   if (!src) return true
   return src === 'paper_sim' || src === 'paper' || src.startsWith('paper_sim')
 }

@@ -10,6 +10,7 @@
  * Phase17-B.2：组合开 K 注入持仓上下文 + Modal 摘要/footer 卖出（复用 SellDraftDialog；不改图表核心）。
  * Phase17.1：盈亏色统一 A 股红涨绿跌（marketColor.pnlColor）；不改 daily_pnl 计算。
  * Phase17-C4：持仓健康等级/原因摘要（exit-evaluation HealthScore 只读展示；无自动卖出）。
+ * Track-B：退出观察列（持有/减仓/清仓/数据不足）。观察标签不写交易计划；模拟卖出意图需人工确认。
  * Phase17.1：做 T 适宜性列 + HoldingTSuitabilityDrawer（只读；无买卖按钮）。
  * Phase17.2：行情参考价 + 行情时间/新鲜度（display projection；不改 mark/Settlement）。
  * Phase17.5：PositionOriginDrawer「为什么买入」（复用 Provenance API；不改来源模型）。
@@ -25,11 +26,24 @@ import {
   NSpace,
   NSpin,
   NStatistic,
+  NTabPane,
+  NTabs,
   NTag,
   NText,
   NTooltip,
+  useDialog,
   useMessage,
 } from 'naive-ui'
+import ExternalMirrorPanel from './ExternalMirrorPanel.vue'
+import ExitWatchList from './ExitWatchList.vue'
+import { LIVE_BROKER_PLACEHOLDER, PAPER_SIM_MIRROR_HINT } from '../utils/externalMirrorEntry.js'
+import { getExitWatch } from '../api/exitWatch'
+import {
+  EXIT_WATCH_DISCLAIMER,
+  canOfferExitWatchSell,
+  filterExitWatchBySource,
+  readExitWatchItem,
+} from '../utils/exitWatchDisplay.js'
 import { getPortfolioDashboard } from '../api/portfolioDashboard'
 import { getPortfolioSnapshot } from '../api/portfolioSnapshot'
 import { getPaperExitEvaluation } from '../api/paperObservation'
@@ -55,6 +69,13 @@ import {
   healthGradeTagType,
 } from '../utils/holdingHealthDisplay.js'
 import {
+  EXIT_OBSERVATION_DISCLAIMER,
+  canOfferExitSellIntent,
+  exitObservationTagType,
+  exitSellIntentConfirmCopy,
+  readExitObservation,
+} from '../utils/exitObservationDisplay.js'
+import {
   tSuitLevelEmoji,
   tSuitLevelLabel,
   tSuitLevelTagType,
@@ -79,12 +100,16 @@ import StockKlineModal from './StockKlineModal.vue'
 import StockLink from './StockLink.vue'
 
 const message = useMessage()
+const dialog = useDialog()
 const loading = ref(false)
 const errorMessage = ref('')
 const snapshot = ref(null)
 const dash = ref(null)
 const sellDialogVisible = ref(false)
 const sellTargetRow = ref(null)
+const sellActor = ref('ui:portfolio-sell')
+const sellDefaultReason = ref('')
+const sellSourceLabel = ref('')
 const provenanceDrawerVisible = ref(false)
 const provenanceTargetRow = ref(null)
 const originDrawerVisible = ref(false)
@@ -97,6 +122,15 @@ const tSuitTargetRow = ref(null)
 const healthByCode = ref({})
 /** @type {import('vue').Ref<Record<string, any>>} */
 const tSuitByCode = ref({})
+/** @type {import('vue').Ref<Record<string, any>>} */
+const exitObsByCode = ref({})
+/** idle | loading | ready | error — missing class after ready/error is 数据不足 */
+const exitObservePhase = ref('pending')
+const exitWatchItems = ref([])
+const exitWatchPhase = ref('pending')
+const exitWatchPolicyRef = ref('')
+const exitWatchAsOf = ref('')
+const exitWatchSources = ref([])
 /** @type {import('vue').Ref<Record<string, { bucket: string, planId: number }>>} */
 const sourceChipByCode = ref({})
 let sourceEnrichToken = 0
@@ -149,6 +183,7 @@ function formatQty(v) {
   return n.toLocaleString('zh-CN')
 }
 
+const accountBook = ref('paper_sim')
 const found = computed(() => !!snapshot.value?.found)
 const tradeDate = computed(() => snapshot.value?.tradeDate || dash.value?.tradeDate || '')
 const disclaimer = computed(
@@ -180,7 +215,8 @@ const positions = computed(() => {
     const key = normCode(row.stockCode)
     const health = key ? healthByCode.value[key] || null : null
     const tSuitability = key ? tSuitByCode.value[key] || null : null
-    return { ...row, health, tSuitability }
+    const exitObservation = key ? exitObsByCode.value[key] || null : null
+    return { ...row, health, tSuitability, exitObservation }
   })
 })
 const quoteOverlayActive = computed(() => !!snapshot.value?.quoteOverlay)
@@ -233,8 +269,80 @@ function riskTagType(level) {
 }
 
 function openSellDialog(row) {
+  sellActor.value = 'ui:portfolio-sell'
+  sellDefaultReason.value = ''
+  sellSourceLabel.value = ''
   sellTargetRow.value = row
   sellDialogVisible.value = true
+}
+
+const paperExitWatchItems = computed(() => filterExitWatchBySource(exitWatchItems.value, 'paper_sim'))
+const mirrorExitWatchItems = computed(() => filterExitWatchBySource(exitWatchItems.value, 'external_mirror'))
+
+function exitWatchSourceMessage(source) {
+  const hit = (exitWatchSources.value || []).find((s) => s?.source === source)
+  if (exitWatchPhase.value === 'error') return '退出观察读取失败，已失败关闭为数据不足'
+  if (hit && hit.ok === false) return hit.message || '退出观察读取失败，已失败关闭为数据不足'
+  return ''
+}
+
+function confirmExitWatchSell(item) {
+  const rowItem = readExitWatchItem(item, 'ready')
+  if (!canOfferExitWatchSell(rowItem)) return
+  dialog.warning({
+    title: '人工确认模拟卖出草稿',
+    content: `${EXIT_WATCH_DISCLAIMER}。确认后才打开已有的模拟卖出草稿，不会自动卖出。`,
+    positiveText: '继续填写模拟卖出',
+    negativeText: '取消',
+    maskClosable: false,
+    onPositiveClick: () => {
+      const row = positions.value.find((p) => normCode(p.stockCode) === normCode(rowItem.stockCode))
+      if (!row) {
+        message.warning('未找到对应模拟持仓，不能打开卖出草稿')
+        return
+      }
+      sellActor.value = 'ui:exit-watch'
+      sellDefaultReason.value = `exit_watch:${rowItem.class};${(rowItem.reasonCodes || []).join(',')}`
+      sellSourceLabel.value = '退出观察'
+      sellTargetRow.value = { ...row, source: 'paper_sim' }
+      sellDialogVisible.value = true
+    },
+  })
+}
+
+async function loadExitWatch() {
+  exitWatchPhase.value = 'loading'
+  try {
+    const view = await getExitWatch()
+    exitWatchItems.value = view.items || []
+    exitWatchSources.value = view.sources || []
+    exitWatchPolicyRef.value = view.policyRef || ''
+    exitWatchAsOf.value = view.asOf || ''
+    exitWatchPhase.value = 'ready'
+  } catch (_) {
+    exitWatchItems.value = []
+    exitWatchSources.value = []
+    exitWatchPhase.value = 'error'
+  }
+}
+
+function confirmExitSellIntent(row) {
+  const obs = readExitObservation(row?.exitObservation, exitObservePhase.value)
+  if (!canOfferExitSellIntent(obs, row)) return
+  dialog.warning({
+    title: '生成模拟卖出意图',
+    content: exitSellIntentConfirmCopy(obs),
+    positiveText: '继续填写模拟卖出',
+    negativeText: '取消',
+    maskClosable: false,
+    onPositiveClick: () => {
+      sellActor.value = 'ui:exit-observation'
+      sellDefaultReason.value = `exit_observation:${obs.class};${obs.label}`
+      sellSourceLabel.value = '退出观察'
+      sellTargetRow.value = { ...row, source: 'paper_sim' }
+      sellDialogVisible.value = true
+    },
+  })
 }
 
 function openOriginDrawer(row) {
@@ -384,6 +492,49 @@ function renderTSuitLevel(row) {
           { default: () => label },
         ),
       default: () => '持仓做 T 适宜性 · 非交易指令。点击查看原因。',
+    },
+  )
+}
+
+function renderExitObservation(row) {
+  const obs = readExitObservation(row?.exitObservation, exitObservePhase.value)
+  const tip = [EXIT_OBSERVATION_DISCLAIMER, obs.reason].filter(Boolean).join('\n')
+  const offer = canOfferExitSellIntent(obs, row)
+  return h(
+    NTooltip,
+    { trigger: 'hover' },
+    {
+      trigger: () =>
+        h('div', { style: { maxWidth: '168px', lineHeight: '1.35' } }, [
+          h(
+            NTag,
+            {
+              size: 'small',
+              bordered: false,
+              type: obs.pending ? 'default' : exitObservationTagType(obs.class),
+            },
+            { default: () => obs.label },
+          ),
+          h(
+            'div',
+            { style: { fontSize: '12px', marginTop: '2px', color: 'var(--n-text-color-3)' } },
+            obs.reason,
+          ),
+          offer
+            ? h(
+                NButton,
+                {
+                  size: 'tiny',
+                  quaternary: true,
+                  type: 'warning',
+                  style: { marginTop: '2px' },
+                  onClick: () => confirmExitSellIntent(row),
+                },
+                { default: () => '生成模拟卖出意图' },
+              )
+            : null,
+        ]),
+      default: () => tip,
     },
   )
 }
@@ -919,6 +1070,22 @@ const positionColumns = computed(() => [
         NTooltip,
         { trigger: 'hover' },
         {
+          trigger: () => h('span', null, '退出观察'),
+          default: () => EXIT_OBSERVATION_DISCLAIMER,
+        },
+      ),
+    key: 'exitObservation',
+    width: 176,
+    render(row) {
+      return renderExitObservation(row)
+    },
+  },
+  {
+    title: () =>
+      h(
+        NTooltip,
+        { trigger: 'hover' },
+        {
           trigger: () => h('span', null, '做 T'),
           default: () =>
             '持仓做 T 适宜性（可考虑 / 观察 / 条件不足）。非交易指令。点击查看原因。',
@@ -1048,25 +1215,34 @@ async function enrichHoldingHealth(positions) {
   if (!rows.length) {
     healthByCode.value = {}
     tSuitByCode.value = {}
+    exitObsByCode.value = {}
+    exitObservePhase.value = 'ready'
     return
   }
+  exitObservePhase.value = 'loading'
   try {
     const view = await getPaperExitEvaluation()
     if (token !== healthEnrichToken) return
     const nextHealth = {}
     const nextSuit = {}
+    const nextObs = {}
     for (const h of view?.holdings || []) {
       const key = normCode(h.stockCode)
       if (!key) continue
       if (h.healthScore) nextHealth[key] = h.healthScore
       if (h.tSuitability) nextSuit[key] = h.tSuitability
+      if (h.observation) nextObs[key] = h.observation
     }
     healthByCode.value = nextHealth
     tSuitByCode.value = nextSuit
+    exitObsByCode.value = nextObs
+    exitObservePhase.value = 'ready'
   } catch (_) {
     if (token === healthEnrichToken) {
       healthByCode.value = {}
       tSuitByCode.value = {}
+      exitObsByCode.value = {}
+      exitObservePhase.value = 'error'
     }
   }
 }
@@ -1105,6 +1281,7 @@ async function refresh() {
     message.error(errorMessage.value)
   } finally {
     loading.value = false
+    void loadExitWatch()
   }
 }
 
@@ -1113,9 +1290,11 @@ onMounted(refresh)
 
 <template>
   <div class="portfolio-dashboard">
+    <n-text strong style="font-size: 16px">我的组合</n-text>
+    <n-tabs v-model:value="accountBook" type="line" style="margin-top: 8px" animated>
+      <n-tab-pane name="paper_sim" tab="模拟量化">
     <n-space justify="space-between" align="center" style="margin-bottom: 12px">
       <n-space align="center" :wrap="true">
-        <n-text strong style="font-size: 16px">我的组合</n-text>
         <n-tag size="small" type="info" :bordered="false">模拟账户 · 只读</n-tag>
         <n-tag size="small" :bordered="false">持仓快照</n-tag>
         <n-text v-if="tradeDate" depth="3">业务日 {{ tradeDate }}</n-text>
@@ -1124,9 +1303,21 @@ onMounted(refresh)
       <n-button :loading="loading" @click="refresh">刷新</n-button>
     </n-space>
 
+    <n-alert type="info" :bordered="false" style="margin-bottom: 10px">
+      {{ PAPER_SIM_MIRROR_HINT }}
+    </n-alert>
     <n-alert type="warning" :bordered="false" style="margin-bottom: 14px">
       {{ disclaimer }}
     </n-alert>
+    <ExitWatchList
+      :items="paperExitWatchItems"
+      :phase="exitWatchPhase"
+      source="paper_sim"
+      :policy-ref="exitWatchPolicyRef"
+      :as-of="exitWatchAsOf"
+      :source-message="exitWatchSourceMessage('paper_sim')"
+      @sell-intent="confirmExitWatchSell"
+    />
 
     <n-spin :show="loading">
       <template v-if="errorMessage && !snapshot">
@@ -1207,6 +1398,9 @@ onMounted(refresh)
         <n-text depth="3" style="display: block; margin-bottom: 8px; font-size: 12px">
           估值价/市值/累计浮盈为账本口径（mark）。持仓今日浮盈 = (行情 − 昨收)×数量（仅展示）。行情价仅参考并带行情时间；不改总权益。健康 / 做 T 列可点击查看解释（非买卖建议）。来源列可打开「为什么买入」。
         </n-text>
+        <n-text depth="3" style="display: block; margin-bottom: 8px; font-size: 12px">
+          退出观察：{{ EXIT_OBSERVATION_DISCLAIMER }}。观察标签不会自动卖出，也不会单独写入交易计划。
+        </n-text>
         <div v-if="positions.length" class="holdings-table-wrap">
           <n-data-table
             class="holdings-table"
@@ -1215,7 +1409,7 @@ onMounted(refresh)
             :bordered="false"
             size="small"
             :single-line="true"
-            :scroll-x="1820"
+            :scroll-x="2000"
             flex-height
             :style="{ height: '100%' }"
           />
@@ -1237,7 +1431,9 @@ onMounted(refresh)
           v-model:show="sellDialogVisible"
           :row="sellTargetRow"
           :trade-date="tradeDate"
-          actor="ui:portfolio-sell"
+          :actor="sellActor"
+          :default-reason="sellDefaultReason"
+          :source-label="sellSourceLabel"
           @created="refresh"
         />
 
@@ -1327,6 +1523,25 @@ onMounted(refresh)
         </n-text>
       </template>
     </n-spin>
+      </n-tab-pane>
+      <n-tab-pane name="external_mirror" tab="实盘镜像（观察）">
+        <ExitWatchList
+          :items="mirrorExitWatchItems"
+          :phase="exitWatchPhase"
+          source="external_mirror"
+          :policy-ref="exitWatchPolicyRef"
+          :as-of="exitWatchAsOf"
+          :source-message="exitWatchSourceMessage('external_mirror')"
+        />
+        <ExternalMirrorPanel />
+      </n-tab-pane>
+      <n-tab-pane name="live_broker" tab="实盘券商（未启用）">
+        <n-alert type="default" :bordered="false" style="margin-top: 8px">
+          {{ LIVE_BROKER_PLACEHOLDER }}
+        </n-alert>
+        <n-empty description="Track-A 未启用" style="margin-top: 16px" />
+      </n-tab-pane>
+    </n-tabs>
   </div>
 </template>
 
