@@ -56,7 +56,7 @@ function onDismiss() {
         <n-button v-if="view.canAdvance" quaternary size="tiny" @click="onNext">
           下一条
         </n-button>
-        <n-button quaternary size="tiny" @click="onDismiss">今日收起</n-button>
+        <n-button quaternary size="tiny" @click="onDismiss">今日不再显示</n-button>
       </div>
     </div>
     <p v-if="expanded" class="daily-tip-body">{{ view.tip.body }}</p>

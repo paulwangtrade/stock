@@ -215,5 +215,5 @@ test('home page mounts the dismissible daily tip under the header area', () => {
   assert.match(banner, /每日精进/)
   assert.match(banner, /下一条/)
   assert.match(banner, /disclaimer/)
-  assert.match(banner, /今日收起/)
+  assert.match(banner, /今日不再显示/)
 })
