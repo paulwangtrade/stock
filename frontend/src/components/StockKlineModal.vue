@@ -2,13 +2,17 @@
 /**
  * Phase16 Kline Modal contract:
  * - Unique stock identity prop: `code` (required for embedded chart).
- * - Other chart options (stockName, strategySignals, costPrice, …) pass through attrs.
+ * - `stockName` is a declared prop, forwarded to the chart and the compare tab.
+ * - Other chart options (strategySignals, costPrice, …) pass through attrs.
+ * - 「多策略对照」is observation-only and mounts only while that tab is selected.
  * - Do not use chart-code / stock_code as Modal chart identity.
  */
-import { computed, ref, useAttrs, watch } from 'vue'
+import { computed, defineAsyncComponent, ref, useAttrs, watch } from 'vue'
 import { ExpandOutline, ContractOutline } from '@vicons/ionicons5'
-import { NAlert, NButton, NIcon, NModal } from 'naive-ui'
+import { NAlert, NButton, NIcon, NModal, NTabPane, NTabs } from 'naive-ui'
 import StockLightweightKlineChart from './StockLightweightKlineChart.vue'
+
+const MultiStrategyComparePanel = defineAsyncComponent(() => import('./MultiStrategyComparePanel.vue'))
 
 defineOptions({ inheritAttrs: false })
 
@@ -28,15 +32,27 @@ const props = defineProps({
   maxHeightOffset: { type: Number, default: 200 },
   /** false 时不渲染内置 K 线（使用 default 插槽自定义内容） */
   embedChart: { type: Boolean, default: true },
+  /** 传给图表与多策略对照；未声明时不会从 attrs 落到图表。 */
+  stockName: { type: String, default: '' },
+  /** `kline` 或 `compare`。打开弹窗时生效。 */
+  initialTab: { type: String, default: 'kline' },
+  /** 父级递增后，在弹窗仍打开时重新套用 initialTab。 */
+  openToken: { type: Number, default: 0 },
 })
 
 const emit = defineEmits(['update:show', 'after-leave'])
 
 const attrs = useAttrs()
 const maximized = ref(false)
+const activeTab = ref(props.initialTab === 'compare' ? 'compare' : 'kline')
 
 const resolvedCode = computed(() => String(props.code || '').trim())
+const resolvedStockName = computed(() => String(props.stockName || '').trim())
 const hasCode = computed(() => !!resolvedCode.value)
+
+function applyRequestedTab() {
+  activeTab.value = props.initialTab === 'compare' ? 'compare' : 'kline'
+}
 
 const visible = computed({
   get: () => props.show,
@@ -45,8 +61,19 @@ const visible = computed({
 
 watch(
   () => props.show,
-  (v) => {
-    if (!v) maximized.value = false
+  (open) => {
+    if (open) applyRequestedTab()
+    else {
+      maximized.value = false
+      activeTab.value = 'kline'
+    }
+  },
+)
+
+watch(
+  () => props.openToken,
+  () => {
+    if (props.show) applyRequestedTab()
   },
 )
 
@@ -120,35 +147,59 @@ function onAfterLeave() {
       </n-button>
     </template>
 
-    <slot name="prepend" />
+    <n-tabs v-model:value="activeTab" type="line" size="small" class="kline-modal-tabs">
+      <n-tab-pane name="kline" tab="K线" display-directive="show">
+        <slot name="prepend" />
 
-    <n-alert
-      v-if="embedChart && show && !hasCode"
-      type="warning"
-      :bordered="false"
-      title="未设置股票代码"
-      style="margin-bottom: 8px"
-    >
-      请通过 StockKlineModal 的
-      <code>code</code>
-      属性传入（例如
-      <code>:code="klineModal.chartCode"</code>
-      ）。不要使用
-      <code>chart-code</code>
-      或其它别名作为图表标识。
-    </n-alert>
+        <n-alert
+          v-if="embedChart && show && !hasCode"
+          type="warning"
+          :bordered="false"
+          title="未设置股票代码"
+          style="margin-bottom: 8px"
+        >
+          请通过 StockKlineModal 的
+          <code>code</code>
+          属性传入（例如
+          <code>:code="klineModal.chartCode"</code>
+          ）。不要使用
+          <code>chart-code</code>
+          或其它别名作为图表标识。
+        </n-alert>
 
-    <stock-lightweight-kline-chart
-      v-else-if="embedChart && show && hasCode"
-      v-bind="attrs"
-      :key="chartMountKey"
-      :code="resolvedCode"
-      :chart-height="effectiveChartHeight"
-    />
+        <stock-lightweight-kline-chart
+          v-else-if="embedChart && show && hasCode"
+          v-bind="attrs"
+          :key="chartMountKey"
+          :code="resolvedCode"
+          :stock-name="resolvedStockName"
+          :chart-height="effectiveChartHeight"
+        />
 
-    <slot />
+        <slot />
 
-    <slot name="append" />
+        <slot name="append" />
+      </n-tab-pane>
+
+      <n-tab-pane name="compare" tab="多策略对照" display-directive="if">
+        <n-alert
+          v-if="!hasCode"
+          type="warning"
+          :bordered="false"
+          title="未设置股票代码"
+        >
+          多策略对照需要 StockKlineModal 的
+          <code>code</code>
+          。
+        </n-alert>
+        <div v-else-if="show && activeTab === 'compare'" class="kline-compare-host">
+          <MultiStrategyComparePanel
+            :stock-code="resolvedCode"
+            :stock-name="resolvedStockName"
+          />
+        </div>
+      </n-tab-pane>
+    </n-tabs>
 
     <template v-if="$slots.footer" #footer>
       <slot name="footer" />
@@ -164,5 +215,8 @@ function onAfterLeave() {
   border-radius: 0;
   height: 100vh;
   max-height: 100vh;
+}
+.kline-compare-host {
+  min-height: 360px;
 }
 </style>

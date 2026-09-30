@@ -1348,7 +1348,7 @@ function buildOpportunityActionColumn() {
   return {
     title: '操作',
     key: 'actions',
-    width: 268,
+    width: 348,
     fixed: 'right',
     render(row) {
       const entry = resolveOpportunityEntryForRow(row, opportunityEntryBySecucode.value)
@@ -1365,6 +1365,15 @@ function buildOpportunityActionColumn() {
               onClick: () => openProjectionDrawer(row),
             },
             { default: () => '查看解释' },
+          ),
+          h(
+            NButton,
+            {
+              secondary: true,
+              size: 'small',
+              onClick: () => showKline(row, '', 'compare'),
+            },
+            { default: () => '多策略' },
           ),
           h(
             NButton,
@@ -2288,8 +2297,10 @@ const modalDataRef = reactive({
   narrativeCode: "",
   remarks: "",
   focusSignal: "",
+  initialTab: "kline",
+  openToken: 0,
 })
-function showKline(row, focusTag = '') {
+function showKline(row, focusTag = '', tab = 'kline') {
   const model = toStockDisplayModel({
     stock_code: toFollowCodeFromRow(row),
     stock_name: resolveStrategyRowName(row),
@@ -2308,6 +2319,8 @@ function showKline(row, focusTag = '') {
     modalDataRef.narrativeCode = toFollowCodeFromRow(row)
     modalDataRef.focusSignal = focusTag || signalByCode.value.get(row.SECUCODE)?.tag || ''
     modalDataRef.title = `${name || em} ${em} — 多周期K线`
+    modalDataRef.initialTab = tab === 'compare' ? 'compare' : 'kline'
+    modalDataRef.openToken += 1
     modalDataRef.visible = true
     return
   }
@@ -2316,6 +2329,8 @@ function showKline(row, focusTag = '') {
   modalDataRef.focusSignal = focusTag || signalByCode.value.get(row.SECUCODE)?.tag || ''
   // StockKlineModal binds :code="modalDataRef.stockCode" historically — map chartCode → stockCode.
   modalDataRef.stockCode = modalDataRef.chartCode || model.klineKey
+  modalDataRef.initialTab = tab === 'compare' ? 'compare' : 'kline'
+  modalDataRef.openToken += 1
 }
 const technicalIndicatorReactive = reactive({
   MACD_GOLDEN_FORK: false,
@@ -2687,7 +2702,7 @@ const toNumber = (value, defaultValue = 0) => {
       :pagination="tablePagination"
       :row-key="(rowData) => rowData.SECUCODE"
       flex-height
-      :scroll-x="showOpportunityColumns ? 1480 : 2100"
+      :scroll-x="showOpportunityColumns ? 1560 : 2100"
       style="height: 100%"
       @update:page="handlePageChange"
       @update:page-size="handlePageSizeChange"
@@ -2726,6 +2741,8 @@ const toNumber = (value, defaultValue = 0) => {
     :strategy-signals="true"
     :signal-strategy-id="selectedScreenStrategyId"
     :focus-signal-tag="modalDataRef.focusSignal"
+    :initial-tab="modalDataRef.initialTab"
+    :open-token="modalDataRef.openToken"
   >
     <template v-if="modalDataRef.narrativeCode" #append>
       <n-divider style="margin: 16px 0 12px" />

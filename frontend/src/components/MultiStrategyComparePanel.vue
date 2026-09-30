@@ -28,8 +28,15 @@ import { eastMoneyCodeVariants } from '../utils/stockCode'
 import { resolveSignalLastBarIndex } from '../utils/tradingSession'
 import { isScannableWatchlistCode, resolveScanKlineBarCount } from '../utils/watchlistSignalScan'
 
+const props = defineProps({
+  /** 有代码时按该股票自动对照，并收起手动输入。研究页不传，仍用手输。 */
+  stockCode: { type: String, default: '' },
+  stockName: { type: String, default: '' },
+})
+
 const message = useMessage()
 const queryText = ref('')
+const catalogReady = ref(false)
 const catalog = ref([])
 const selectedIds = ref([])
 const picks = ref([])
@@ -42,6 +49,9 @@ const ran = ref(false)
 const wiredEngines = computed(() => catalog.value.filter((item) => item.wired && item.kind === 'scan_family'))
 const presetEngines = computed(() => catalog.value.filter((item) => item.wired && item.kind === 'scan_preset'))
 const unwiredEngines = computed(() => catalog.value.filter((item) => !item.wired))
+const embeddedCode = computed(() => String(props.stockCode || '').trim())
+const embeddedName = computed(() => String(props.stockName || '').trim())
+const embedded = computed(() => embeddedCode.value.length > 0)
 
 const pickOptions = computed(() =>
   picks.value.map((item) => ({
@@ -127,6 +137,7 @@ onMounted(async () => {
     stockStrategies: saved,
   })
   selectedIds.value = defaultSelectedStrategyIds(catalog.value)
+  catalogReady.value = true
 })
 
 function activePresetName() {
@@ -169,7 +180,10 @@ function selectedEngines() {
   return catalog.value.filter((item) => picked.has(item.strategyId))
 }
 
+let compareSeq = 0
+
 async function runCompare(identity) {
+  const seq = ++compareSeq
   const engines = selectedEngines()
   if (!engines.length) {
     message.warning('请至少勾选一个策略')
@@ -180,6 +194,7 @@ async function runCompare(identity) {
   subjectLabel.value = identity.name ? `${identity.name}（${identity.code}）` : `${identity.code}（本地库无名称，仅按代码对照）`
   try {
     if (!isScannableWatchlistCode(identity.code)) {
+      if (seq !== compareSeq) return
       rows.value = evaluateObservationCompare({
         bars: null,
         engines,
@@ -193,6 +208,7 @@ async function runCompare(identity) {
       loadDailyBars(identity.code, identity.name),
       loadIndexMa20(),
     ])
+    if (seq !== compareSeq) return
     let bars = daily
     if (bars) {
       const lastIdx = resolveSignalLastBarIndex(bars.dayKeys)
@@ -204,12 +220,26 @@ async function runCompare(identity) {
       activeSignalOptions: getSignalOptions(),
     })
   } catch (error) {
+    if (seq !== compareSeq) return
     rows.value = []
     message.error(error?.message || '对照失败')
   } finally {
-    loading.value = false
+    if (seq === compareSeq) loading.value = false
   }
 }
+
+function rerunEmbedded() {
+  if (!embedded.value) return
+  runCompare({ code: embeddedCode.value, name: embeddedName.value })
+}
+
+watch(
+  () => [embeddedCode.value, embeddedName.value, catalogReady.value],
+  () => {
+    if (!catalogReady.value || !embedded.value) return
+    runCompare({ code: embeddedCode.value, name: embeddedName.value })
+  },
+)
 
 async function startCompare() {
   const text = queryText.value.trim()
@@ -266,10 +296,10 @@ function onPick(value) {
   <div class="compare-panel">
     <div class="compare-title">多策略对照</div>
     <n-text depth="3" class="hint">
-      输入一只股票，把已接入的日 K 观察策略并排看读数和理由。内置引擎使用当前参数预设「{{ activePresetName() }}」。每条预设只写自己的规则结论；尚未独立求值的预设标为未实现独立求值，不会照搬其他策略的命中理由。倾向只表示这行读数的多空观感，不是委托方向。
+      {{ embedded ? '按当前股票' : '输入一只股票' }}，把已接入的日 K 观察策略并排看读数和理由。内置引擎使用当前参数预设「{{ activePresetName() }}」。每条预设只写自己的规则结论；尚未独立求值的预设标为未实现独立求值，不会照搬其他策略的命中理由。倾向只表示这行读数的多空观感，不是委托方向。
     </n-text>
 
-    <div class="toolbar">
+    <div v-if="!embedded" class="toolbar">
       <n-input
         v-model:value="queryText"
         placeholder="代码或名称，如 600519 / 贵州茅台"
@@ -277,6 +307,10 @@ function onPick(value) {
         @keyup.enter="startCompare"
       />
       <n-button type="primary" :loading="loading" @click="startCompare">开始对照</n-button>
+    </div>
+    <div v-else class="toolbar">
+      <n-text>{{ embeddedName ? `${embeddedName}（${embeddedCode}）` : embeddedCode }}</n-text>
+      <n-button type="primary" :loading="loading" @click="rerunEmbedded">重新对照</n-button>
     </div>
 
     <div v-if="picks.length" class="pick-row">
