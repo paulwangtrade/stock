@@ -11,6 +11,7 @@ const TradingRecordManager = defineAsyncComponent(() => import('./TradingRecordM
 const StockChangesMonitor = defineAsyncComponent(() => import('./stockChangesMonitor.vue'))
 const StockStrategyManager = defineAsyncComponent(() => import('./stockStrategyManager.vue'))
 const SignalBacktestPanel = defineAsyncComponent(() => import('./SignalBacktestPanel.vue'))
+const MultiStrategyComparePanel = defineAsyncComponent(() => import('./MultiStrategyComparePanel.vue'))
 const CandidatePool = defineAsyncComponent(() => import('./ResearchCandidatePool.vue'))
 const PaperTradingPanel = defineAsyncComponent(() => import('./PaperTradingPanel.vue'))
 const RealOrders = defineAsyncComponent(() => import('./RealOrders.vue'))
@@ -118,6 +119,9 @@ function updateTab(name) {
       </n-tab-pane>
       <n-tab-pane name="信号回测" display-directive="if">
         <SignalBacktestPanel />
+      </n-tab-pane>
+      <n-tab-pane name="多策略对照" display-directive="if">
+        <MultiStrategyComparePanel />
       </n-tab-pane>
       <n-tab-pane name="研究候选" display-directive="if">
         <CandidatePool />
