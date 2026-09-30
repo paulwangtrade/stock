@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, h, onMounted, ref, watch } from 'vue'
 import {
   NButton,
   NCheckbox,
@@ -7,6 +7,7 @@ import {
   NDataTable,
   NInput,
   NSelect,
+  NTag,
   NText,
   useMessage,
 } from 'naive-ui'
@@ -21,6 +22,7 @@ import {
   sliceBarsToIndex,
 } from '../utils/multiStrategyCompare'
 import { resolveStockIdentity } from '../utils/signalBacktestIdentity'
+import { STRATEGY_ROLE_FOOTER, resolveStrategyRole } from '../utils/multiStrategyRole'
 import { getSignalOptions, loadSignalSettingsFromBackend, signalSettingsState } from '../utils/signalSettingsStore'
 import { eastMoneyCodeVariants } from '../utils/stockCode'
 import { resolveSignalLastBarIndex } from '../utils/tradingSession'
@@ -48,6 +50,19 @@ const pickOptions = computed(() =>
   })),
 )
 
+function roleForStrategy(strategyId) {
+  const engine = catalog.value.find((item) => item.strategyId === strategyId)
+  return resolveStrategyRole(strategyId, engine || {})
+}
+
+function renderRoleTag(role) {
+  return h(
+    NTag,
+    { size: 'small', bordered: false, type: role.tagType },
+    { default: () => role.label },
+  )
+}
+
 const columns = [
   {
     title: '策略名',
@@ -55,6 +70,14 @@ const columns = [
     minWidth: 180,
     render(row) {
       return `${row.strategyName}（${row.strategyId}）`
+    },
+  },
+  {
+    title: '角色',
+    key: 'role',
+    width: 120,
+    render(row) {
+      return renderRoleTag(roleForStrategy(row.strategyId))
     },
   },
   {
@@ -272,19 +295,34 @@ function onPick(value) {
       <div class="group">
         <div class="group-title">日 K 扫描引擎</div>
         <n-checkbox v-for="item in wiredEngines" :key="item.strategyId" :value="item.strategyId">
-          {{ item.name }}
+          <span class="strategy-check">
+            {{ item.name }}
+            <n-tag size="small" :bordered="false" :type="roleForStrategy(item.strategyId).tagType">
+              {{ roleForStrategy(item.strategyId).label }}
+            </n-tag>
+          </span>
         </n-checkbox>
       </div>
       <div v-if="presetEngines.length" class="group">
         <div class="group-title">参数预设</div>
         <n-checkbox v-for="item in presetEngines" :key="item.strategyId" :value="item.strategyId">
-          {{ item.name }}
+          <span class="strategy-check">
+            {{ item.name }}
+            <n-tag size="small" :bordered="false" :type="roleForStrategy(item.strategyId).tagType">
+              {{ roleForStrategy(item.strategyId).label }}
+            </n-tag>
+          </span>
         </n-checkbox>
       </div>
       <div v-if="unwiredEngines.length" class="group">
         <div class="group-title">选股策略包</div>
         <n-checkbox v-for="item in unwiredEngines" :key="item.strategyId" :value="item.strategyId">
-          {{ item.name }}（未接入）
+          <span class="strategy-check">
+            {{ item.name }}（未接入）
+            <n-tag size="small" :bordered="false" :type="roleForStrategy(item.strategyId).tagType">
+              {{ roleForStrategy(item.strategyId).label }}
+            </n-tag>
+          </span>
         </n-checkbox>
       </div>
     </n-checkbox-group>
@@ -302,7 +340,10 @@ function onPick(value) {
       :pagination="false"
     />
 
-    <div class="footer">{{ COMPARE_FOOTER_TEXT }}</div>
+    <div class="footer">
+      <div>{{ COMPARE_FOOTER_TEXT }}</div>
+      <div>{{ STRATEGY_ROLE_FOOTER }}</div>
+    </div>
   </div>
 </template>
 
@@ -346,6 +387,11 @@ function onPick(value) {
   width: 100%;
   font-size: 13px;
   opacity: 0.75;
+}
+.strategy-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .subject {
   font-size: 13px;
