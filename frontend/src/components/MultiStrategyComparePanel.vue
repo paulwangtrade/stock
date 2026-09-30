@@ -13,6 +13,7 @@ import {
 } from 'naive-ui'
 import { GetStockEastMoneyKLine, GetStockList, GetStockStrategyList } from '../../wailsjs/go/main/App'
 import { buildIndexMa20ByDay, normalizeDayKey } from '../utils/icePointSignals'
+import { ENTRY_MISS_FOOTER } from '../utils/entryMissObservation'
 import {
   COMPARE_FOOTER_TEXT,
   buildStrategyCatalog,
@@ -114,6 +115,19 @@ const columns = [
     width: 120,
     render(row) {
       return row.dataDay || '—'
+    },
+  },
+  {
+    title: '未命中观察',
+    key: 'entryMiss',
+    minWidth: 280,
+    render(row) {
+      const miss = row.entryMiss
+      if (!miss) return '—'
+      return h('div', { class: 'miss-cell' }, [
+        h('div', miss.hitsText),
+        h('div', miss.priceText),
+      ])
     },
   },
 ]
@@ -296,7 +310,7 @@ function onPick(value) {
   <div class="compare-panel">
     <div class="compare-title">多策略对照</div>
     <n-text depth="3" class="hint">
-      {{ embedded ? '按当前股票' : '输入一只股票' }}，把已接入的日 K 观察策略并排看读数和理由。内置引擎使用当前参数预设「{{ activePresetName() }}」。每条预设只写自己的规则结论；尚未独立求值的预设标为未实现独立求值，不会照搬其他策略的命中理由。倾向只表示这行读数的多空观感，不是委托方向。
+      {{ embedded ? '按当前股票' : '输入一只股票' }}，把已接入的日 K 观察策略并排看读数和理由。内置引擎使用当前参数预设「{{ activePresetName() }}」。每条预设只写自己的规则结论；尚未独立求值的预设标为未实现独立求值，不会照搬其他策略的命中理由。倾向只表示这行读数的多空观感，不是委托方向。入场策略若未命中，列出近端曾命中的日期与收盘价；能收成唯一门槛时给出参考价和差距，路径或截面规则写明无法给出唯一价。
     </n-text>
 
     <div v-if="!embedded" class="toolbar">
@@ -377,6 +391,7 @@ function onPick(value) {
     <div class="footer">
       <div>{{ COMPARE_FOOTER_TEXT }}</div>
       <div>{{ STRATEGY_ROLE_FOOTER }}</div>
+      <div>{{ ENTRY_MISS_FOOTER }}</div>
     </div>
   </div>
 </template>
@@ -432,6 +447,11 @@ function onPick(value) {
 }
 .result-table {
   flex: 1;
+}
+.miss-cell {
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
 }
 .footer {
   position: sticky;

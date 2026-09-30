@@ -15,6 +15,7 @@ import {
 } from 'naive-ui'
 import { GetStockEastMoneyKLine } from '../../wailsjs/go/main/App'
 import { eastMoneyKLinesToBars, runDailySignalBacktest } from '../utils/backtestEngine'
+import { buildMaCrossMissObservation, maCrossBacktestSignal } from '../utils/entryMissObservation'
 import { resolveMarketMode } from '../utils/tradingLevelRules'
 
 const message = useMessage()
@@ -25,6 +26,7 @@ const useDiscipline = ref(true)
 const loading = ref(false)
 const result = ref(null)
 const compare = ref(null)
+const backtestMiss = ref(null)
 
 const ma = (closes, i, n) => {
   if (i + 1 < n) return null
@@ -37,6 +39,7 @@ async function run() {
   loading.value = true
   result.value = null
   compare.value = null
+  backtestMiss.value = null
   try {
     const barsLimit = Math.trunc(Number(limit.value))
     const raw = await GetStockEastMoneyKLine(
@@ -55,18 +58,7 @@ async function run() {
 
     const signalAt = (i) => {
       if (i < 60) return null
-      const ma5 = ma(closes, i, 5)
-      const ma10 = ma(closes, i, 10)
-      const ma20 = ma(closes, i, 20)
-      const prevMa5 = ma(closes, i - 1, 5)
-      const prevMa10 = ma(closes, i - 1, 10)
-      if (ma5 && ma10 && prevMa5 && prevMa10 && prevMa5 < prevMa10 && ma5 >= ma10 && closes[i] > ma20) {
-        return { action: 'buy', strength: 0.7, tag: '趋' }
-      }
-      if (ma5 && ma10 && prevMa5 && prevMa10 && prevMa5 > prevMa10 && ma5 <= ma10) {
-        return { action: 'sell', sellPct: 1, tag: '止' }
-      }
-      return null
+      return maCrossBacktestSignal(closes, i)
     }
 
     const marketModeAt = (i) => {
@@ -113,6 +105,11 @@ async function run() {
     })
     result.value = withDisc
     compare.value = noDisc
+    backtestMiss.value = buildMaCrossMissObservation({
+      closes,
+      dayKeys: bars.map((bar) => bar.day),
+      minBarIndex: 60,
+    })
     message.success('回测完成')
   } catch (e) {
     message.error(e?.message || String(e))
@@ -165,6 +162,11 @@ const summaryText = computed(() => {
       <n-statistic label="交易次数" :value="result.tradeCount" />
     </n-space>
     <pre v-if="summaryText" class="summary">{{ summaryText }}</pre>
+    <div v-if="backtestMiss" class="miss-note">
+      <div>最新 K 线未形成示意买入。</div>
+      <div>{{ backtestMiss.hitsText }}</div>
+      <div>{{ backtestMiss.priceText }} · 仅观察，不是买卖指令</div>
+    </div>
   </div>
 </template>
 
@@ -188,5 +190,10 @@ const summaryText = computed(() => {
   font-size: 13px;
   line-height: 1.6;
   opacity: 0.85;
+}
+.miss-note {
+  margin-top: 12px;
+  font-size: 13px;
+  line-height: 1.6;
 }
 </style>

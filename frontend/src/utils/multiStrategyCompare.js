@@ -2,12 +2,14 @@
  * 多策略对照：把已经接入的日 K 信号扫描引擎并排读同一只股票。
  * 不写快照、不改策略 enable、不生成交易计划，也不把命中行数收成建议。
  */
+import { buildEntryMissObservation } from './entryMissObservation.js'
 import {
   computeFullSignals,
   findRecentSignalBar,
   normalizeDayKey,
   summarizeBuySignal,
 } from './icePointSignals.js'
+import { resolveStrategyRole } from './multiStrategyRole.js'
 import { buildSignalOptions, getScreenStrategies } from './signalSettings.js'
 import { STRATEGY_PRESETS } from './technicalIndicators.js'
 
@@ -428,7 +430,7 @@ export function evaluateObservationCompare({ bars, engines, activeSignalOptions 
     )
   }
 
-  return selected.map((engine) => {
+  const rows = selected.map((engine) => {
     if (!engine?.wired || engine.kind === 'unwired') {
       return emptyRow(engine, {
         verdict: '未接入',
@@ -491,4 +493,44 @@ export function evaluateObservationCompare({ bars, engines, activeSignalOptions 
     }
     return emptyRow(engine, { ...readFamily(engine, familySig, last, options), dataDay })
   })
+
+  return rows.map((row, index) => {
+    const engine = selected[index]
+    const spec = missSpec(engine)
+    return {
+      ...row,
+      entryMiss: buildEntryMissObservation({
+        roleId: spec.roleId,
+        tag: spec.tag,
+        composite: spec.composite,
+        bars: noBars ? null : bars,
+        signalOptions: optionsForMiss(engine, activeOptions),
+        familySig: spec.sigSource === 'family' ? familySig : null,
+        verdict: row.verdict,
+        lookbackDays: activeSignalOptions?.entryMissLookbackDays,
+      }),
+    }
+  })
+}
+
+function missSpec(engine) {
+  const roleId = resolveStrategyRole(engine?.strategyId, engine || {}).id
+  if (engine?.kind !== 'scan_preset') {
+    return { roleId, tag: engine?.tag || '', composite: false, sigSource: 'family' }
+  }
+  const decision = resolvePresetEvaluation(engine)
+  if (decision.mode === 'shared') {
+    return { roleId, tag: decision.source?.tag || '', composite: false, sigSource: 'family' }
+  }
+  if (decision.mode === 'ice') {
+    return { roleId, tag: '', composite: true, sigSource: 'preset' }
+  }
+  return { roleId, tag: '', composite: false, sigSource: 'none' }
+}
+
+function optionsForMiss(engine, activeOptions) {
+  if (engine?.kind === 'scan_preset' && resolvePresetEvaluation(engine).mode === 'ice') {
+    return presetOptions(engine, activeOptions)
+  }
+  return activeOptions
 }
