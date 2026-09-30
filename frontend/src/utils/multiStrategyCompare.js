@@ -155,6 +155,9 @@ export function presetEnginesFromSettings(settings) {
     kind: 'scan_preset',
     wired: true,
     settings: item.settings,
+    // 只给角色标签辨认同源预设；不参与求值。
+    scanKind: item.scanKind || '',
+    templateId: item.templateId || '',
   }))
 }
 
