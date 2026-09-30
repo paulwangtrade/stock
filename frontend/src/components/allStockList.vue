@@ -74,6 +74,7 @@ import {
 } from '../utils/opportunityListPagination.js'
 import { fetchOpportunityList, postOpportunityAction, OPPORTUNITY_ACTION } from '../api/opportunities.ts'
 import { fetchOpportunityProjections } from '../api/opportunityProjection.ts'
+import { SURGE_OBSERVE_COPY, resolveOpportunitySurgeBadge } from '../utils/surgeLimitObserve.js'
 import {
   buildDecisionBadgeView,
   buildProjectionMap,
@@ -1233,11 +1234,29 @@ function renderOpportunityStockCell(row) {
   ])
 }
 
+function opportunitySurgeBadgeForRow(row) {
+  const s = signalByCode.value.get(row?.SECUCODE)
+  if (!s?.tag) return null
+  const strategy = selectedScreenStrategy.value
+  return resolveOpportunitySurgeBadge({
+    strategyId: selectedScreenStrategyId.value,
+    strategyMeta: strategy
+      ? { kind: 'scan_preset', scanKind: strategy.scanKind, templateId: strategy.templateId }
+      : { kind: 'scan_preset' },
+    tag: s.tag,
+    code: toFollowCodeFromRow(row) || row.SECUCODE,
+    name: resolveStrategyRowName(row),
+    preClose: row.PRE_CLOSE_PRICE,
+    last: row.NEW_PRICE,
+    changeRate: row.CHANGE_RATE,
+  })
+}
+
 function buildOpportunitySignalColumn() {
   return {
     title: '信号',
     key: 'signal',
-    width: 72,
+    width: 168,
     render(row) {
       const s = signalByCode.value.get(row.SECUCODE)
       if (signalScanLoading.value && !s) {
@@ -1248,6 +1267,7 @@ function buildOpportunitySignalColumn() {
       }
       if (s.tag) {
         const label = formatSignalTagLabel(s.tag, s.sellPositionPct)
+        const badge = opportunitySurgeBadgeForRow(row)
         const tagEl = h(
           NTag,
           {
@@ -1259,13 +1279,22 @@ function buildOpportunitySignalColumn() {
           },
           { default: () => label },
         )
-        if (s.statusText) {
+        const badgeEl = badge
+          ? h(NTag, { size: 'small', type: 'warning', bordered: false }, { default: () => badge.label })
+          : null
+        const trigger = h(
+          'span',
+          { style: 'display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap' },
+          badgeEl ? [tagEl, badgeEl] : [tagEl],
+        )
+        const tip = [s.statusText, badge?.copy].filter(Boolean).join('\n')
+        if (tip) {
           return h(NTooltip, { trigger: 'hover' }, {
-            trigger: () => tagEl,
-            default: () => s.statusText,
+            trigger: () => trigger,
+            default: () => tip,
           })
         }
-        return tagEl
+        return trigger
       }
       return h(NText, { depth: 3 }, { default: () => '—' })
     },
@@ -2055,11 +2084,16 @@ async function loadWithSignalFilter() {
   }
 }
 
-function sortRowsByTrendScore(rows) {
+function sortRowsByTrendScore(rows, { demoteSurge = false } = {}) {
   if (!rows?.length || signalScanLoading.value || signalByCode.value.size === 0) {
     return rows || []
   }
   return [...rows].sort((a, b) => {
+    if (demoteSurge) {
+      const da = opportunitySurgeBadgeForRow(a) ? 1 : 0
+      const db = opportunitySurgeBadgeForRow(b) ? 1 : 0
+      if (da !== db) return da - db
+    }
     const sa = calcTrendCompositeScore(a, signalByCode.value.get(a.SECUCODE), technicalIndicatorReactive)
     const sb = calcTrendCompositeScore(b, signalByCode.value.get(b.SECUCODE), technicalIndicatorReactive)
     return sb.total - sa.total
@@ -2071,14 +2105,14 @@ const displayData = computed(() => {
   if (usesOpportunityRowSource.value) {
     // Phase16.26-B: pass FULL sorted rows. Naive local-paginates when N>50;
     // when N≤50 pagination is off. Do NOT pre-slice here (dual-pagination bug).
-    return sortRowsByTrendScore(signalFilteredRows.value)
+    return sortRowsByTrendScore(signalFilteredRows.value, { demoteSurge: true })
   }
   return sortRowsByTrendScore(dataRef.value || [])
 })
 
 /** Quote refresh target: current page only when opportunity list is paginated. */
 function opportunityQuoteTargetRows() {
-  const sorted = sortRowsByTrendScore(signalFilteredRows.value)
+  const sorted = sortRowsByTrendScore(signalFilteredRows.value, { demoteSurge: true })
   return sliceOpportunityPage(sorted, {
     page: paginationReactive.page,
     pageSize: paginationReactive.pageSize,
@@ -2702,7 +2736,7 @@ const toNumber = (value, defaultValue = 0) => {
       :pagination="tablePagination"
       :row-key="(rowData) => rowData.SECUCODE"
       flex-height
-      :scroll-x="showOpportunityColumns ? 1560 : 2100"
+      :scroll-x="showOpportunityColumns ? 1660 : 2100"
       style="height: 100%"
       @update:page="handlePageChange"
       @update:page-size="handlePageSizeChange"
@@ -2712,6 +2746,9 @@ const toNumber = (value, defaultValue = 0) => {
     </n-text>
     <n-text v-if="showOpportunityColumns" depth="3" class="opportunity-price-footer">
       {{ OPPORTUNITY_DECISION_FOOTER }}
+    </n-text>
+    <n-text v-if="showOpportunityColumns" depth="3" class="opportunity-price-footer">
+      {{ SURGE_OBSERVE_COPY }}
     </n-text>
     <n-alert
       v-if="showOpportunityColumns && decisionProjectionError"
