@@ -19,6 +19,11 @@ function assert(cond, msg) {
 
 const ids = OBSERVATION_STRATEGIES.map((item) => item.strategyId)
 assert(ids.join(',') === 'ext_ma_pullback,ext_vol_breakout,ext_dd_bounce', 'three built-in ids')
+const blurbs = Object.fromEntries(OBSERVATION_STRATEGIES.map((item) => [item.strategyId, item.blurb]))
+assert(blurbs.ext_ma_pullback.includes('抬头') && blurbs.ext_ma_pullback.includes('阳线'), 'ma pullback blurb')
+assert(blurbs.ext_vol_breakout.includes('1.5') && blurbs.ext_vol_breakout.includes('为0'), 'vol breakout blurb')
+assert(blurbs.ext_dd_bounce.includes('近20日高点') && blurbs.ext_dd_bounce.includes('RSI不低于30'), 'dd bounce blurb')
+assert(!blurbs.ext_dd_bounce.includes('60 日高点') && !blurbs.ext_dd_bounce.includes('RSI 低于 30'), 'dd blurb is not the old oversold rule')
 
 for (const card of OBSERVATION_STRATEGIES) {
   const cronOnly = buildObservationStrategyPayload(card, { id: 7, pageSize: 40 }, {

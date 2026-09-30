@@ -179,48 +179,83 @@ func TestRunObservation_HitStaysOutOfTradePlanFlag(t *testing.T) {
 }
 
 func TestObservationDayBarScreens(t *testing.T) {
-	require.True(t, evalMaPullback(maPullbackHitBars()))
+	hit := maPullbackHitBars()
+	require.True(t, evalMaPullback(hit))
 	require.False(t, evalMaPullback(maPullbackFarBars()))
-	require.False(t, evalMaPullback(maPullbackHitBars()[:10]))
+	require.False(t, evalMaPullback(hit[:10]))
+	flat := append([]observationBar(nil), hit...)
+	for i := range flat {
+		flat[i].Open = 9.9
+		flat[i].Close = 10
+		flat[i].High = 10.2
+		flat[i].Low = 9.95
+	}
+	require.False(t, evalMaPullback(flat), "flat MA is not rising")
+	noOpen := append([]observationBar(nil), hit...)
+	noOpen[len(noOpen)-1].Open = 0
+	require.True(t, evalMaPullback(noOpen), "missing open uses close > prior close")
+	yin := append([]observationBar(nil), hit...)
+	last := len(yin) - 1
+	yin[last].Open = yin[last].Close + 0.2
+	require.False(t, evalMaPullback(yin), "touch without yang recovery")
 
 	require.True(t, evalVolBreakout(volBreakoutHitBars()))
 	require.False(t, evalVolBreakout(volBreakoutQuietBars()))
 	require.False(t, evalVolBreakout(volBreakoutHitBars()[:10]))
+	zeroLast := volBreakoutHitBars()
+	zeroLast[len(zeroLast)-1].Volume = 0
+	require.False(t, evalVolBreakout(zeroLast))
+	zeroPrior := volBreakoutHitBars()
+	zeroPrior[10].Volume = 0
+	require.False(t, evalVolBreakout(zeroPrior))
 
-	require.True(t, evalDdBounce(ddBounceHitBars()))
-	require.False(t, evalDdBounce(ddBounceHitBars()[:30]))
-	flat := ddBounceHitBars()
-	for i := range flat {
-		flat[i] = observationBar{Close: 10, High: 10.1, Low: 9.9, Volume: 100}
-	}
-	require.False(t, evalDdBounce(flat))
+	dd := ddBounceHitBars()
+	require.True(t, evalDdBounce(dd))
+	rsi, ok := rsiAt(dd, observationRSIPeriod)
+	require.True(t, ok)
+	require.GreaterOrEqual(t, rsi, observationRSIMin)
+	require.False(t, evalDdBounce(dd[:30]))
+	newLow := append([]observationBar(nil), dd...)
+	newLow[len(newLow)-1].Low = 1
+	require.False(t, evalDdBounce(newLow), "60d new low overlaps ice")
+	oversold := ddOversoldBars()
+	require.False(t, evalDdBounce(oversold), "RSI below 30 is ice oversold")
+	rsiOver, okOver := rsiAt(oversold, observationRSIPeriod)
+	require.True(t, okOver)
+	require.Less(t, rsiOver, observationRSIMin)
 }
 
 func maPullbackHitBars() []observationBar {
-	bars := make([]observationBar, 25)
-	for i := range bars {
-		bars[i] = observationBar{Close: 10, High: 10.2, Low: 9.9, Volume: 1000}
+	const n = 30
+	bars := make([]observationBar, n)
+	for i := 0; i < n; i++ {
+		c := 10 + 0.15*float64(i)
+		bars[i] = observationBar{Open: c - 0.05, Close: c, High: c + 0.08, Low: c - 0.05, Volume: 1000}
 	}
-	bars[22].Close = 10.05
-	bars[23].Close = 10.02
-	bars[24].Close = 10.08
+	ma := smaClose(bars, n-1, observationMaPeriod)
+	bars[n-1].Low = ma * 1.01
+	bars[n-1].Open = bars[n-1].Low + 0.05
+	if bars[n-1].High < bars[n-1].Close {
+		bars[n-1].High = bars[n-1].Close
+	}
 	return bars
 }
 
 func maPullbackFarBars() []observationBar {
 	bars := maPullbackHitBars()
-	bars[22].Close = 12
-	bars[23].Close = 12
-	bars[24].Close = 12
+	n := len(bars)
+	for i := n - 3; i < n; i++ {
+		bars[i].Low = bars[i].Close * 0.995
+	}
 	return bars
 }
 
 func volBreakoutHitBars() []observationBar {
 	bars := make([]observationBar, 21)
 	for i := 0; i < 20; i++ {
-		bars[i] = observationBar{Close: 10, High: 10, Low: 9.5, Volume: 100}
+		bars[i] = observationBar{Open: 9.8, Close: 10, High: 10, Low: 9.5, Volume: 100}
 	}
-	bars[20] = observationBar{Close: 11, High: 11, Low: 10.5, Volume: 200}
+	bars[20] = observationBar{Open: 10.2, Close: 11, High: 11, Low: 10.5, Volume: 200}
 	return bars
 }
 
@@ -231,14 +266,34 @@ func volBreakoutQuietBars() []observationBar {
 }
 
 func ddBounceHitBars() []observationBar {
-	bars := make([]observationBar, 60)
-	for i := 0; i < 45; i++ {
-		bars[i] = observationBar{Close: 100, High: 101, Low: 99, Volume: 1000}
+	bars := make([]observationBar, observationNewLowBars)
+	for i := range bars {
+		bars[i] = observationBar{Open: 99.5, Close: 100, High: 100.2, Low: 99, Volume: 1000}
 	}
+	bars[0].Low = 70
+	for i := 46; i <= 58; i++ {
+		c := 90 + float64(i-45)*0.4
+		bars[i] = observationBar{Open: c - 0.3, Close: c, High: c + 0.2, Low: c - 0.2, Volume: 1000}
+	}
+	bars[40] = observationBar{Open: 99, Close: 100, High: 100, Low: 98, Volume: 1000}
+	bars[45] = observationBar{Open: 91, Close: 90, High: 92, Low: 88, Volume: 1000}
+	bars[59] = observationBar{Open: 96, Close: 97, High: 97.5, Low: 95.5, Volume: 1200}
+	return bars
+}
+
+func ddOversoldBars() []observationBar {
+	bars := ddBounceHitBars()
 	for i := 45; i <= 58; i++ {
 		c := 100 - float64(i-44)
-		bars[i] = observationBar{Close: c, High: c + 0.2, Low: c - 0.2, Volume: 1000}
+		bars[i].Open = c + 0.4
+		bars[i].Close = c
+		bars[i].High = c + 0.5
+		bars[i].Low = c - 0.3
 	}
-	bars[59] = observationBar{Close: 88, High: 88.5, Low: 87.5, Volume: 1000}
+	bars[45].Low = 88
+	bars[59].Open = 87
+	bars[59].Close = 88
+	bars[59].High = 88.4
+	bars[59].Low = 86.5
 	return bars
 }

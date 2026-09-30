@@ -18,11 +18,13 @@ const (
 	observationMaTouchPct  = 0.02
 	observationVolLookback = 20
 	observationVolMult     = 1.5
-	observationDdWindow    = 60
+	observationDdLookback  = 20
 	observationDdMin       = 0.08
 	observationDdMax       = 0.18
+	observationNewLowBars  = 60
 	observationRSIPeriod   = 14
-	observationRSIMax      = 30.0
+	observationRSIMin      = 30.0
+	observationHistoryBars = 80
 )
 
 // observationDef 三条内置日 K 观察规则。
@@ -39,17 +41,17 @@ var observationCatalog = []observationDef{
 	{
 		ID:    "ext_ma_pullback",
 		Name:  "均线趋势回踩",
-		Blurb: "收盘价在过去 20 日均线之上，且近 3 日收盘价回踩均线附近。只作观察名单，不是买卖指令。K 线不足、价格失败或结果为空时跳过。",
+		Blurb: "收盘在抬头的20日均线之上；近3日低点贴近均线后以阳线收回（有开盘价则收盘>开盘，否则收盘>前收）。只作观察名单，不是买卖指令。K线不足、价格无效或均线未抬头时跳过。",
 	},
 	{
 		ID:    "ext_vol_breakout",
 		Name:  "放量突破确认",
-		Blurb: "收盘价突破近 20 日最高价，且成交量不低于此前 20 日均量的 1.5 倍。只作观察名单，不是买卖指令。K 线不足、成交量失败或结果为空时跳过。",
+		Blurb: "收盘价突破此前20日最高价，且成交量不低于此前20日均量的1.5倍。只作观察名单，不是买卖指令。成交量缺失或为0、K线不足时跳过。",
 	},
 	{
 		ID:    "ext_dd_bounce",
 		Name:  "受控回撤反弹",
-		Blurb: "自 60 日高点回撤约 8%–18% 后出现反弹，且 RSI 低于 30。只作观察名单，不是买卖指令。K 线或价格不足时跳过。",
+		Blurb: "自近20日高点回撤约8%–18%后出现阳线反弹；不是60日新低，且RSI不低于30（避开冰点式新低/超卖）。只作观察名单，不是买卖指令。K线或价格不足时跳过。",
 	},
 }
 
@@ -60,6 +62,7 @@ type observationMeta struct {
 }
 
 type observationBar struct {
+	Open   float64
 	Close  float64
 	High   float64
 	Low    float64
@@ -380,7 +383,7 @@ func fillObservationBars(symbols []observationSymbol) []observationSymbol {
 	out := make([]observationSymbol, 0, len(symbols))
 	for _, sym := range symbols {
 		if len(sym.Bars) == 0 && kapi != nil {
-			kl := kapi.GetDayKLine(sym.Code, observationDdWindow+20)
+			kl := kapi.GetDayKLine(sym.Code, observationHistoryBars)
 			sym.Bars = barsFromKLine(kl)
 			if n := len(sym.Bars); n > 0 {
 				last := sym.Bars[n-1]
@@ -420,6 +423,7 @@ func barsFromKLine(kl *[]KLineData) []observationBar {
 			l = c
 		}
 		bars = append(bars, observationBar{
+			Open:   parseKlineFloat(k.Open),
 			Close:  c,
 			High:   h,
 			Low:    l,
@@ -444,29 +448,48 @@ func evalObservation(strategyID string, bars []observationBar) bool {
 
 func evalMaPullback(bars []observationBar) bool {
 	n := len(bars)
+	// 近 3 日里最早一根也要能算出 MA20。
 	if n < observationMaPeriod+2 {
 		return false
 	}
-	maLast := smaClose(bars, n-1, observationMaPeriod)
-	if maLast <= 0 || bars[n-1].Close <= maLast {
+	maNow := smaClose(bars, n-1, observationMaPeriod)
+	maPrev := smaClose(bars, n-2, observationMaPeriod)
+	if maNow <= 0 || maPrev <= 0 || bars[n-1].Close <= 0 {
 		return false
 	}
-	near := false
+	if maNow <= maPrev || bars[n-1].Close <= maNow {
+		return false
+	}
 	for i := n - 3; i < n; i++ {
 		ma := smaClose(bars, i, observationMaPeriod)
-		c := bars[i].Close
-		if ma <= 0 || c <= 0 {
+		low := bars[i].Low
+		if ma <= 0 || low <= 0 || bars[i].Close <= 0 {
 			return false
 		}
-		dist := (c - ma) / ma
-		if dist < -observationMaTouchPct {
+		dist := (low - ma) / ma
+		if dist < -observationMaTouchPct || dist > observationMaTouchPct {
 			continue
 		}
-		if dist <= observationMaTouchPct {
-			near = true
+		for j := i; j < n; j++ {
+			if isYang(bars, j) {
+				return true
+			}
 		}
 	}
-	return near
+	return false
+}
+
+func isYang(bars []observationBar, i int) bool {
+	if i < 0 || i >= len(bars) || bars[i].Close <= 0 {
+		return false
+	}
+	if bars[i].Open > 0 {
+		return bars[i].Close > bars[i].Open
+	}
+	if i == 0 || bars[i-1].Close <= 0 {
+		return false
+	}
+	return bars[i].Close > bars[i-1].Close
 }
 
 func evalVolBreakout(bars []observationBar) bool {
@@ -480,47 +503,56 @@ func evalVolBreakout(bars []observationBar) bool {
 	}
 	priorHigh := 0.0
 	volSum := 0.0
-	volN := 0
 	for i := n - 1 - observationVolLookback; i < n-1; i++ {
+		if bars[i].High <= 0 || bars[i].Volume <= 0 {
+			return false
+		}
 		if bars[i].High > priorHigh {
 			priorHigh = bars[i].High
 		}
-		if bars[i].Volume > 0 {
-			volSum += bars[i].Volume
-			volN++
-		}
+		volSum += bars[i].Volume
 	}
-	if priorHigh <= 0 || volN == 0 {
+	if priorHigh <= 0 {
 		return false
 	}
-	avg := volSum / float64(volN)
+	avg := volSum / float64(observationVolLookback)
 	return last.Close > priorHigh && last.Volume >= avg*observationVolMult
 }
 
 func evalDdBounce(bars []observationBar) bool {
 	n := len(bars)
-	if n < observationDdWindow {
+	if n < observationNewLowBars || n < observationDdLookback+1 {
 		return false
 	}
-	w := bars[n-observationDdWindow:]
-	peakIdx := 0
-	peak := w[0].High
-	for i := 1; i < len(w); i++ {
-		if w[i].High >= peak {
-			peak = w[i].High
+	if overlapsIceNewLow(bars) {
+		return false
+	}
+	rsi, ok := rsiAt(bars, observationRSIPeriod)
+	if !ok || rsi < observationRSIMin {
+		return false
+	}
+	peakStart := n - 1 - observationDdLookback
+	peak := 0.0
+	peakIdx := -1
+	for i := peakStart; i < n-1; i++ {
+		if bars[i].High <= 0 || bars[i].Low <= 0 || bars[i].Close <= 0 {
+			return false
+		}
+		if bars[i].High > peak {
+			peak = bars[i].High
 			peakIdx = i
 		}
 	}
-	if peak <= 0 || peakIdx >= len(w)-1 {
+	if peak <= 0 || peakIdx < 0 {
 		return false
 	}
 	trough := 0.0
-	for i := peakIdx; i < len(w)-1; i++ {
-		if w[i].Low <= 0 {
+	for i := peakIdx; i < n-1; i++ {
+		if bars[i].Low <= 0 {
 			return false
 		}
-		if trough == 0 || w[i].Low < trough {
-			trough = w[i].Low
+		if trough == 0 || bars[i].Low < trough {
+			trough = bars[i].Low
 		}
 	}
 	if trough <= 0 {
@@ -530,19 +562,43 @@ func evalDdBounce(bars []observationBar) bool {
 	if dd < observationDdMin || dd > observationDdMax {
 		return false
 	}
-	last := w[len(w)-1].Close
-	if last <= trough || last >= peak {
+	last := bars[n-1].Close
+	if last <= trough || last >= peak || !isYang(bars, n-1) {
 		return false
 	}
-	closes := make([]float64, len(w))
-	for i := range w {
-		if w[i].Close <= 0 {
-			return false
-		}
-		closes[i] = w[i].Close
+	return true
+}
+
+// overlapsIceNewLow 近 20 日低点就是 60 日最低，与冰点式新低重叠，观察回撤不收。
+func overlapsIceNewLow(bars []observationBar) bool {
+	n := len(bars)
+	if n < observationNewLowBars {
+		return true
 	}
-	rsi, ok := rsiSMA(closes, observationRSIPeriod)
-	return ok && rsi < observationRSIMax
+	start := n - observationNewLowBars
+	minLow := bars[start].Low
+	minIdx := start
+	for i := start + 1; i < n; i++ {
+		if bars[i].Low <= 0 {
+			return true
+		}
+		if bars[i].Low <= minLow {
+			minLow = bars[i].Low
+			minIdx = i
+		}
+	}
+	return minIdx >= n-observationDdLookback
+}
+
+func rsiAt(bars []observationBar, period int) (float64, bool) {
+	closes := make([]float64, len(bars))
+	for i, bar := range bars {
+		if bar.Close <= 0 {
+			return 0, false
+		}
+		closes[i] = bar.Close
+	}
+	return rsiSMA(closes, period)
 }
 
 func smaClose(bars []observationBar, end, period int) float64 {
