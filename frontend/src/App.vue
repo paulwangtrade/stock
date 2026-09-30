@@ -154,9 +154,10 @@ function rebuildProductMenu() {
 
 
 watch(
-  () => router.currentRoute.value.name,
-  (name) => {
-    const n = String(name || '')
+  () => [router.currentRoute.value.name, router.currentRoute.value.query?.name],
+  () => {
+    const route = router.currentRoute.value
+    const n = String(route.name || '')
     const directKeys = new Set([
       'investmentHome',
       'portfolioDashboard',
@@ -171,7 +172,12 @@ watch(
       'about',
     ])
     if (directKeys.has(n)) activeKey.value = n
-    if (n === 'research') activeKey.value = 'eventMonitor'
+    if (n === 'research') {
+      const tab = String(route.query?.name || '')
+      if (tab === '归因观察') activeKey.value = 'eventMonitorAttribution'
+      else if (tab === '异动监控') activeKey.value = 'eventMonitorChanges'
+      else activeKey.value = 'eventMonitor'
+    }
     if (n === 'cronTasks') activeKey.value = 'settings'
   },
   { immediate: true },
