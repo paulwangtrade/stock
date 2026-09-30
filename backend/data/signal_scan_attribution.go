@@ -26,26 +26,52 @@ func BuildSignalScanAttribution(q *signalattribution.Query) *signalattribution.V
 	if snap == nil {
 		return signalattribution.EmptyView(msg)
 	}
-	hits, errMsg := attributionHits(snap)
+	hits, payload, errMsg := attributionHits(snap)
+	strategyID, strategyName := resolveAttributionStrategy(snap, payload)
 	if errMsg != "" {
 		view := signalattribution.EmptyView(errMsg)
 		view.SnapshotID = snap.ID
 		view.TradeDate = signalattribution.NormalizeDay(snap.TradeDate)
 		view.Session = snap.Session
-		view.StrategyID = snap.StrategyID
-		view.StrategyName = snap.StrategyName
+		view.StrategyID = strategyID
+		view.StrategyName = strategyName
 		return view
 	}
+	filtered := signalattribution.FilterHits(hits, q.SignalTags, q.ReboundMaxRsi)
 	asOf := signalattribution.NormalizeDay(snap.TradeDate)
-	bars := loadAttributionDayBars(hits, asOf)
+	bars := loadAttributionDayBars(filtered, asOf)
 	// Weekend-only calendar: holiday weeks fail closed until a holiday table is wired.
 	return signalattribution.Assemble(signalattribution.SnapshotMeta{
 		ID:           snap.ID,
 		TradeDate:    snap.TradeDate,
 		Session:      snap.Session,
-		StrategyID:   snap.StrategyID,
-		StrategyName: snap.StrategyName,
-	}, hits, bars, tradingcalendar.Calendar{}, q.Page, q.PageSize)
+		StrategyID:   strategyID,
+		StrategyName: strategyName,
+	}, filtered, bars, tradingcalendar.Calendar{}, q.Page, q.PageSize, signalattribution.AssembleOptions{
+		SortKey:          q.SortKey,
+		SortDesc:         q.SortDesc,
+		SnapshotHitCount: len(hits),
+	})
+}
+
+// resolveAttributionStrategy prefers snapshot columns, then the result payload.
+// A blank id is the historical default preset (same contract as the snapshot list).
+func resolveAttributionStrategy(snap *models.SignalScanSnapshot, payload models.SignalScanResultPayload) (string, string) {
+	id := strings.TrimSpace(snap.StrategyID)
+	name := strings.TrimSpace(snap.StrategyName)
+	if id == "" {
+		id = strings.TrimSpace(payload.StrategyID)
+	}
+	if name == "" {
+		name = strings.TrimSpace(payload.StrategyName)
+	}
+	if id == "" && payload.Config != nil {
+		id = strings.TrimSpace(payload.Config.StrategyKey)
+	}
+	if id == "" {
+		id = signalScanDefaultStrategyID
+	}
+	return id, name
 }
 
 func resolveAttributionSnapshot(q *signalattribution.Query) (*models.SignalScanSnapshot, string) {
@@ -70,14 +96,14 @@ func resolveAttributionSnapshot(q *signalattribution.Query) (*models.SignalScanS
 	return snap, ""
 }
 
-func attributionHits(snap *models.SignalScanSnapshot) ([]signalattribution.HitInput, string) {
+func attributionHits(snap *models.SignalScanSnapshot) ([]signalattribution.HitInput, models.SignalScanResultPayload, string) {
 	raw := strings.TrimSpace(snap.ResultJSON)
 	if raw == "" {
-		return nil, "快照没有结果明细，已停止对照"
+		return nil, models.SignalScanResultPayload{}, "快照没有结果明细，已停止对照"
 	}
 	var payload models.SignalScanResultPayload
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
-		return nil, "快照结果无法读取，已停止对照"
+		return nil, models.SignalScanResultPayload{}, "快照结果无法读取，已停止对照"
 	}
 	out := make([]signalattribution.HitInput, 0, len(payload.Items))
 	for _, hit := range payload.Items {
@@ -92,14 +118,41 @@ func attributionHits(snap *models.SignalScanSnapshot) ([]signalattribution.HitIn
 				code = norm.TSCode
 			}
 		}
-		out = append(out, signalattribution.HitInput{
+		item := signalattribution.HitInput{
 			Code:          code,
 			Name:          strings.TrimSpace(hit.SECURITY_NAME_ABBR),
 			SnapshotPrice: snapshotRecordedPrice(hit),
 			BarKey:        barKey,
-		})
+			KlineCode:     barKey,
+			Tag:           strings.TrimSpace(hit.Tag),
+			Industry:      strings.TrimSpace(hit.INDUSTRY),
+			Market:        strings.TrimSpace(hit.MARKET),
+		}
+		if v, ok := parseOptionalPositive(hit.VOLUME_RATIO); ok {
+			item.VolumeRatio = v
+			item.HasVolumeRatio = true
+		}
+		if hit.RSI > 0 && !math.IsNaN(hit.RSI) && !math.IsInf(hit.RSI, 0) && hit.RSI <= 100 {
+			item.RSI = hit.RSI
+			item.HasRSI = true
+		}
+		out = append(out, item)
 	}
-	return out, ""
+	return out, payload, ""
+}
+
+func parseOptionalPositive(raw string) (float64, bool) {
+	s := strings.TrimSpace(raw)
+	s = strings.TrimSuffix(s, "%")
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, false
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil || v <= 0 || math.IsNaN(v) || math.IsInf(v, 0) {
+		return 0, false
+	}
+	return v, true
 }
 
 func snapshotRecordedPrice(hit models.SignalScanHit) float64 {
@@ -142,7 +195,11 @@ func loadAttributionDayBars(hits []signalattribution.HitInput, asOf string) map[
 	if err != nil {
 		return out
 	}
-	end := start.AddDate(0, 0, 60)
+	// Look back for as-of MA / prior return, and forward for 迄今 through the latest local bar.
+	lookback := start.AddDate(0, 0, -180)
+	end := start.AddDate(3, 0, 0)
+	minDay := lookback.Format("2006-01-02")
+	maxDay := end.Format("2006-01-02")
 
 	keys := make([]string, 0, len(hits))
 	secIDs := make([]string, 0, len(hits))
@@ -168,7 +225,7 @@ func loadAttributionDayBars(hits []signalattribution.HitInput, asOf string) map[
 		var rows []StockKLineDay
 		qerr := db.Dao.Where(
 			"period = ? AND adjust_type = ? AND ts_code IN ? AND bar_time >= ? AND bar_time <= ?",
-			KLinePeriod1D, KLineAdjustNone, keys, start, end,
+			KLinePeriod1D, KLineAdjustNone, keys, lookback, end,
 		).Find(&rows).Error
 		if qerr != nil {
 			logger.SugaredLogger.Warnf("attribution day bars: %v", qerr)
@@ -213,7 +270,7 @@ func loadAttributionDayBars(hits []signalattribution.HitInput, asOf string) map[
 			}
 			for _, bar := range bars {
 				day := signalattribution.NormalizeDay(bar.Day)
-				if day == "" || day < asOf || day > end.Format("2006-01-02") {
+				if day == "" || day < minDay || day > maxDay {
 					continue
 				}
 				px, perr := strconv.ParseFloat(strings.TrimSpace(bar.Close), 64)

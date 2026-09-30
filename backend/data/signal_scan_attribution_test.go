@@ -225,4 +225,81 @@ func TestSignalScanAttribution_WeekdayHoleInCache(t *testing.T) {
 	if h3.Status != signalattribution.StatusInsufficient || h3.ReturnRate != nil || h3.Reason != signalattribution.ReasonCalendarGap {
 		t.Fatalf("hole +3 %+v", h3)
 	}
+	if view.Rows[0].ToDate.Status != signalattribution.StatusInsufficient || view.Rows[0].ToDate.Reason != signalattribution.ReasonCalendarGap {
+		t.Fatalf("迄今 must fail closed on the hole: %+v", view.Rows[0].ToDate)
+	}
+}
+
+func TestSignalScanAttribution_BlankStrategyFallsBack(t *testing.T) {
+	attributionTestDB(t)
+	raw, err := json.Marshal(models.SignalScanResultPayload{
+		Items:        []models.SignalScanHit{{SECUCODE: "600000.SH", SECURITY_CODE: "600000", SECURITY_NAME_ABBR: "浦发银行"}},
+		StrategyName: "结果里的策略",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap := models.SignalScanSnapshot{
+		TradeDate: "2026-07-17", Session: "close", Status: "done", ResultJSON: string(raw),
+	}
+	if err := db.Dao.Create(&snap).Error; err != nil {
+		t.Fatal(err)
+	}
+	view := BuildSignalScanAttribution(&signalattribution.Query{SnapshotID: snap.ID})
+	if view.StrategyID != "default" || view.StrategyName != "结果里的策略" {
+		t.Fatalf("strategy id/name %+v / %+v", view.StrategyID, view.StrategyName)
+	}
+	if len(view.Rows) != 1 || view.Rows[0].StrategyID != "default" || view.Rows[0].StrategyName != "结果里的策略" {
+		t.Fatalf("row strategy %+v", view.Rows[0])
+	}
+	if view.Rows[0].KlineCode == "" {
+		t.Fatal("kline code should follow the normalized bar key")
+	}
+}
+
+func TestSignalScanAttribution_LegacyBlankStrategyID(t *testing.T) {
+	attributionTestDB(t)
+	raw, err := json.Marshal(models.SignalScanResultPayload{
+		Items: []models.SignalScanHit{{SECUCODE: "600000.SH", SECURITY_CODE: "600000"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap := models.SignalScanSnapshot{
+		TradeDate: "2026-07-17", Session: "close", Status: "done", ResultJSON: string(raw),
+	}
+	if err := db.Dao.Create(&snap).Error; err != nil {
+		t.Fatal(err)
+	}
+	view := BuildSignalScanAttribution(&signalattribution.Query{SnapshotID: snap.ID})
+	if view.StrategyID != "default" || view.StrategyName != "" {
+		t.Fatalf("legacy blank id becomes default without inventing a name: %+v %q", view.StrategyID, view.StrategyName)
+	}
+}
+
+func TestSignalScanAttribution_SignalTagFiltersCohort(t *testing.T) {
+	attributionTestDB(t)
+	bars := []KLineData{
+		{Day: "2026-07-17", Close: "10"},
+		{Day: "2026-07-20", Close: "11"},
+	}
+	klineCachePut("1.600000", "101", "", "latest", len(bars), &bars)
+	klineCachePut("0.000001", "101", "", "latest", len(bars), &bars)
+	snap := insertAttributionSnapshot(t, "default", "", "done", []models.SignalScanHit{
+		{SECUCODE: "600000.SH", SECURITY_CODE: "600000", SECURITY_NAME_ABBR: "浦发银行", Tag: "强", INDUSTRY: "银行"},
+		{SECUCODE: "000001.SZ", SECURITY_CODE: "000001", SECURITY_NAME_ABBR: "平安银行", Tag: "趋", INDUSTRY: "银行"},
+	})
+	view := BuildSignalScanAttribution(&signalattribution.Query{
+		SnapshotID: snap.ID,
+		SignalTags: []string{"强"},
+	})
+	if !view.OK || view.Summary.HitCount != 1 || view.Summary.SnapshotHitCount != 2 || len(view.Rows) != 1 {
+		t.Fatalf("filtered summary %+v rows %d", view.Summary, len(view.Rows))
+	}
+	if view.Rows[0].Code != "600000" || view.Rows[0].Tag != "强" {
+		t.Fatalf("row %+v", view.Rows[0])
+	}
+	if view.Cohort.Up.Count+view.Cohort.Down.Count+view.Cohort.Flat.Count+view.Cohort.Excluded != 1 {
+		t.Fatalf("cohort must use the filtered subset: %+v", view.Cohort)
+	}
 }

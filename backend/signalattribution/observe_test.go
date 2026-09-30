@@ -1,6 +1,7 @@
 package signalattribution
 
 import (
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -223,6 +224,225 @@ func TestGapTrusted_RejectsWeekendBar(t *testing.T) {
 	}
 	if !gapTrusted("2026-07-17", "2026-07-20", weekendCal()) {
 		t.Fatal("Friday to Monday should be trusted")
+	}
+}
+
+func tradingDays(start string, n int) []string {
+	t, err := time.Parse("2006-01-02", start)
+	if err != nil {
+		panic(err)
+	}
+	out := make([]string, 0, n)
+	for len(out) < n {
+		if t.Weekday() != time.Saturday && t.Weekday() != time.Sunday {
+			out = append(out, t.Format("2006-01-02"))
+		}
+		t = t.AddDate(0, 0, 1)
+	}
+	return out
+}
+
+func TestObserve_ToDateUsesLatestContiguousBar(t *testing.T) {
+	bars := tenDayBars()
+	bars = append(bars, DayBar{Date: "2026-08-03", Close: 150})
+	row := observeRow(SnapshotMeta{TradeDate: "2026-07-17"}, HitInput{Code: "600000"}, bars, weekendCal())
+	h10 := horizon(row, 10)
+	if h10.Status != StatusOK || h10.FutureDate != "2026-07-31" {
+		t.Fatalf("+10 must stay on the 10th session: %+v", h10)
+	}
+	if row.ToDate.Status != StatusOK || row.ToDate.FutureDate != "2026-08-03" || row.ToDate.Text != "+50.00%" || row.ToDate.ReturnRate == nil {
+		t.Fatalf("to-date %+v", row.ToDate)
+	}
+}
+
+func TestObserve_ToDateFailsClosedOnGap(t *testing.T) {
+	bars := []DayBar{
+		{Date: "2026-07-13", Close: 100},
+		{Date: "2026-07-14", Close: 110},
+		{Date: "2026-07-16", Close: 120},
+	}
+	row := observeRow(SnapshotMeta{TradeDate: "2026-07-13"}, HitInput{Code: "000001"}, bars, weekendCal())
+	if row.ToDate.Status != StatusInsufficient || row.ToDate.ReturnRate != nil || row.ToDate.Reason != ReasonCalendarGap {
+		t.Fatalf("gap must not become 迄今: %+v", row.ToDate)
+	}
+}
+
+func TestObserve_Prior20IgnoresFutureBars(t *testing.T) {
+	days := tradingDays("2026-06-01", 22)
+	bars := make([]DayBar, 0, len(days)+1)
+	for _, d := range days {
+		bars = append(bars, DayBar{Date: d, Close: 100})
+	}
+	asOf := days[len(days)-1]
+	next := tradingDays(asOf, 2)[1]
+	bars = append(bars, DayBar{Date: next, Close: 200})
+	row := observeRow(SnapshotMeta{TradeDate: asOf}, HitInput{
+		Code: "600000", Industry: "电子", Tag: "强", HasVolumeRatio: true, VolumeRatio: 1.8,
+	}, bars, weekendCal())
+	if row.Features.Prior20Return == nil || math.Abs(*row.Features.Prior20Return) > 1e-9 {
+		t.Fatalf("future bar must not enter prior 20d: %+v", row.Features.Prior20Return)
+	}
+	if row.Features.DistMA20 == nil || math.Abs(*row.Features.DistMA20) > 1e-9 {
+		t.Fatalf("future bar must not enter MA20: %+v", row.Features.DistMA20)
+	}
+	h1 := horizon(row, 1)
+	if h1.Status != StatusOK || h1.Text != "+100.00%" {
+		t.Fatalf("+1 still uses the next bar: %+v", h1)
+	}
+	if row.Features.Industry != "电子" || row.Features.VolumeRatio == nil || *row.Features.VolumeRatio != 1.8 {
+		t.Fatalf("snapshot features %+v", row.Features)
+	}
+}
+
+func TestObserve_Prior20GapFailsClosed(t *testing.T) {
+	days := tradingDays("2026-06-01", 25)
+	bars := make([]DayBar, 0, len(days))
+	asOf := days[len(days)-1]
+	for _, d := range days {
+		if d == days[len(days)-3] {
+			continue
+		}
+		bars = append(bars, DayBar{Date: d, Close: 100})
+	}
+	row := observeRow(SnapshotMeta{TradeDate: asOf}, HitInput{Code: "600000"}, bars, weekendCal())
+	if row.Features.Prior20Return != nil || row.Features.DistMA20 != nil {
+		t.Fatalf("lookback hole must not invent MA/prior: %+v", row.Features)
+	}
+}
+
+func TestAssemble_SortMissingLast(t *testing.T) {
+	meta := SnapshotMeta{TradeDate: "2026-07-17"}
+	bars := map[string][]DayBar{
+		"A": {{Date: "2026-07-17", Close: 100}, {Date: "2026-07-20", Close: 101}},
+		"B": {{Date: "2026-07-17", Close: 100}, {Date: "2026-07-20", Close: 80}},
+		"C": nil,
+	}
+	hits := []HitInput{{Code: "C", BarKey: "C"}, {Code: "A", BarKey: "A"}, {Code: "B", BarKey: "B"}}
+	view := Assemble(meta, hits, bars, weekendCal(), 1, 10, AssembleOptions{SortKey: "1", SortDesc: true})
+	if len(view.Rows) != 3 || view.Rows[0].Code != "A" || view.Rows[1].Code != "B" || view.Rows[2].Code != "C" {
+		t.Fatalf("desc %+v", codes(view.Rows))
+	}
+	view = Assemble(meta, hits, bars, weekendCal(), 1, 10, AssembleOptions{SortKey: "1", SortDesc: false})
+	if view.Rows[0].Code != "B" || view.Rows[1].Code != "A" || view.Rows[2].Code != "C" {
+		t.Fatalf("asc %+v", codes(view.Rows))
+	}
+	view = Assemble(meta, hits, bars, weekendCal(), 1, 10, AssembleOptions{SortKey: "toDate", SortDesc: true})
+	if view.Rows[0].Code != "A" || view.Rows[2].Code != "C" || view.Rows[2].ToDate.ReturnRate != nil {
+		t.Fatalf("toDate sort %+v", codes(view.Rows))
+	}
+}
+
+func codes(rows []HitRow) []string {
+	out := make([]string, len(rows))
+	for i, row := range rows {
+		out[i] = row.Code
+	}
+	return out
+}
+
+func TestAssemble_LargeSampleDoesNotHighlight(t *testing.T) {
+	meta := SnapshotMeta{TradeDate: "2026-07-17", StrategyID: "default"}
+	hits := make([]HitInput, 0, LargeSampleLimit+1)
+	bars := map[string][]DayBar{}
+	for i := 0; i < LargeSampleLimit+1; i++ {
+		key := fmt.Sprintf("K%03d", i)
+		industry := "电子"
+		vol := 2.0
+		next := 110.0
+		if i%2 == 0 {
+			industry = "银行"
+			vol = 0.5
+			next = 90
+		}
+		hits = append(hits, HitInput{
+			Code: key, BarKey: key, Tag: "强", Industry: industry,
+			HasVolumeRatio: true, VolumeRatio: vol,
+		})
+		bars[key] = []DayBar{
+			{Date: "2026-07-17", Close: 100},
+			{Date: "2026-07-20", Close: next},
+		}
+	}
+	view := Assemble(meta, hits, bars, weekendCal(), 1, 50)
+	if !view.LargeSample || view.LargeSampleWarning != LargeSampleWarning {
+		t.Fatalf("large %+v %q", view.LargeSample, view.LargeSampleWarning)
+	}
+	if !view.Cohort.LargeSample || view.Cohort.BrowseNote == "" {
+		t.Fatalf("cohort large %+v", view.Cohort.BrowseNote)
+	}
+	for _, c := range view.Cohort.Contrasts {
+		if c.Highlight {
+			t.Fatalf("must not claim commonality: %+v", c)
+		}
+	}
+	if view.Summary.HitCount != LargeSampleLimit+1 {
+		t.Fatalf("summary %d", view.Summary.HitCount)
+	}
+}
+
+func TestCohort_SmokeUpDownContrast(t *testing.T) {
+	meta := SnapshotMeta{TradeDate: "2026-07-17", StrategyID: "s1", StrategyName: "策略甲"}
+	hits := []HitInput{
+		{Code: "U1", BarKey: "U1", Tag: "强", Industry: "电子", HasVolumeRatio: true, VolumeRatio: 2.4, HasRSI: true, RSI: 62},
+		{Code: "U2", BarKey: "U2", Tag: "强", Industry: "电子", HasVolumeRatio: true, VolumeRatio: 2.0, HasRSI: true, RSI: 58},
+		{Code: "D1", BarKey: "D1", Tag: "强", Industry: "银行", HasVolumeRatio: true, VolumeRatio: 0.8, HasRSI: true, RSI: 40},
+		{Code: "D2", BarKey: "D2", Tag: "强", Industry: "银行", HasVolumeRatio: true, VolumeRatio: 0.6, HasRSI: true, RSI: 42},
+		{Code: "X", BarKey: "X", Tag: "强", Industry: "电子"},
+	}
+	bars := map[string][]DayBar{
+		"U1": {{Date: "2026-07-17", Close: 10}, {Date: "2026-07-20", Close: 11}},
+		"U2": {{Date: "2026-07-17", Close: 10}, {Date: "2026-07-20", Close: 12}},
+		"D1": {{Date: "2026-07-17", Close: 10}, {Date: "2026-07-20", Close: 9}},
+		"D2": {{Date: "2026-07-17", Close: 10}, {Date: "2026-07-20", Close: 8}},
+	}
+	view := Assemble(meta, hits, bars, weekendCal(), 1, 50)
+	panel := view.Cohort
+	if !panel.OK || panel.Up.Count != 2 || panel.Down.Count != 2 || panel.Excluded != 1 {
+		t.Fatalf("groups %+v excluded %d msg %s", panel, panel.Excluded, panel.Message)
+	}
+	if panel.Note == "" || panel.Warning == "" || panel.SizeNote == "" {
+		t.Fatalf("copy note=%q warn=%q size=%q", panel.Note, panel.Warning, panel.SizeNote)
+	}
+	highlighted := 0
+	for _, c := range panel.Contrasts {
+		t.Logf("smoke contrast %s up=%s down=%s %s highlight=%v", c.Label, c.UpText, c.DownText, c.DiffText, c.Highlight)
+		if c.Highlight {
+			highlighted++
+		}
+	}
+	t.Logf("smoke note: %s", panel.Note)
+	t.Logf("smoke warning: %s", panel.Warning)
+	if highlighted == 0 {
+		t.Fatal("small sample should still mark the largest gaps")
+	}
+	if panel.Up.TopIndustry != "电子" || panel.Down.TopIndustry != "银行" {
+		t.Fatalf("industry up=%s down=%s", panel.Up.TopIndustry, panel.Down.TopIndustry)
+	}
+}
+
+func TestFilterHits_TagReboundAndEmpty(t *testing.T) {
+	hits := []HitInput{
+		{Code: "a", Tag: "强"},
+		{Code: "b", Tag: "超"},
+		{Code: "c", Tag: "弹", Name: "ST测试", HasRSI: true, RSI: 40},
+		{Code: "d", Tag: "弹", Name: "正常", HasRSI: true, RSI: 80},
+		{Code: "e", Tag: "减"},
+	}
+	if got := FilterHits(hits, nil, nil); len(got) != len(hits) {
+		t.Fatalf("empty filter keeps all: %d", len(got))
+	}
+	strong := FilterHits(hits, []string{"趋"}, nil)
+	if len(strong) != 1 || strong[0].Code != "b" {
+		t.Fatalf("超 should match 趋: %+v", strong)
+	}
+	max := 60.0
+	rebound := FilterHits(hits, []string{"弹"}, &max)
+	if len(rebound) != 0 {
+		t.Fatalf("ST and high RSI 弹 dropped: %+v", rebound)
+	}
+	sell := FilterHits(hits, []string{"卖"}, nil)
+	if len(sell) != 1 || sell[0].Code != "e" {
+		t.Fatalf("卖 matches 减: %+v", sell)
 	}
 }
 

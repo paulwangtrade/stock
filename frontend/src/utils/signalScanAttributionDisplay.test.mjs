@@ -10,12 +10,14 @@ const mod = await import(pathToFileURL(join(__dir, 'signalScanAttributionDisplay
 const {
   ATTRIBUTION_DISCLAIMER,
   RESEARCH_STAT_LABEL,
+  LARGE_SAMPLE_WARNING,
   horizonCellText,
   horizonReasonText,
   horizonSummaryText,
   strategyCell,
   displayName,
   findHorizon,
+  buildAttributionSignalTagOptions,
 } = mod
 
 assert.equal(ATTRIBUTION_DISCLAIMER, '仅研究对照，不构成交易建议，不进入模拟交易计划')
@@ -32,6 +34,14 @@ assert.equal(horizonReasonText({ status: 'insufficient', reason: 'calendar_gap' 
 
 assert.equal(strategyCell({ strategyName: '策略甲', strategyId: 's1' }), '策略甲（s1）')
 assert.equal(strategyCell({ strategyId: 's1' }), 's1')
+assert.equal(strategyCell({}), '默认参数预设（default）')
+assert.equal(strategyCell({ strategyId: 'default' }, { default: '我的预设' }), '我的预设（default）')
+assert.equal(strategyCell({ strategyName: '快照名', strategyId: 'default' }, { default: '我的预设' }), '快照名（default）')
+assert.equal(LARGE_SAMPLE_WARNING, '样本过大，先收窄信号再归因')
+assert.deepEqual(buildAttributionSignalTagOptions(['强', 'XS_MOM_TOP']), [
+  { value: '强', label: '强' },
+  { value: 'XS_MOM_TOP', label: 'XS_MOM_TOP 截面动量' },
+])
 assert.equal(displayName(''), '—')
 assert.equal(displayName('浦发银行'), '浦发银行')
 
