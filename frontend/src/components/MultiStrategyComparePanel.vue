@@ -266,7 +266,7 @@ function onPick(value) {
   <div class="compare-panel">
     <div class="compare-title">多策略对照</div>
     <n-text depth="3" class="hint">
-      输入一只股票，把已接入的日 K 观察策略并排看读数和理由。内置引擎使用当前参数预设「{{ activePresetName() }}」。参数预设行只是该预设自己的主信号，不是各引擎的汇总。倾向只表示这行读数的多空观感，不是委托方向。
+      输入一只股票，把已接入的日 K 观察策略并排看读数和理由。内置引擎使用当前参数预设「{{ activePresetName() }}」。每条预设只写自己的规则结论；尚未独立求值的预设标为未实现独立求值，不会照搬其他策略的命中理由。倾向只表示这行读数的多空观感，不是委托方向。
     </n-text>
 
     <div class="toolbar">
