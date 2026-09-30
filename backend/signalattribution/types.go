@@ -35,13 +35,25 @@ const (
 	CohortEmptySide        = "只有上涨或只有下跌，没有可对照的两组"
 	CohortSizeNote         = "快照没有流通市值字段，未做市值分档。"
 	CohortLargeBrowseNote  = "样本过大，下面的差额只供浏览，不是共性结论。"
+
+	WhatIfNote            = "对照实验，不是买卖指令。勾选分组共性里、信号发生前已经知道的特征，对照「全部命中等权」和「只留这些命中的等权」。明细表仍是全部命中。不写入交易计划，也不下单。"
+	WhatIfInSampleNote    = "+1 分组用来写出过滤规则，所以 +1 列是同一样本里的对照，不是事先能知道的结果。"
+	WhatIfWeightNote      = "等权：每一列里，数据完整的股票权重相同。缺数据不计入，也不用 0 填充。"
+	WhatIfSmallSampleNote = "假设子集不足 8 只，差额不稳定，不能当成规律。"
+	WhatIfNoCohort        = "没有上涨与下跌两组，无法从共性写出过滤规则"
+	WhatIfNoSeparation    = "上涨组和下跌组的已知特征没有可分开的差异，无法写出过滤规则"
+	WhatIfNoneSelected    = "未勾选特征，不生成假设子集"
+	WhatIfLargeDefault    = "样本过大，未自动套用共性过滤。勾选后只供浏览对照，不是共性结论。"
+	WhatIfNoMatch         = "没有股票同时满足勾选的特征。"
+	WhatIfBaselineLabel   = "基线 · 全部命中等权"
+	WhatIfScenarioLabel   = "假设 · 勾选特征等权"
 )
 
 // Horizons are trading-day offsets after the snapshot as-of day.
 var Horizons = []int{1, 3, 10}
 
 // Query selects one research snapshot. SnapshotID wins when set.
-// SignalTags narrow the snapshot before returns, summary, and cohort are computed.
+// SignalTags narrow the snapshot before returns, summary, cohort, and what-if are computed.
 // An empty tag list keeps every hit. SortKey is "1", "3", "10", or "toDate".
 type Query struct {
 	SnapshotID    uint     `json:"snapshotId"`
@@ -54,6 +66,10 @@ type Query struct {
 	ReboundMaxRsi *float64 `json:"reboundMaxRsi,omitempty"`
 	SortKey       string   `json:"sortKey"`
 	SortDesc      bool     `json:"sortDesc"`
+	// WhatIfSet reports that the user chose feature keys. When false, highlighted
+	// contrasts are the default subset. An explicit empty key list builds no subset.
+	WhatIfSet  bool     `json:"whatIfSet,omitempty"`
+	WhatIfKeys []string `json:"whatIfKeys,omitempty"`
 }
 
 // DayBar is one local daily close. Date is YYYY-MM-DD.
@@ -212,6 +228,40 @@ type View struct {
 	LargeSample        bool        `json:"largeSample"`
 	LargeSampleWarning string      `json:"largeSampleWarning,omitempty"`
 	Cohort             CohortPanel `json:"cohort"`
+	WhatIf             WhatIfPanel `json:"whatIf"`
+}
+
+// WhatIfFilter is one as-of feature rule taken from the +1 cohort contrast.
+// The predicate never reads a forward return.
+type WhatIfFilter struct {
+	Key     string `json:"key"`
+	Label   string `json:"label"`
+	Rule    string `json:"rule"`
+	Enabled bool   `json:"enabled"`
+}
+
+// WhatIfArm is an equal-weight summary. HitCount is the subset size.
+// Horizon means skip incomplete rows instead of filling them with zero.
+type WhatIfArm struct {
+	Label       string        `json:"label"`
+	HitCount    int           `json:"hitCount"`
+	CompleteAll int           `json:"completeAll"`
+	Horizons    []HorizonStat `json:"horizons"`
+	ToDate      HorizonStat   `json:"toDate"`
+}
+
+// WhatIfPanel compares the filtered snapshot with a feature subset.
+// It is a research control, not a trade instruction.
+type WhatIfPanel struct {
+	OK           bool           `json:"ok"`
+	Message      string         `json:"message,omitempty"`
+	Note         string         `json:"note"`
+	Warning      string         `json:"warning,omitempty"`
+	InSampleNote string         `json:"inSampleNote"`
+	WeightNote   string         `json:"weightNote"`
+	Filters      []WhatIfFilter `json:"filters"`
+	Baseline     WhatIfArm      `json:"baseline"`
+	Scenario     WhatIfArm      `json:"scenario"`
 }
 
 // AssembleOptions controls sort and the unfiltered snapshot count.
@@ -221,4 +271,7 @@ type AssembleOptions struct {
 	SortKey          string
 	SortDesc         bool
 	SnapshotHitCount int
+	// WhatIfSet distinguishes "use highlighted defaults" from "user cleared every feature".
+	WhatIfSet  bool
+	WhatIfKeys []string
 }

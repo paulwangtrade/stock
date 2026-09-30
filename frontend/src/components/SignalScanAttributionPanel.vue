@@ -2,11 +2,12 @@
 /**
  * 归因观察：信号扫描快照命中 vs 随后 +1/+3/+10 个交易日，以及迄今。
  * 策略 → 信号标签级联后，表格、汇总和分组共性都只统计筛完的子集。
- * 只读本地快照与日线，不写交易计划。
+ * 假设沙盘只对照等权汇总，不改明细表，不写交易计划。
  */
 import { computed, h, onMounted, reactive, ref } from 'vue'
 import {
   NAlert,
+  NCheckbox,
   NDataTable,
   NEmpty,
   NPagination,
@@ -27,6 +28,12 @@ import {
   ATTRIBUTION_DISCLAIMER,
   LARGE_SAMPLE_WARNING,
   RESEARCH_STAT_LABEL,
+  WHATIF_BASE_FALLBACK,
+  WHATIF_DIFF_LABEL,
+  WHATIF_IN_SAMPLE_MARK,
+  WHATIF_SCENARIO_FALLBACK,
+  WHATIF_TITLE,
+  WHATIF_TOGGLE,
   buildAttributionSignalTagOptions,
   displayName,
   findHorizon,
@@ -34,6 +41,14 @@ import {
   horizonSummaryText,
   horizonTitle,
   strategyCell,
+  whatIfArmLabel,
+  whatIfColumns,
+  whatIfCountDiff,
+  whatIfDiffRate,
+  whatIfDiffText,
+  whatIfNote,
+  whatIfReturnText,
+  whatIfSlotStat,
 } from '../utils/signalScanAttributionDisplay.js'
 import StockKlineModal from './StockKlineModal.vue'
 import StockLink from './StockLink.vue'
@@ -52,6 +67,8 @@ const page = ref(1)
 const pageSize = ref(50)
 const sortKey = ref('')
 const sortDesc = ref(true)
+const whatIfSet = ref(false)
+const whatIfKeys = ref([])
 
 const klineModal = reactive({
   visible: false,
@@ -86,6 +103,18 @@ const strategyLabels = computed(() => {
 const filteredCount = computed(() => Number(view.value?.summary?.hitCount) || 0)
 const snapshotHitCount = computed(() => Number(view.value?.summary?.snapshotHitCount) || 0)
 const cohort = computed(() => view.value?.cohort || null)
+const whatIf = computed(() => view.value?.whatIf || null)
+const whatIfCols = computed(() => whatIfColumns())
+
+function whatIfFilter(key) {
+  const list = whatIf.value?.filters || []
+  return list.find((item) => item.key === key) || null
+}
+
+function resetWhatIfSelection() {
+  whatIfSet.value = false
+  whatIfKeys.value = []
+}
 
 function syncSignalTagsToStrategy() {
   const next = reconcileScreenSignalTagSelection(signalTags.value, allowedSignalTags.value)
@@ -242,6 +271,8 @@ async function loadTable() {
       reboundMaxRsi: currentReboundMaxRsi(),
       sortKey: sortKey.value,
       sortDesc: sortDesc.value,
+      whatIfSet: whatIfSet.value,
+      whatIfKeys: whatIfSet.value ? whatIfKeys.value.slice() : [],
     })
     view.value = res || null
     if (res && res.ok === false) {
@@ -258,6 +289,7 @@ async function loadTable() {
 async function onStrategyChange(value) {
   strategyId.value = value || ''
   syncSignalTagsToStrategy()
+  resetWhatIfSelection()
   page.value = 1
   await loadSnapshots()
   await loadTable()
@@ -270,14 +302,43 @@ async function onSignalTagsChange(value) {
   const changed = next.length !== prev.length || next.some((tag, index) => tag !== prev[index])
   if (!changed) return
   signalTags.value = next
+  resetWhatIfSelection()
   page.value = 1
   await loadTable()
 }
 
 async function onSnapshotChange(value) {
   snapshotId.value = value || null
+  resetWhatIfSelection()
   page.value = 1
   await loadTable()
+}
+
+async function onWhatIfToggle(key, checked) {
+  const current = new Set(
+    whatIfSet.value
+      ? whatIfKeys.value
+      : (whatIf.value?.filters || []).filter((item) => item.enabled).map((item) => item.key),
+  )
+  if (checked) current.add(key)
+  else current.delete(key)
+  whatIfKeys.value = [...current]
+  whatIfSet.value = true
+  await loadTable()
+}
+
+function whatIfCellText(arm, key) {
+  return whatIfReturnText(whatIfSlotStat(arm, key))
+}
+
+function whatIfDiffCell(key) {
+  return whatIfDiffText(whatIfSlotStat(whatIf.value?.baseline, key), whatIfSlotStat(whatIf.value?.scenario, key))
+}
+
+function whatIfDiffStyle(key) {
+  const rate = whatIfDiffRate(whatIfSlotStat(whatIf.value?.baseline, key), whatIfSlotStat(whatIf.value?.scenario, key))
+  if (rate == null) return {}
+  return { color: marketColorCssVar(rate) }
 }
 
 async function onPageChange(next) {
@@ -407,10 +468,63 @@ onMounted(async () => {
               <span>上涨 {{ item.upText }}</span>
               <span>下跌 {{ item.downText }}</span>
               <span>{{ item.diffText }}</span>
+              <n-checkbox
+                v-if="whatIfFilter(item.key)"
+                size="small"
+                :checked="!!whatIfFilter(item.key).enabled"
+                :disabled="loading"
+                @update:checked="(checked) => onWhatIfToggle(item.key, checked)"
+              >
+                {{ WHATIF_TOGGLE }} · {{ whatIfFilter(item.key).rule }}
+              </n-checkbox>
             </div>
           </div>
         </template>
         <n-empty v-else :description="cohort.message || '无法分组'" style="margin-top: 8px" />
+      </div>
+
+      <div v-if="view?.ok && filteredCount > 0 && whatIf" class="whatif">
+        <n-text strong>{{ WHATIF_TITLE }}</n-text>
+        <n-text depth="3" style="display: block; margin-top: 4px">{{ whatIfNote(whatIf) }}</n-text>
+        <n-text v-if="whatIf.inSampleNote" depth="3" style="display: block; margin-top: 2px">{{ whatIf.inSampleNote }}</n-text>
+        <n-text v-if="whatIf.weightNote" depth="3" style="display: block; margin-top: 2px">{{ whatIf.weightNote }}</n-text>
+        <n-alert v-if="!whatIf.ok && whatIf.message" type="warning" :bordered="false" style="margin-top: 8px">
+          {{ whatIf.message }}
+        </n-alert>
+        <n-alert v-if="whatIf.warning" type="warning" :bordered="false" style="margin-top: 8px">
+          {{ whatIf.warning }}
+        </n-alert>
+        <table v-if="whatIf.ok" class="whatif-table">
+          <thead>
+            <tr>
+              <th>对照</th>
+              <th>只数</th>
+              <th v-for="col in whatIfCols" :key="col.key">
+                {{ col.label }}
+                <span v-if="col.inSample" class="whatif-insample">{{ WHATIF_IN_SAMPLE_MARK }}</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>{{ whatIfArmLabel(whatIf.baseline, WHATIF_BASE_FALLBACK) }}</td>
+              <td>{{ whatIf.baseline?.hitCount ?? 0 }}</td>
+              <td v-for="col in whatIfCols" :key="`base-${col.key}`">{{ whatIfCellText(whatIf.baseline, col.key) }}</td>
+            </tr>
+            <tr>
+              <td>{{ whatIfArmLabel(whatIf.scenario, WHATIF_SCENARIO_FALLBACK) }}</td>
+              <td>{{ whatIf.scenario?.hitCount ?? 0 }}</td>
+              <td v-for="col in whatIfCols" :key="`sc-${col.key}`">{{ whatIfCellText(whatIf.scenario, col.key) }}</td>
+            </tr>
+            <tr>
+              <td>{{ WHATIF_DIFF_LABEL }}</td>
+              <td>{{ whatIfCountDiff(whatIf.baseline, whatIf.scenario) }}</td>
+              <td v-for="col in whatIfCols" :key="`diff-${col.key}`" :style="whatIfDiffStyle(col.key)">
+                {{ whatIfDiffCell(col.key) }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
 
       <n-data-table
@@ -519,5 +633,27 @@ onMounted(async () => {
 }
 .cohort-contrast__label {
   min-width: 8em;
+}
+.whatif {
+  margin-top: 4px;
+}
+.whatif-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 8px;
+}
+.whatif-table th,
+.whatif-table td {
+  text-align: left;
+  padding: 4px 8px;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+  white-space: nowrap;
+}
+.whatif-insample {
+  margin-left: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.72;
 }
 </style>

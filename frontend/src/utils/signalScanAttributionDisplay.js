@@ -85,3 +85,83 @@ export function findHorizon(row, horizon) {
   const list = Array.isArray(row?.horizons) ? row.horizons : []
   return list.find((item) => Number(item?.horizon) === Number(horizon)) || null
 }
+
+export const WHATIF_TITLE = '假设沙盘'
+export const WHATIF_NOTE_FALLBACK = '对照实验，不是买卖指令。不写入交易计划，也不下单。'
+export const WHATIF_SMALL_SAMPLE = '假设子集不足 8 只，差额不稳定，不能当成规律。'
+export const WHATIF_IN_SAMPLE_MARK = '样本内'
+export const WHATIF_TOGGLE = '纳入假设'
+export const WHATIF_DIFF_LABEL = '差额 · 假设减基线'
+export const WHATIF_BASE_FALLBACK = '基线 · 全部命中等权'
+export const WHATIF_SCENARIO_FALLBACK = '假设 · 勾选特征等权'
+
+const WHATIF_COLUMNS = [
+  { key: '1', label: '+1 交易日', inSample: true },
+  { key: '3', label: '+3 交易日', inSample: false },
+  { key: '10', label: '+10 交易日', inSample: false },
+  { key: 'toDate', label: '迄今', inSample: false },
+]
+
+export function whatIfColumns() {
+  return WHATIF_COLUMNS.map((item) => ({ ...item }))
+}
+
+export function whatIfNote(panel) {
+  const note = String(panel?.note || '').trim()
+  return note || WHATIF_NOTE_FALLBACK
+}
+
+export function whatIfArmLabel(arm, fallback) {
+  const label = String(arm?.label || '').trim()
+  return label || fallback
+}
+
+export function whatIfSlotStat(arm, key) {
+  if (!arm) return null
+  if (key === 'toDate') return arm.toDate || null
+  const list = Array.isArray(arm.horizons) ? arm.horizons : []
+  return list.find((item) => String(item?.horizon) === String(key)) || null
+}
+
+function finiteMean(stat) {
+  if (!stat || !Number(stat.complete)) return null
+  if (stat.mean === null || stat.mean === undefined || stat.mean === '') return null
+  const n = Number(stat.mean)
+  return Number.isFinite(n) ? n : null
+}
+
+export function formatResearchPct(rate) {
+  if (!Number.isFinite(rate)) return INSUFFICIENT
+  const pct = rate * 100
+  const text = `${Math.abs(pct).toFixed(2)}%`
+  if (pct < 0) return `-${text}`
+  return `+${text}`
+}
+
+export function whatIfReturnText(stat) {
+  if (!stat || !Number(stat.complete)) return INSUFFICIENT
+  const mean = stat.meanText || '—'
+  return `完整 ${stat.complete} · 等权 ${mean}`
+}
+
+export function whatIfDiffRate(baseStat, scenarioStat) {
+  const base = finiteMean(baseStat)
+  const scenario = finiteMean(scenarioStat)
+  if (base == null || scenario == null) return null
+  return scenario - base
+}
+
+export function whatIfDiffText(baseStat, scenarioStat) {
+  const rate = whatIfDiffRate(baseStat, scenarioStat)
+  if (rate == null) return INSUFFICIENT
+  return formatResearchPct(rate)
+}
+
+export function whatIfCountDiff(baseline, scenario) {
+  const base = Number(baseline?.hitCount)
+  const next = Number(scenario?.hitCount)
+  if (!Number.isFinite(base) || !Number.isFinite(next)) return '—'
+  const diff = next - base
+  if (diff > 0) return `+${diff}`
+  return String(diff)
+}

@@ -51,6 +51,8 @@ func BuildSignalScanAttribution(q *signalattribution.Query) *signalattribution.V
 		SortKey:          q.SortKey,
 		SortDesc:         q.SortDesc,
 		SnapshotHitCount: len(hits),
+		WhatIfSet:        q.WhatIfSet,
+		WhatIfKeys:       q.WhatIfKeys,
 	})
 }
 
