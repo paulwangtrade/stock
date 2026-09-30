@@ -238,6 +238,8 @@ export function GetResearchCandidate(arg1:string):Promise<research.DetailResult>
 
 export function GetResearchExplain(arg1:string):Promise<research.Explain>;
 
+export function GetSignalScanAttribution(arg1:any):Promise<any>;
+
 export function GetSignalScanSnapshotDetail(arg1:number):Promise<models.SignalScanResultPayload>;
 
 export function GetSignalScanTask(arg1:string):Promise<data.SignalScanTaskView>;

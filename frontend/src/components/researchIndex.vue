@@ -9,6 +9,7 @@ const PromptTemplateList = defineAsyncComponent(() => import('./promptTemplateLi
 const CronTaskManager = defineAsyncComponent(() => import('./cron-task-manager.vue'))
 const TradingRecordManager = defineAsyncComponent(() => import('./TradingRecordManager.vue'))
 const StockChangesMonitor = defineAsyncComponent(() => import('./stockChangesMonitor.vue'))
+const SignalScanAttributionPanel = defineAsyncComponent(() => import('./SignalScanAttributionPanel.vue'))
 const StockStrategyManager = defineAsyncComponent(() => import('./stockStrategyManager.vue'))
 const SignalBacktestPanel = defineAsyncComponent(() => import('./SignalBacktestPanel.vue'))
 const CandidatePool = defineAsyncComponent(() => import('./ResearchCandidatePool.vue'))
@@ -109,6 +110,9 @@ function updateTab(name) {
       </n-tab-pane>
       <n-tab-pane name="异动监控" display-directive="if">
         <StockChangesMonitor />
+      </n-tab-pane>
+      <n-tab-pane name="归因观察" display-directive="if">
+        <SignalScanAttributionPanel />
       </n-tab-pane>
       <n-tab-pane name="提示词模板" display-directive="if">
         <PromptTemplateList />
