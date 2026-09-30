@@ -82,6 +82,8 @@ type ExitEvaluationStockRow struct {
 	HealthScore *HoldingHealthScore `json:"health_score,omitempty"`
 	// TSuitability is Phase17.1 做 T suitability (copied from HoldingEval; does not drive Exit state).
 	TSuitability *HoldingTSuitability `json:"t_suitability,omitempty"`
+	// Observation is the Track-B exit observation gate (display only; no TradePlan write).
+	Observation ExitObservation `json:"observation"`
 }
 
 // ExitEvaluationLotRow preserves attribution identity + optional ExitContext.
@@ -274,6 +276,14 @@ func evaluateExitStock(h HoldingEvalStockRow, pol ExitPolicy, ctxByFillID map[ui
 	row.Evaluation.State = state
 	row.Evaluation.ReasonCodes = sortedReasonCodes(reasonSet)
 	row.Evaluation.Summary = BuildExitReviewSummary(h.HoldingDays, h.UnrealizedReturn, row.Evaluation.State, row.Evaluation.ReasonCodes)
+	row.Observation = ProjectExitObservation(ExitObservationInput{
+		State:            row.Evaluation.State,
+		ReasonCodes:      row.Evaluation.ReasonCodes,
+		Summary:          row.Evaluation.Summary,
+		UnrealizedReturn: h.UnrealizedReturn,
+		HoldingDays:      h.HoldingDays,
+		PriceStale:       exitObservationPriceStale(h),
+	})
 	return row
 }
 
