@@ -15,6 +15,7 @@ import {
   NTag,
   NText,
   NTooltip,
+  useDialog,
   useMessage,
 } from 'naive-ui'
 import {
@@ -31,6 +32,7 @@ import { getPortfolioSnapshot } from '../api/portfolioSnapshot'
 import PortfolioObservationPanel from './PortfolioObservationPanel.vue'
 import PortfolioDecisionDashboard from './PortfolioDecisionDashboard.vue'
 import ExitReviewDrawer from './ExitReviewDrawer.vue'
+import SellDraftDialog from './SellDraftDialog.vue'
 import InvestmentNarrativePanel from './InvestmentNarrativePanel.vue'
 import {
   EXIT_EVAL_FILTER,
@@ -44,6 +46,14 @@ import {
   shouldShowExitReviewAction,
   sortExitEvalHoldings,
 } from '../utils/exitReviewDisplay.js'
+import { normalizeHealthStockCode } from '../utils/holdingHealthDisplay.js'
+import {
+  EXIT_OBSERVATION_DISCLAIMER,
+  canOfferExitSellIntent,
+  exitObservationTagType,
+  exitSellIntentConfirmCopy,
+  readExitObservation,
+} from '../utils/exitObservationDisplay.js'
 import { getUpcomingTradePlan } from '../api/tradePlans'
 import ProductCapabilityPanel from './ProductCapabilityPanel.vue'
 import {
@@ -57,6 +67,10 @@ import {
 } from '../utils/positionStateDisplay.js'
 
 const message = useMessage()
+const dialog = useDialog()
+const sellDialogVisible = ref(false)
+const sellTargetRow = ref(null)
+const sellDefaultReason = ref('')
 const loading = ref(false)
 const errorMessage = ref('')
 const tradeDate = ref('')
@@ -181,6 +195,83 @@ const hasNewLockedPosition = computed(() =>
 
 /** Qty columns are Snapshot.total_qty / available_qty / locked_qty — never available+locked. */
 const positionDisplayRows = computed(() => snapshot.value?.positions || [])
+
+const exitObservePhase = computed(() => {
+  if (exitEvalUnavailable.value) return 'error'
+  if (!exitEval.value) return 'pending'
+  return 'ready'
+})
+
+const exitObsByCode = computed(() => {
+  const map = {}
+  for (const h of exitEval.value?.holdings || []) {
+    const key = normalizeHealthStockCode(h.stockCode)
+    if (key && h.observation) map[key] = h.observation
+  }
+  return map
+})
+
+const positionRowsWithExit = computed(() =>
+  (positionDisplayRows.value || []).map((row) => {
+    const key = normalizeHealthStockCode(row.stockCode)
+    return {
+      ...row,
+      source: row.source || 'paper_sim',
+      exitObservation: key ? exitObsByCode.value[key] || null : null,
+    }
+  }),
+)
+
+function confirmExitSellIntent(row) {
+  const obs = readExitObservation(row?.exitObservation, exitObservePhase.value)
+  if (!canOfferExitSellIntent(obs, row)) return
+  dialog.warning({
+    title: '生成模拟卖出意图',
+    content: exitSellIntentConfirmCopy(obs),
+    positiveText: '继续填写模拟卖出',
+    negativeText: '取消',
+    maskClosable: false,
+    onPositiveClick: () => {
+      sellDefaultReason.value = `exit_observation:${obs.class};${obs.label}`
+      sellTargetRow.value = { ...row, source: 'paper_sim' }
+      sellDialogVisible.value = true
+    },
+  })
+}
+
+function renderExitObservation(row) {
+  const obs = readExitObservation(row?.exitObservation, exitObservePhase.value)
+  const offer = canOfferExitSellIntent(obs, row)
+  return h('div', { style: { maxWidth: '168px', lineHeight: '1.35' } }, [
+    h(
+      NTag,
+      {
+        size: 'small',
+        bordered: false,
+        type: obs.pending ? 'default' : exitObservationTagType(obs.class),
+      },
+      { default: () => obs.label },
+    ),
+    h(
+      'div',
+      { style: { fontSize: '12px', marginTop: '2px' } },
+      obs.reason,
+    ),
+    offer
+      ? h(
+          NButton,
+          {
+            size: 'tiny',
+            quaternary: true,
+            type: 'warning',
+            style: { marginTop: '2px' },
+            onClick: () => confirmExitSellIntent(row),
+          },
+          { default: () => '生成模拟卖出意图' },
+        )
+      : null,
+  ])
+}
 
 const snapshotRisk = computed(() => {
   const s = snapshot.value
@@ -386,6 +477,14 @@ const positionColumns = [
     render(row) {
       const rate = row.displayPnlPercent != null ? row.displayPnlPercent : row.pnlPercent
       return formatPct(rate)
+    },
+  },
+  {
+    title: '退出观察',
+    key: 'exitObservation',
+    width: 176,
+    render(row) {
+      return renderExitObservation(row)
     },
   },
   {
@@ -1249,6 +1348,9 @@ onMounted(refresh)
                 持仓数量来自 Portfolio Snapshot（total_qty），可卖 / T+1 锁定分列；当前价与行盈亏为
                 display_*，不计入账户权益。新仓标记来自嵌套 PositionState。
               </n-text>
+              <n-text depth="3" style="display: block; margin-bottom: 8px; font-size: 12px">
+                退出观察：{{ EXIT_OBSERVATION_DISCLAIMER }}。观察标签不会自动卖出，也不会单独写入交易计划。
+              </n-text>
               <n-tag
                 v-if="hasNewLockedPosition"
                 type="warning"
@@ -1259,10 +1361,10 @@ onMounted(refresh)
                 新建仓(T+1锁定)
               </n-tag>
               <n-data-table
-                v-if="positionDisplayRows.length"
+                v-if="positionRowsWithExit.length"
                 size="small"
                 :columns="positionColumns"
-                :data="positionDisplayRows"
+                :data="positionRowsWithExit"
                 :bordered="false"
                 :single-line="false"
               />
@@ -1575,6 +1677,14 @@ onMounted(refresh)
                 :exit-meta="exitReviewMeta"
                 :cached-holding-eval="holdingsEval"
                 @outcome-saved="onExitOutcomeSaved"
+              />
+              <SellDraftDialog
+                v-model:show="sellDialogVisible"
+                :row="sellTargetRow"
+                :trade-date="tradeDate"
+                actor="ui:exit-observation"
+                :default-reason="sellDefaultReason"
+                source-label="退出观察"
               />
               <n-drawer
                 v-model:show="narrativeDrawerVisible"

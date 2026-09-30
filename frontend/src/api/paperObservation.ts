@@ -774,6 +774,21 @@ export type HoldingTSuitability = {
   dataSourceNote?: string
 }
 
+/** Track-B exit observation gate (display only; not a broker order). */
+export type ExitObservation = {
+  class: string
+  label: string
+  reason: string
+  notAnOrder: boolean
+  notLive: boolean
+  requiresManualConfirm: boolean
+  sellIntentAllowed: boolean
+  persistSellPlans: boolean
+  writesTradePlan: boolean
+  disclaimer: string
+  dataSourceNote?: string
+}
+
 export type ExitEvaluationStockRow = {
   stockCode: string
   stockName: string
@@ -783,6 +798,7 @@ export type ExitEvaluationStockRow = {
   explanation?: PositionEvaluationExplanation
   healthScore?: HoldingHealthScore
   tSuitability?: HoldingTSuitability
+  observation?: ExitObservation
 }
 
 export type ExitEvaluationView = {
@@ -945,6 +961,28 @@ function mapHoldingTSuitability(raw: any): HoldingTSuitability | undefined {
   }
 }
 
+function mapExitObservation(raw: any): ExitObservation | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const klass = str(raw.class)
+  if (!klass) return undefined
+  return {
+    class: klass,
+    label: str(raw.label),
+    reason: str(raw.reason),
+    notAnOrder: raw.not_an_order !== false && raw.notAnOrder !== false,
+    notLive: raw.not_live !== false && raw.notLive !== false,
+    requiresManualConfirm:
+      raw.requires_manual_confirm !== false && raw.requiresManualConfirm !== false,
+    sellIntentAllowed: !!(raw.sell_intent_allowed ?? raw.sellIntentAllowed),
+    persistSellPlans: !!(raw.persist_sell_plans ?? raw.persistSellPlans),
+    writesTradePlan: !!(raw.writes_trade_plan ?? raw.writesTradePlan),
+    disclaimer: str(raw.disclaimer),
+    dataSourceNote: raw.data_source_note || raw.dataSourceNote
+      ? str(raw.data_source_note ?? raw.dataSourceNote)
+      : undefined,
+  }
+}
+
 function mapExitEvalStock(raw: any): ExitEvaluationStockRow {
   return {
     stockCode: str(raw?.stock_code ?? raw?.stockCode),
@@ -955,6 +993,7 @@ function mapExitEvalStock(raw: any): ExitEvaluationStockRow {
     explanation: mapPositionExplanation(raw?.explanation),
     healthScore: mapHoldingHealthScore(raw?.health_score ?? raw?.healthScore),
     tSuitability: mapHoldingTSuitability(raw?.t_suitability ?? raw?.tSuitability),
+    observation: mapExitObservation(raw?.observation),
   }
 }
 
