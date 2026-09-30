@@ -25,12 +25,26 @@ const (
 	observationRSIPeriod   = 14
 	observationRSIMin      = 30.0
 	observationHistoryBars = 80
+
+	// 圆弧底近似。参数写在说明里，比较全部用这些常量，结果只取决于日K。
+	roundedBottomMinBars      = 60
+	roundedBottomArcBars      = 60
+	roundedBottomDrawdownMin  = 0.12
+	roundedBottomPeakGap      = 8
+	roundedBottomContractBars = 10
+	roundedBottomEarlierBars  = 20
+	roundedBottomMaFlatBars   = 5
+	roundedBottomMaFlatPct    = 0.015
+	roundedBottomVolBars      = 20
+	roundedBottomVolMult      = 1.3
 )
 
-// observationDef 三条内置日 K 观察规则。
+// observationDef 内置日 K 观察规则。
 // 本分支 SignalScan 的 RunSignalScanBatchJS 只计算冰点标签（强/趋/转/突/弹/买），
-// 不识别 ext_ma_pullback / ext_vol_breakout / ext_dd_bounce。规则只放在这里，
-// 由 RunStrategy 的 observation 分支调用，避免再做一套冰点引擎。
+// 不识别这些 strategy_id。规则只放在这里，由 RunStrategy 的 observation 分支调用，
+// 避免再做一套冰点引擎。
+const roundedBottomBlurb = "圆弧底近似（观察）。这是日K上的近似规则，只作观察名单，不是买卖指令，也不证明胜率或科学性。需同时满足：近60个交易日内，高点之后收盘价相对该高点至少回撤12%，且高点到最低收盘至少间隔8个交易日；突破当日之前10日振幅小于更早20日振幅；20日均线在再前5日的涨跌幅度不超过1.5%后转而上行，且收盘站上该均线；收盘突破近10日高点，成交量不低于此前20日均量的1.3倍。ST、有效日K少于60根、价格无效或成交量缺失时跳过。默认不启用定时，不进入模拟交易计划。"
+
 type observationDef struct {
 	ID    string
 	Name  string
@@ -52,6 +66,11 @@ var observationCatalog = []observationDef{
 		ID:    "ext_dd_bounce",
 		Name:  "受控回撤反弹",
 		Blurb: "自近20日高点回撤约8%–18%后出现阳线反弹；不是60日新低，且RSI不低于30（避开冰点式新低/超卖）。只作观察名单，不是买卖指令。K线或价格不足时跳过。",
+	},
+	{
+		ID:    "ext_rounded_bottom_v1",
+		Name:  "圆弧底近似（观察）",
+		Blurb: roundedBottomBlurb,
 	},
 }
 
@@ -205,7 +224,7 @@ func (a *StockStrategyApi) updateObservationColumns(s *models.StockStrategy) err
 	}).Error
 }
 
-// EnsureObservationStrategies 补齐三条内置观察策略。已存在的行不改开关，避免把用户打开的定时或 feedsTradePlan 写回去。
+// EnsureObservationStrategies 补齐内置观察策略。已存在的行不改开关，避免把用户打开的定时或 feedsTradePlan 写回去。
 func (a *StockStrategyApi) EnsureObservationStrategies() error {
 	if db.Dao == nil {
 		return fmt.Errorf("数据库未初始化")
@@ -441,9 +460,134 @@ func evalObservation(strategyID string, bars []observationBar) bool {
 		return evalVolBreakout(bars)
 	case "ext_dd_bounce":
 		return evalDdBounce(bars)
+	case "ext_rounded_bottom_v1":
+		return evalRoundedBottom(bars)
 	default:
 		return false
 	}
+}
+
+// evalRoundedBottom 用日K近似圆弧底：中期回撤、振幅收窄、均线走平后转上并收回，再加放量突破。
+// 任一窗口的价格或成交量无效、或K线不够，直接返回 false。
+func evalRoundedBottom(bars []observationBar) bool {
+	n := len(bars)
+	if n < roundedBottomMinBars {
+		return false
+	}
+	arcStart := n - roundedBottomArcBars
+	contractEnd := n - 2
+	contractStart := contractEnd - roundedBottomContractBars + 1
+	earlierEnd := contractStart - 1
+	earlierStart := earlierEnd - roundedBottomEarlierBars + 1
+	if arcStart < 0 || earlierStart < 0 || contractStart < 0 {
+		return false
+	}
+
+	peak := 0.0
+	peakIdx := -1
+	for i := arcStart; i <= earlierEnd; i++ {
+		if !validObservationPrice(bars[i]) {
+			return false
+		}
+		if bars[i].High > peak {
+			peak = bars[i].High
+			peakIdx = i
+		}
+	}
+	if peakIdx < 0 || peak <= 0 || peakIdx >= earlierEnd {
+		return false
+	}
+	minClose := 0.0
+	minCloseIdx := -1
+	for i := peakIdx + 1; i <= earlierEnd; i++ {
+		if minCloseIdx < 0 || bars[i].Close < minClose {
+			minClose = bars[i].Close
+			minCloseIdx = i
+		}
+	}
+	// 回撤和间隔都看收盘价，避免一根长下影线就算圆弧底。
+	if minCloseIdx < 0 || minClose <= 0 || minCloseIdx-peakIdx < roundedBottomPeakGap {
+		return false
+	}
+	if (peak-minClose)/peak < roundedBottomDrawdownMin {
+		return false
+	}
+
+	recentRange, ok := highLowRange(bars, contractStart, contractEnd)
+	if !ok {
+		return false
+	}
+	earlierRange, ok := highLowRange(bars, earlierStart, earlierEnd)
+	if !ok || earlierRange <= 0 || recentRange >= earlierRange {
+		return false
+	}
+
+	maNow := smaClose(bars, n-1, observationMaPeriod)
+	maPrev := smaClose(bars, n-2, observationMaPeriod)
+	maRef := smaClose(bars, n-1-roundedBottomMaFlatBars, observationMaPeriod)
+	if maNow <= 0 || maPrev <= 0 || maRef <= 0 {
+		return false
+	}
+	flatMove := (maPrev - maRef) / maRef
+	if flatMove < 0 {
+		flatMove = -flatMove
+	}
+	if flatMove > roundedBottomMaFlatPct || maNow <= maPrev || bars[n-1].Close <= maNow {
+		return false
+	}
+	if !validObservationPrice(bars[n-1]) {
+		return false
+	}
+
+	priorHigh := 0.0
+	for i := contractStart; i <= contractEnd; i++ {
+		if bars[i].High > priorHigh {
+			priorHigh = bars[i].High
+		}
+	}
+	if priorHigh <= 0 || bars[n-1].Close <= priorHigh || bars[n-1].Volume <= 0 {
+		return false
+	}
+	volStart := n - 1 - roundedBottomVolBars
+	if volStart < 0 {
+		return false
+	}
+	volSum := 0.0
+	for i := volStart; i <= n-2; i++ {
+		if bars[i].Volume <= 0 {
+			return false
+		}
+		volSum += bars[i].Volume
+	}
+	avg := volSum / float64(roundedBottomVolBars)
+	return avg > 0 && bars[n-1].Volume >= avg*roundedBottomVolMult
+}
+
+func validObservationPrice(bar observationBar) bool {
+	return bar.Close > 0 && bar.High > 0 && bar.Low > 0 && bar.High >= bar.Low
+}
+
+func highLowRange(bars []observationBar, start, end int) (float64, bool) {
+	if start < 0 || end >= len(bars) || start > end {
+		return 0, false
+	}
+	hi := bars[start].High
+	lo := bars[start].Low
+	for i := start; i <= end; i++ {
+		if !validObservationPrice(bars[i]) {
+			return 0, false
+		}
+		if bars[i].High > hi {
+			hi = bars[i].High
+		}
+		if bars[i].Low < lo {
+			lo = bars[i].Low
+		}
+	}
+	if hi <= 0 || lo <= 0 || hi < lo {
+		return 0, false
+	}
+	return hi - lo, true
 }
 
 func evalMaPullback(bars []observationBar) bool {
