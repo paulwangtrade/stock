@@ -23,6 +23,7 @@ import {
 } from '../utils/multiStrategyCompare'
 import { resolveStockIdentity } from '../utils/signalBacktestIdentity'
 import { STRATEGY_ROLE_FOOTER, resolveStrategyRole } from '../utils/multiStrategyRole'
+import { SURGE_OBSERVE_COPY, SURGE_OBSERVE_LABEL, decorateCompareRows } from '../utils/surgeLimitObserve'
 import { getSignalOptions, loadSignalSettingsFromBackend, signalSettingsState } from '../utils/signalSettingsStore'
 import { eastMoneyCodeVariants } from '../utils/stockCode'
 import { resolveSignalLastBarIndex } from '../utils/tradingSession'
@@ -93,9 +94,17 @@ const columns = [
   {
     title: '结论',
     key: 'verdict',
-    width: 110,
+    width: 220,
     render(row) {
-      return row.verdict
+      if (!row.surgeObserve?.label) return row.verdict
+      return h('span', { class: 'verdict-cell' }, [
+        h('span', row.verdict),
+        h(
+          NTag,
+          { size: 'small', bordered: false, type: 'warning' },
+          { default: () => row.surgeObserve.label || SURGE_OBSERVE_LABEL },
+        ),
+      ])
     },
   },
   {
@@ -182,6 +191,19 @@ function selectedEngines() {
 
 let compareSeq = 0
 
+function finishCompareRows(rawRows, { closes, code, name }) {
+  return decorateCompareRows(rawRows, {
+    closes,
+    code,
+    name,
+    roleOf: (strategyId) => roleForStrategy(strategyId).id,
+  })
+}
+
+function compareRowClass(row) {
+  return row?.surgeObserve?.demote ? 'surge-demoted' : ''
+}
+
 async function runCompare(identity) {
   const seq = ++compareSeq
   const engines = selectedEngines()
@@ -195,12 +217,15 @@ async function runCompare(identity) {
   try {
     if (!isScannableWatchlistCode(identity.code)) {
       if (seq !== compareSeq) return
-      rows.value = evaluateObservationCompare({
-        bars: null,
-        engines,
-        activeSignalOptions: getSignalOptions(),
-      }).map((row) =>
-        row.verdict === '数据不足' ? { ...row, reason: '仅支持沪深京日 K 对照' } : row,
+      rows.value = finishCompareRows(
+        evaluateObservationCompare({
+          bars: null,
+          engines,
+          activeSignalOptions: getSignalOptions(),
+        }).map((row) =>
+          row.verdict === '数据不足' ? { ...row, reason: '仅支持沪深京日 K 对照' } : row,
+        ),
+        { closes: [], code: identity.code, name: identity.name },
       )
       return
     }
@@ -214,11 +239,14 @@ async function runCompare(identity) {
       const lastIdx = resolveSignalLastBarIndex(bars.dayKeys)
       bars = sliceBarsToIndex({ ...bars, indexMa20ByDay }, lastIdx)
     }
-    rows.value = evaluateObservationCompare({
-      bars,
-      engines,
-      activeSignalOptions: getSignalOptions(),
-    })
+    rows.value = finishCompareRows(
+      evaluateObservationCompare({
+        bars,
+        engines,
+        activeSignalOptions: getSignalOptions(),
+      }),
+      { closes: bars?.closes || [], code: identity.code, name: identity.name },
+    )
   } catch (error) {
     if (seq !== compareSeq) return
     rows.value = []
@@ -372,11 +400,13 @@ function onPick(value) {
       :bordered="false"
       size="small"
       :pagination="false"
+      :row-class-name="compareRowClass"
     />
 
     <div class="footer">
       <div>{{ COMPARE_FOOTER_TEXT }}</div>
       <div>{{ STRATEGY_ROLE_FOOTER }}</div>
+      <div>{{ SURGE_OBSERVE_COPY }}</div>
     </div>
   </div>
 </template>
@@ -426,6 +456,15 @@ function onPick(value) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+.verdict-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+:deep(.surge-demoted td) {
+  opacity: 0.72;
 }
 .subject {
   font-size: 13px;
