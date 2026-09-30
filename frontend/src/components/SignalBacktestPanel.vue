@@ -21,8 +21,11 @@ import {
   formatBacktestMoney,
 } from '../utils/signalBacktestCharts'
 import {
+  acceptStockSuggestion,
   identityAllowsRun,
+  queryMatchesResolvedStock,
   resolveStockIdentity,
+  stockSearchKey,
   toStockSuggestions,
 } from '../utils/signalBacktestIdentity'
 import { resolveMarketMode } from '../utils/tradingLevelRules'
@@ -67,13 +70,30 @@ function asList(raw) {
   return []
 }
 
+function commitAccepted(accepted) {
+  if (!accepted?.klineCode) return
+  window.clearTimeout(lookupTimer)
+  lookupSeq += 1
+  const shown = accepted.label || accepted.klineCode
+  if (queryKey(stockInput.value) !== queryKey(shown)) skipNextLookup = true
+  stockInput.value = shown
+  identity.value = { ...accepted, message: '', query: queryKey(shown) }
+  suggestions.value = []
+}
+
 async function lookup(raw) {
   const seq = ++lookupSeq
   const query = String(raw || '').trim()
+  if (queryMatchesResolvedStock(identity.value, query)) {
+    if (seq !== lookupSeq) return null
+    const kept = { ...identity.value, message: '', query: queryKey(query) }
+    identity.value = kept
+    return kept
+  }
   let basics = []
   if (query) {
     try {
-      basics = asList(await GetStockList(query))
+      basics = asList(await GetStockList(stockSearchKey(query)))
     } catch {
       basics = []
     }
@@ -97,14 +117,8 @@ async function lookup(raw) {
 }
 
 function pickMatchFromValue(value) {
-  const code = typeof value === 'object' && value
-    ? String(value.value || value.label || '')
-    : String(value || '')
-  const row = (identity.value?.matches || []).find((item) => {
-    const itemCode = item.symbol || item.klineCode
-    return itemCode === code || item.label === code
-  })
-  if (row) pickMatch(row)
+  const accepted = acceptStockSuggestion(identity.value, value)
+  if (accepted) commitAccepted(accepted)
 }
 
 function scheduleLookup(value) {
@@ -115,23 +129,8 @@ function scheduleLookup(value) {
 }
 
 function pickMatch(row) {
-  const code = row?.symbol || row?.klineCode || ''
-  if (!code) return
-  if (stockInput.value !== code) skipNextLookup = true
-  stockInput.value = code
-  identity.value = {
-    status: 'unique',
-    name: row.name || '',
-    symbol: row.symbol || code,
-    tsCode: row.tsCode || '',
-    klineCode: row.klineCode || code,
-    label: row.label || code,
-    matches: [row],
-    matchCount: 1,
-    message: '',
-    query: queryKey(code),
-  }
-  suggestions.value = toStockSuggestions(identity.value)
+  const accepted = acceptStockSuggestion({ matches: [row] }, row?.symbol || row?.klineCode || row?.label)
+  if (accepted) commitAccepted(accepted)
 }
 
 function disposeCharts() {
@@ -471,7 +470,7 @@ onBeforeUnmount(() => {
 }
 .form-grid {
   display: grid;
-  grid-template-columns: minmax(200px, 1.6fr) minmax(120px, 0.7fr) minmax(150px, 0.9fr) auto auto;
+  grid-template-columns: 200px 132px 168px auto auto;
   gap: 4px 12px;
   align-items: end;
 }
@@ -490,7 +489,7 @@ onBeforeUnmount(() => {
   gap: 6px;
 }
 .stock-input {
-  width: 100%;
+  width: 200px;
 }
 .field-num {
   width: 100%;
@@ -577,6 +576,10 @@ onBeforeUnmount(() => {
   }
   .span-action :deep(.n-button) {
     width: 100%;
+  }
+  .stock-input {
+    width: 100%;
+    max-width: 240px;
   }
   .charts {
     grid-template-columns: 1fr;

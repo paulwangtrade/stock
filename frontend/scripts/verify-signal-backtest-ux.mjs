@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict'
 import { runDailySignalBacktest } from '../src/utils/backtestEngine.js'
 import {
+  acceptStockSuggestion,
   identityAllowsRun,
+  queryMatchesResolvedStock,
   resolveStockIdentity,
+  stockSearchKey,
   toStockSuggestions,
 } from '../src/utils/signalBacktestIdentity.js'
 import {
@@ -85,6 +88,46 @@ const basics = [
   const hit = resolveStockIdentity('', basics)
   assert.equal(hit.status, 'empty')
   assert.equal(identityAllowsRun(hit), false)
+}
+
+const shengbang = [{ name: '盛帮股份', ts_code: '301233.SZ', symbol: '301233' }]
+
+{
+  const typed = resolveStockIdentity('盛帮', shengbang)
+  assert.equal(typed.status, 'unique')
+  const suggestion = toStockSuggestions(typed)[0]
+  assert.equal(suggestion.label, '盛帮股份 301233')
+  assert.equal(suggestion.value, '301233')
+  const accepted = acceptStockSuggestion(typed, suggestion.value)
+  assert.equal(accepted.status, 'unique')
+  assert.equal(accepted.klineCode, '301233')
+  assert.equal(accepted.name, '盛帮股份')
+  assert.equal(accepted.message, '')
+  assert.equal(queryMatchesResolvedStock(accepted, suggestion.label), true)
+  assert.equal(queryMatchesResolvedStock(accepted, '盛帮股份301233'), true)
+  assert.equal(identityAllowsRun(accepted), true)
+}
+
+{
+  const spaced = resolveStockIdentity('盛帮股份 301233', shengbang)
+  assert.equal(spaced.status, 'unique')
+  assert.equal(spaced.klineCode, '301233')
+  assert.equal(spaced.message, '')
+  const tight = resolveStockIdentity('盛帮股份301233', shengbang)
+  assert.equal(tight.status, 'unique')
+  assert.equal(tight.symbol, '301233')
+  assert.equal(stockSearchKey('盛帮股份 301233'), '301233')
+  assert.equal(stockSearchKey('盛帮股份'), '盛帮股份')
+}
+
+{
+  const miss = resolveStockIdentity('假公司301233', shengbang)
+  assert.equal(miss.status, 'unknown')
+  assert.match(miss.message, /没有找到/)
+  assert.equal(identityAllowsRun(miss), false)
+  const absent = resolveStockIdentity('没有这家999999', [])
+  assert.equal(absent.status, 'unknown')
+  assert.equal(identityAllowsRun(absent), false)
 }
 
 {

@@ -76,6 +76,32 @@ function isFuzzyHit(query, row) {
   return false
 }
 
+/**
+ * 「盛帮股份 301233」这类展示串。纯代码、纯名称返回 null。
+ * @returns {{ name: string, code: string } | null}
+ */
+export function displayNameCode(raw) {
+  const query = compact(raw)
+  if (!query || looksLikeStockCode(query)) return null
+  const matched = query.match(/^(.*?)(\d{6})(.*)$/)
+  if (!matched) return null
+  const name = `${matched[1]}${matched[3]}`
+  if (!name) return null
+  return { name, code: matched[2] }
+}
+
+function displayRowMatches(query, row) {
+  const parsed = displayNameCode(query)
+  if (!parsed || !isExactCode(parsed.code, row)) return false
+  return compactKey(row.label) === compactKey(query) || isExactName(parsed.name, row)
+}
+
+/** 带名称的展示串用其中的代码去查本地库，避免整句被当成未知名称。 */
+export function stockSearchKey(raw) {
+  const query = String(raw || '').trim()
+  return displayNameCode(query)?.code || query
+}
+
 function pack(status, hit, matches, extra = {}) {
   return {
     status,
@@ -136,6 +162,15 @@ export function resolveStockIdentity(raw, basics) {
     })
   }
 
+  const parsed = displayNameCode(query)
+  if (parsed) {
+    const picked = rows.filter((row) => displayRowMatches(query, row))
+    if (picked.length === 1) return pack('unique', picked[0], picked)
+    return pack('unknown', null, [], {
+      message: `没有找到「${query}」，请输入 6 位代码，或换一个更完整的名称`,
+    })
+  }
+
   const fuzzy = rows.filter((row) => isFuzzyHit(query, row))
   if (fuzzy.length === 1 && compact(query).length >= 2) return pack('unique', fuzzy[0], fuzzy)
   if (fuzzy.length >= 1) {
@@ -150,6 +185,44 @@ export function resolveStockIdentity(raw, basics) {
   return pack('unknown', null, [], {
     message: `没有找到「${query}」，请输入 6 位代码，或换一个更完整的名称`,
   })
+}
+
+function acceptedKeysFor(row) {
+  const code = row?.symbol || row?.klineCode || ''
+  return [compactKey(code), compactKey(row?.label), compactKey(`${row?.name || ''}${code}`)].filter(Boolean)
+}
+
+/**
+ * 点选自动完成建议。输入框随后会变成 option.label（名称 + 代码），
+ * 这里直接收下该条的代码，而不是把展示串再当成一次自由搜索。
+ */
+export function acceptStockSuggestion(resolved, selected) {
+  const picked = compact(typeof selected === 'object' && selected
+    ? (selected.value || selected.label || '')
+    : selected)
+  if (!picked) return null
+  const row = (resolved?.matches || []).find((item) => {
+    const code = item.symbol || item.klineCode
+    return code === picked || compact(item.label) === picked
+  })
+  const code = row?.symbol || row?.klineCode || ''
+  if (!row || !code) return null
+  return {
+    ...pack('unique', row, [row]),
+    acceptedKeys: acceptedKeysFor(row),
+  }
+}
+
+/** 当前输入仍是已解析代码，或仍是该条建议的展示串。 */
+export function queryMatchesResolvedStock(resolved, raw) {
+  const key = compactKey(raw)
+  if (!key || !resolved) return false
+  if (Array.isArray(resolved.acceptedKeys) && resolved.acceptedKeys.includes(key)) return true
+  const code = compactKey(resolved.symbol || resolved.klineCode)
+  const label = compactKey(resolved.label)
+  if (resolved.status === 'unique' && (key === code || (label && key === label))) return true
+  if (resolved.status === 'code_only' && code && key === code) return true
+  return false
 }
 
 export function identityAllowsRun(resolved) {
