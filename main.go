@@ -294,6 +294,7 @@ func main() {
 				api.StrategyIntentsAssetMiddleware,  // Phase13-B1-A: Strategy Intent read-only
 				api.StrategySchemasAssetMiddleware, // Phase13-B3-A: Strategy Schema read-only
 				api.ResearchCandidatesAssetMiddleware, // Phase13-A5 MVP-1: Research Candidate Pool
+				api.DecisionTimelineAssetMiddleware,  // Decision timeline: read-only evidence trail
 				api.CandidatePoolAssetMiddleware,
 				api.RealOrdersAssetMiddleware,
 				api.TradePlansAssetMiddleware,

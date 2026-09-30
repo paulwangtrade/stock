@@ -118,6 +118,8 @@ const props = defineProps({
   signalReplayMode: { type: String, default: '' },
   /** 是否将主图截断至 signalAsOfDay；历史快照为 false，保留后续 K 线 */
   clipChartToSignalAsOf: { type: Boolean, default: false },
+  /** 决策时间轴点进某日：切到日K并把视口移到该交易日（YYYY-MM-DD） */
+  focusTradeDate: { type: String, default: '' },
 })
 
 const emit = defineEmits([
@@ -819,6 +821,31 @@ function markerText(kind) {
   return kind === RUSH_REDUCE_TAG ? '早减' : kind
 }
 
+let pendingFocusDay = ''
+
+function rememberFocusTradeDate(day) {
+  const d = normalizeDayKey(day)
+  pendingFocusDay = /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : ''
+}
+
+function applyFocusTradeDate() {
+  const day = pendingFocusDay
+  if (!day || !chart || activeKlt.value !== '101') return
+  const { times, dayKeys } = extractOHLCV(getChartDisplayRows())
+  const idx = dayKeys.findIndex((k) => k === day)
+  if (idx >= 0) focusChartOnBar(times, idx)
+}
+
+function requestFocusTradeDate(day) {
+  rememberFocusTradeDate(day)
+  if (!pendingFocusDay) return
+  if (activeKlt.value !== '101') {
+    activeKlt.value = '101'
+    return
+  }
+  applyFocusTradeDate()
+}
+
 function focusChartOnBar(times, barIndex) {
   if (!chart || barIndex == null || barIndex < 0 || !times.length) return
   const last = times.length - 1
@@ -1175,6 +1202,7 @@ async function syncStrategySignals() {
   }
 
   if (syncGen !== strategySignalSyncGen) return
+  if (pendingFocusDay) applyFocusTradeDate()
 
   if (ma20SupportPriceLine && candleSeries) {
     try {
@@ -2414,6 +2442,7 @@ async function loadData() {
   }
   loading.value = true
   errorText.value = ''
+  rememberFocusTradeDate(props.focusTradeDate)
   mergedRawRows = []
   syncDefaultLatestPanelRow()
   hasMoreOlder.value = true
@@ -2462,6 +2491,7 @@ async function loadData() {
     loading.value = false
     if (mergedRawRows.length) {
       refreshSignalReplayAlignment()
+      applyFocusTradeDate()
       nextTick(() => {
         if (showIceSignals.value && mergedRawRows.length) {
           syncStrategySignalsFromRows()
@@ -2658,6 +2688,13 @@ watch(
   () => props.darkTheme,
   (d) => {
     chart?.applyOptions(chartThemeOptions(d))
+  },
+)
+
+watch(
+  () => props.focusTradeDate,
+  (day) => {
+    if (day) requestFocusTradeDate(day)
   },
 )
 

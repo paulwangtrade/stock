@@ -5,10 +5,11 @@
  * - Other chart options (stockName, strategySignals, costPrice, …) pass through attrs.
  * - Do not use chart-code / stock_code as Modal chart identity.
  */
-import { computed, ref, useAttrs, watch } from 'vue'
+import { computed, nextTick, ref, useAttrs, watch } from 'vue'
 import { ExpandOutline, ContractOutline } from '@vicons/ionicons5'
-import { NAlert, NButton, NIcon, NModal } from 'naive-ui'
+import { NAlert, NButton, NIcon, NModal, NTabPane, NTabs } from 'naive-ui'
 import StockLightweightKlineChart from './StockLightweightKlineChart.vue'
+import DecisionTimeline from './DecisionTimeline.vue'
 
 defineOptions({ inheritAttrs: false })
 
@@ -34,6 +35,8 @@ const emit = defineEmits(['update:show', 'after-leave'])
 
 const attrs = useAttrs()
 const maximized = ref(false)
+const pane = ref('kline')
+const focusTradeDate = ref('')
 
 const resolvedCode = computed(() => String(props.code || '').trim())
 const hasCode = computed(() => !!resolvedCode.value)
@@ -46,9 +49,31 @@ const visible = computed({
 watch(
   () => props.show,
   (v) => {
-    if (!v) maximized.value = false
+    if (!v) {
+      maximized.value = false
+      pane.value = 'kline'
+      focusTradeDate.value = ''
+    }
   },
 )
+
+watch(
+  () => props.code,
+  () => {
+    pane.value = 'kline'
+    focusTradeDate.value = ''
+  },
+)
+
+function openKlineDate(day) {
+  const date = String(day || '').trim()
+  if (!date) return
+  focusTradeDate.value = ''
+  pane.value = 'kline'
+  nextTick(() => {
+    focusTradeDate.value = date
+  })
+}
 
 const modalStyle = computed(() => {
   if (maximized.value) {
@@ -138,13 +163,30 @@ function onAfterLeave() {
       或其它别名作为图表标识。
     </n-alert>
 
-    <stock-lightweight-kline-chart
+    <n-tabs
       v-else-if="embedChart && show && hasCode"
-      v-bind="attrs"
-      :key="chartMountKey"
-      :code="resolvedCode"
-      :chart-height="effectiveChartHeight"
-    />
+      v-model:value="pane"
+      type="line"
+      size="small"
+      class="stock-kline-modal__tabs"
+    >
+      <n-tab-pane name="kline" tab="K线" display-directive="show">
+        <stock-lightweight-kline-chart
+          v-bind="attrs"
+          :key="chartMountKey"
+          :code="resolvedCode"
+          :chart-height="effectiveChartHeight"
+          :focus-trade-date="focusTradeDate"
+        />
+      </n-tab-pane>
+      <n-tab-pane name="timeline" tab="决策时间轴" display-directive="if">
+        <decision-timeline
+          :code="resolvedCode"
+          :active="pane === 'timeline'"
+          @open-kline="openKlineDate"
+        />
+      </n-tab-pane>
+    </n-tabs>
 
     <slot />
 
