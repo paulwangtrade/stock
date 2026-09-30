@@ -32,6 +32,15 @@ import {
   resetTechnicalIndicators,
   STRATEGY_PRESETS,
 } from '../utils/technicalIndicators'
+import {
+  FEEDS_TRADE_PLAN_CONFIRM,
+  FEEDS_TRADE_PLAN_HINT,
+  UNHOOKED_TRADE_UNIVERSE_MESSAGE,
+  buildStrategyGatePayload,
+  needsFeedsTradePlanConfirm,
+  presetAdmissionLabel,
+  tradeUniverseBadge,
+} from '../utils/tradeUniverseGate'
 import { getSignalTagColor, formatSignalTagLabel, buildSignalFilterOptions, passesSignalTagFilter } from '../utils/signalBuyGuide'
 import {
   describeSignalPattern,
@@ -44,6 +53,10 @@ const message = useMessage()
 const dialog = useDialog()
 const loading = ref(false)
 const strategyList = ref([])
+const tradeUniverseHooked = ref(false)
+const tradeUniverseMessage = ref(UNHOOKED_TRADE_UNIVERSE_MESSAGE)
+/** 已确认过「可进模拟计划」；新建默认未确认 */
+const feedsTradePlanArmed = ref(false)
 const showEdit = ref(false)
 const editingId = ref(0)
 const showResult = ref(false)
@@ -166,6 +179,7 @@ const form = reactive({
   nlIndustries: [],
   cronExpr: '',
   enable: false,
+  feedsTradePlan: false,
   pageSize: 50,
   description: '',
 })
@@ -230,13 +244,24 @@ const columns = [
     },
   },
   {
-    title: '定时',
+    title: '定时扫描',
     key: 'cronExpr',
-    width: 100,
+    width: 110,
     render(row) {
       return row.enable && row.cronExpr
         ? h(NTag, { size: 'small', type: 'success' }, { default: () => '已启用' })
         : h(NText, { depth: 3 }, { default: () => '未启用' })
+    },
+  },
+  {
+    title: '交易宇宙',
+    key: 'feedsTradePlan',
+    width: 130,
+    render(row) {
+      const label = tradeUniverseBadge(!!row.feedsTradePlan)
+      return row.feedsTradePlan
+        ? h(NTag, { size: 'small', type: 'warning' }, { default: () => label })
+        : h(NTag, { size: 'small' }, { default: () => label })
     },
   },
   {
@@ -280,6 +305,8 @@ function resetForm() {
   form.nlIndustries = []
   form.cronExpr = ''
   form.enable = false
+  form.feedsTradePlan = false
+  feedsTradePlanArmed.value = false
   form.pageSize = 50
   form.description = ''
   resetTechnical()
@@ -302,6 +329,9 @@ function applyStrategyPreset(presetId) {
   form.pageSize = p.pageSize || 50
   form.cronExpr = p.cronExpr || ''
   form.enable = !!p.enable && !!p.cronExpr
+  form.feedsTradePlan = false
+  feedsTradePlanArmed.value = false
+  message.info(presetAdmissionLabel(p))
   if (p.applyTechnical) {
     p.applyTechnical(technical)
     technicalTouched.value = true
@@ -310,7 +340,7 @@ function applyStrategyPreset(presetId) {
 }
 
 const presetOptions = STRATEGY_PRESETS.map((p) => ({
-  label: p.name,
+  label: `${p.name}（${presetAdmissionLabel(p)}）`,
   key: p.id,
 }))
 
@@ -324,6 +354,8 @@ function openEdit(row) {
   form.nlIndustries = row.queryType === 'eastmoney_nl' ? parseNlIndustriesFromStorage(row.industry) : []
   form.cronExpr = row.cronExpr || ''
   form.enable = row.enable
+  form.feedsTradePlan = !!row.feedsTradePlan
+  feedsTradePlanArmed.value = !!row.feedsTradePlan
   form.pageSize = row.pageSize || 50
   form.description = row.description || ''
   resetTechnical()
@@ -354,7 +386,11 @@ function buildPayload() {
           ? JSON.stringify(form.nlIndustries)
           : '',
     cronExpr: form.cronExpr,
-    enable: form.enable && !!form.cronExpr,
+    ...buildStrategyGatePayload({
+      enable: form.enable,
+      cronExpr: form.cronExpr,
+      feedsTradePlan: form.feedsTradePlan,
+    }),
     pageSize: form.pageSize,
     description: form.description,
   }
@@ -372,6 +408,19 @@ async function saveStrategy() {
   }
   if (form.queryType === 'technical' && !hasActiveTechnicalIndicator(technical)) {
     message.warning('请至少勾选一项技术条件')
+    return
+  }
+  const gate = buildStrategyGatePayload({
+    enable: form.enable,
+    cronExpr: form.cronExpr,
+    feedsTradePlan: form.feedsTradePlan,
+  })
+  if (needsFeedsTradePlanConfirm({
+    isNew: !editingId.value,
+    previousFeedsTradePlan: false,
+    nextFeedsTradePlan: gate.feedsTradePlan,
+  }) && !feedsTradePlanArmed.value) {
+    message.warning('进入模拟计划需要先确认「可进模拟计划」')
     return
   }
   const s = buildPayload()
@@ -407,6 +456,8 @@ async function loadList() {
       }),
     )
     strategyList.value = rows
+    tradeUniverseHooked.value = !!res?.tradeUniverseHooked
+    tradeUniverseMessage.value = res?.tradeUniverseMessage || UNHOOKED_TRADE_UNIVERSE_MESSAGE
     pagination.itemCount = res?.total || 0
     pagination.pageCount = Math.max(1, Math.ceil(pagination.itemCount / pagination.pageSize))
   } catch (e) {
@@ -1108,6 +1159,28 @@ function onSchedulePreset(v) {
   form.enable = !!v
 }
 
+function onFeedsTradePlanChecked(checked) {
+  if (!checked) {
+    form.feedsTradePlan = false
+    feedsTradePlanArmed.value = false
+    return
+  }
+  dialog.warning({
+    title: '进入模拟交易计划',
+    content: FEEDS_TRADE_PLAN_CONFIRM,
+    positiveText: '确认，仅模拟盘',
+    negativeText: '取消',
+    onPositiveClick: () => {
+      form.feedsTradePlan = true
+      feedsTradePlanArmed.value = true
+    },
+    onNegativeClick: () => {
+      form.feedsTradePlan = false
+      feedsTradePlanArmed.value = false
+    },
+  })
+}
+
 function openSaveFromExternal(payload) {
   resetForm()
   if (payload.queryType === 'technical') {
@@ -1152,7 +1225,7 @@ onBeforeUnmount(() => {
   <div class="strategy-page">
     <div class="strategy-page-header">
     <n-space justify="space-between" align="center" wrap>
-      <n-text depth="2">保存自然语言或技术面条件，支持定时执行、冰点/买点扫描与历史记录。</n-text>
+      <n-text depth="2">定时扫描与进入模拟交易计划是两个开关。观察策略可以扫描，但默认不会进入模拟计划。</n-text>
       <n-space wrap>
         <n-dropdown
           trigger="click"
@@ -1167,6 +1240,14 @@ onBeforeUnmount(() => {
         </n-button>
       </n-space>
     </n-space>
+    <n-alert
+      :type="tradeUniverseHooked ? 'info' : 'warning'"
+      :bordered="false"
+      style="margin-top: 8px"
+      :title="tradeUniverseHooked ? '模拟交易宇宙已挂接' : '交易宇宙未挂接'"
+    >
+      {{ tradeUniverseMessage }}。{{ FEEDS_TRADE_PLAN_HINT }}
+    </n-alert>
     </div>
 
     <div class="strategy-page-table">
@@ -1178,7 +1259,7 @@ onBeforeUnmount(() => {
       remote
       size="small"
       flex-height
-      :scroll-x="900"
+      :scroll-x="1080"
       style="height: calc(100vh - 280px); min-height: 360px"
       @update:page="(p) => { pagination.page = p; loadList() }"
     />
@@ -1271,7 +1352,15 @@ onBeforeUnmount(() => {
               @update:value="onSchedulePreset"
             />
             <n-input v-model:value="form.cronExpr" placeholder="Cron 如 0 35 9 * * 1-5" clearable />
-            <n-checkbox v-model:checked="form.enable">启用定时（需填写 Cron）</n-checkbox>
+            <n-checkbox v-model:checked="form.enable">启用定时扫描（需填写 Cron，不进入交易计划）</n-checkbox>
+          </n-space>
+        </n-form-item>
+        <n-form-item label="模拟计划">
+          <n-space vertical :size="4">
+            <n-checkbox :checked="form.feedsTradePlan" @update:checked="onFeedsTradePlanChecked">
+              可进模拟计划
+            </n-checkbox>
+            <n-text depth="3" style="font-size: 12px">{{ FEEDS_TRADE_PLAN_HINT }}</n-text>
           </n-space>
         </n-form-item>
         <n-form-item label="备注">

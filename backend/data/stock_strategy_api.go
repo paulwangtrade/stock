@@ -13,12 +13,18 @@ import (
 	"github.com/duke-git/lancet/v2/convertor"
 )
 
+// TradeUniverseUnhookedMessage is the fail-closed notice when no strategy
+// has feedsTradePlan=true. Observation scans must not feed TradePlan.
+const TradeUniverseUnhookedMessage = "交易宇宙未挂接任何策略，需人工打开 feedsTradePlan"
+
 type StockStrategyApi struct{}
 
 func NewStockStrategyApi() *StockStrategyApi {
 	return &StockStrategyApi{}
 }
 
+// Create persists a strategy. Enable only schedules scans.
+// FeedsTradePlan is never inferred from Enable; the zero value is false.
 func (a *StockStrategyApi) Create(s *models.StockStrategy) error {
 	if s.PageSize <= 0 {
 		s.PageSize = 50
@@ -44,7 +50,8 @@ func (a *StockStrategyApi) GetByID(id uint) (*models.StockStrategy, error) {
 	return &s, err
 }
 
-// GetFirstEnabled 返回第一个启用的选股策略（Phase1 宇宙源）。
+// GetFirstEnabled 返回 id 最小且 enable=true 的策略。
+// 只反映定时扫描开关的历史排序，不是 TradePlan 宇宙来源。
 func (a *StockStrategyApi) GetFirstEnabled() (*models.StockStrategy, error) {
 	var s models.StockStrategy
 	err := db.Dao.Where("enable = ?", true).Order("id ASC").First(&s).Error
@@ -52,6 +59,41 @@ func (a *StockStrategyApi) GetFirstEnabled() (*models.StockStrategy, error) {
 		return nil, err
 	}
 	return &s, nil
+}
+
+// GetTradeUniverseStrategy 返回允许进入 Track-B 模拟 TradePlan 的策略。
+// 只认 feeds_trade_plan=true（id 最小的一条）。enable / cron 不参与选择。
+// 多条同时为 true 时不合并打分，仍只取这一条。
+func (a *StockStrategyApi) GetTradeUniverseStrategy() (*models.StockStrategy, error) {
+	var s models.StockStrategy
+	err := db.Dao.Where("feeds_trade_plan = ?", true).Order("id ASC").First(&s).Error
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+// CountFeedsTradePlan 返回 feeds_trade_plan=true 的策略数量。
+func (a *StockStrategyApi) CountFeedsTradePlan() int {
+	if db.Dao == nil {
+		return 0
+	}
+	var n int64
+	_ = db.Dao.Model(&models.StockStrategy{}).Where("feeds_trade_plan = ?", true).Count(&n).Error
+	return int(n)
+}
+
+// TradeUniverseStatus 描述当前模拟交易宇宙挂接情况（空则 fail-closed）。
+func (a *StockStrategyApi) TradeUniverseStatus() (hooked bool, id uint, name, message string) {
+	strat, err := a.GetTradeUniverseStrategy()
+	if err != nil || strat == nil {
+		return false, 0, "", TradeUniverseUnhookedMessage
+	}
+	msg := fmt.Sprintf("模拟交易计划当前挂接策略「%s」（仅模拟盘，非实盘，非自动下单）", strat.Name)
+	if n := a.CountFeedsTradePlan(); n > 1 {
+		msg += "；多条 feedsTradePlan=true 时仅使用 id 最小的一条，不合并打分"
+	}
+	return true, strat.ID, strat.Name, msg
 }
 
 // GetLatestRun 返回策略最近一次运行记录。
@@ -83,7 +125,15 @@ func (a *StockStrategyApi) List(q *models.StockStrategyQuery) *models.StockStrat
 		pageSize = 20
 	}
 	query.Order("id desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&list)
-	return &models.StockStrategyPageResp{Total: int(total), Data: list}
+	hooked, strategyID, strategyName, message := a.TradeUniverseStatus()
+	return &models.StockStrategyPageResp{
+		Total:                     int(total),
+		Data:                      list,
+		TradeUniverseHooked:       hooked,
+		TradeUniverseMessage:      message,
+		TradeUniverseStrategyID:   strategyID,
+		TradeUniverseStrategyName: strategyName,
+	}
 }
 
 func (a *StockStrategyApi) GetAllEnabled() []models.StockStrategy {
@@ -358,10 +408,10 @@ func (a *StockStrategyApi) saveRun(s *models.StockStrategy, view *models.StockSt
 		errMsg = view.Message
 	}
 	_ = db.Dao.Model(&models.StockStrategy{}).Where("id = ?", s.ID).Updates(map[string]any{
-		"last_run_at":     now,
-		"last_run_count":  view.StockCount,
-		"last_run_error":  errMsg,
-		"updated_at":      now,
+		"last_run_at":    now,
+		"last_run_count": view.StockCount,
+		"last_run_error": errMsg,
+		"updated_at":     now,
 	}).Error
 	raw, err := json.Marshal(view)
 	if err != nil {

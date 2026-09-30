@@ -81,10 +81,12 @@ export const STRATEGY_PRESETS = [
     queryType: 'eastmoney_nl',
     queryText: ICE_POINT_NL_QUERY,
     description:
-      '东财筛选 RSI<30 且 60 日新低；运行后自动扫描 K 线「冰/买」标记，勾选「仅显示买点候选」即可选股。',
+      '东财筛选 RSI<30 且 60 日新低；运行后自动扫描 K 线「冰/买」标记，勾选「仅显示买点候选」即可选股。历史库里若它是最早启用定时的策略，迁移会保留其模拟计划资格；从模板新建默认只观察，不因启用定时进入模拟计划。',
     pageSize: 50,
     cronExpr: '0 35 9 * * 1-5',
     enable: true,
+    feedsTradePlan: false,
+    planAdmission: 'historical-observe',
   },
   {
     id: 'ice_watch',
@@ -95,6 +97,8 @@ export const STRATEGY_PRESETS = [
     pageSize: 80,
     cronExpr: '',
     enable: false,
+    feedsTradePlan: false,
+    planAdmission: 'observe',
   },
   {
     id: 'ice_technical',
@@ -104,6 +108,8 @@ export const STRATEGY_PRESETS = [
     pageSize: 50,
     cronExpr: '0 5 15 * * 1-5',
     enable: false,
+    feedsTradePlan: false,
+    planAdmission: 'observe',
     applyTechnical: applyIcePointTechnicalPreset,
   },
 ]

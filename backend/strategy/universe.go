@@ -72,25 +72,29 @@ func isSTName(name string) bool {
 	return strings.HasPrefix(u, "*ST") || strings.HasPrefix(u, "ST") || strings.HasPrefix(u, "S*ST")
 }
 
-// collectUniverse 优先启用 StockStrategy 最新 run，否则自选（经 data API，不直连 DB）。
+// collectUniverse 只用 feedsTradePlan=true 的策略最新 run 作为 TradePlan 宇宙。
+// enable/cron 只调度扫描，不授予宇宙资格。没有挂接策略时不采用观察策略命中（fail-closed），再回退自选。
 func collectUniverse() universeBuildResult {
 	api := data.NewStockStrategyApi()
-	if strat, err := api.GetFirstEnabled(); err == nil && strat != nil {
-		if run, rerr := api.GetLatestRun(strat.ID); rerr == nil && run != nil && run.ResultJSON != "" {
-			items := parseStrategyRunItems(strat, run)
-			if len(items) > 0 {
-				return universeBuildResult{
-					Source:        models.CandidatePoolSourceStrategyRun,
-					SourceRef:     fmt.Sprintf("strategyId=%d;runId=%d", strat.ID, run.ID),
-					Items:         items,
-					Message:       fmt.Sprintf("from strategy %q run=%d count=%d", strat.Name, run.ID, len(items)),
-					StrategyID:    strat.ID,
-					StrategyRunID: run.ID,
-					StrategyName:  strat.Name,
-				}
+	strat, err := api.GetTradeUniverseStrategy()
+	if err != nil || strat == nil {
+		logger.SugaredLogger.Warnf("%s", data.TradeUniverseUnhookedMessage)
+	} else if run, rerr := api.GetLatestRun(strat.ID); rerr == nil && run != nil && run.ResultJSON != "" {
+		items := parseStrategyRunItems(strat, run)
+		if len(items) > 0 {
+			return universeBuildResult{
+				Source:        models.CandidatePoolSourceStrategyRun,
+				SourceRef:     fmt.Sprintf("strategyId=%d;runId=%d", strat.ID, run.ID),
+				Items:         items,
+				Message:       fmt.Sprintf("from strategy %q run=%d count=%d", strat.Name, run.ID, len(items)),
+				StrategyID:    strat.ID,
+				StrategyRunID: run.ID,
+				StrategyName:  strat.Name,
 			}
-			logger.SugaredLogger.Warnf("strategy run %d empty, fallback follow", run.ID)
 		}
+		logger.SugaredLogger.Warnf("feedsTradePlan strategy %d run %d empty, no strategy hits for TradePlan; fallback follow", strat.ID, run.ID)
+	} else if strat != nil {
+		logger.SugaredLogger.Warnf("feedsTradePlan strategy %d has no run yet; no new strategy hits for TradePlan", strat.ID)
 	}
 
 	items := loadFollowCandidates()

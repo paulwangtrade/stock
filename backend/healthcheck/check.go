@@ -15,7 +15,7 @@ import (
 )
 
 // RequiredSchemaVersion is the minimum applied schema_migrations version for Phase16 Beta.
-const RequiredSchemaVersion = 11
+const RequiredSchemaVersion = 12
 
 // Status values for the overall health report.
 const (
@@ -54,20 +54,20 @@ type Result struct {
 
 // Schema reports schema_migrations version state.
 type Schema struct {
-	AppliedVersion  int  `json:"applied_version"`
-	RequiredVersion int  `json:"required_version"`
-	OK              bool `json:"ok"`
+	AppliedVersion  int    `json:"applied_version"`
+	RequiredVersion int    `json:"required_version"`
+	OK              bool   `json:"ok"`
 	Detail          string `json:"detail,omitempty"`
 }
 
 // Table reports table existence and row count.
 type Table struct {
-	Key           string `json:"key"`
-	PhysicalName  string `json:"physical_name"`
-	Exists        bool   `json:"exists"`
-	RowCount      int64  `json:"row_count"`
-	OK            bool   `json:"ok"`
-	Note          string `json:"note,omitempty"`
+	Key          string `json:"key"`
+	PhysicalName string `json:"physical_name"`
+	Exists       bool   `json:"exists"`
+	RowCount     int64  `json:"row_count"`
+	OK           bool   `json:"ok"`
+	Note         string `json:"note,omitempty"`
 }
 
 // Check is a single consistency probe.
