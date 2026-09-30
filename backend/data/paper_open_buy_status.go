@@ -89,7 +89,8 @@ func countEnabledStockStrategies() int {
 		return 0
 	}
 	var n int64
-	_ = db.Dao.Model(&models.StockStrategy{}).Where("enable = ?", true).Count(&n).Error
+	// 观察策略的定时开关不是交易宇宙。只统计非 observation 的已启用策略。
+	_ = db.Dao.Model(&models.StockStrategy{}).Where("enable = ? AND query_type <> ?", true, ObservationQueryType).Count(&n).Error
 	return int(n)
 }
 

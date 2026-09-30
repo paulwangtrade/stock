@@ -73,7 +73,12 @@ func isSTName(name string) bool {
 }
 
 // collectUniverse 优先启用 StockStrategy 最新 run，否则自选（经 data API，不直连 DB）。
+// 观察策略默认不进入该宇宙；仅 feedsTradePlan 显式为 true 时追加其最新名单。
 func collectUniverse() universeBuildResult {
+	return appendObservationFeeds(collectPrimaryUniverse())
+}
+
+func collectPrimaryUniverse() universeBuildResult {
 	api := data.NewStockStrategyApi()
 	if strat, err := api.GetFirstEnabled(); err == nil && strat != nil {
 		if run, rerr := api.GetLatestRun(strat.ID); rerr == nil && run != nil && run.ResultJSON != "" {
@@ -100,6 +105,41 @@ func collectUniverse() universeBuildResult {
 		Items:     items,
 		Message:   fmt.Sprintf("from follow list count=%d", len(items)),
 	}
+}
+
+// appendObservationFeeds 只在观察策略显式打开「纳入模拟交易计划」时追加名单。
+// 定时观察（enable + cron）不会把结果送进交易宇宙。
+func appendObservationFeeds(base universeBuildResult) universeBuildResult {
+	api := data.NewStockStrategyApi()
+	feeds := api.ListObservationFeedingTradePlan()
+	if len(feeds) == 0 {
+		return base
+	}
+	seen := map[string]bool{}
+	for _, it := range base.Items {
+		seen[it.StockCode] = true
+	}
+	added := 0
+	for i := range feeds {
+		strat := feeds[i]
+		run, err := api.GetLatestRun(strat.ID)
+		if err != nil || run == nil || strings.TrimSpace(run.ResultJSON) == "" {
+			continue
+		}
+		for _, it := range parseStrategyRunItems(&strat, run) {
+			if it.StockCode == "" || seen[it.StockCode] {
+				continue
+			}
+			seen[it.StockCode] = true
+			it.Reason = "observation_feed"
+			base.Items = append(base.Items, it)
+			added++
+		}
+	}
+	if added > 0 {
+		base.Message = strings.TrimSpace(base.Message + fmt.Sprintf("; observation feedsTradePlan +%d", added))
+	}
+	return base
 }
 
 func parseStrategyRunItems(strat *models.StockStrategy, run *models.StockStrategyRun) []UniverseCandidate {

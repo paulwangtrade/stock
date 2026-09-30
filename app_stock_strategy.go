@@ -16,6 +16,9 @@ func stockStrategyCronKey(id uint) string {
 
 // InitStockStrategies 为已启用的选股策略注册定时任务
 func (a *App) InitStockStrategies() {
+	if err := data.NewStockStrategyApi().EnsureObservationStrategies(); err != nil {
+		logger.SugaredLogger.Errorf("seed observation strategies: %v", err)
+	}
 	list := data.NewStockStrategyApi().GetAllEnabled()
 	for _, s := range list {
 		strategy := s

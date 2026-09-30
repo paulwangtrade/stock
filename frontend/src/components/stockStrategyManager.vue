@@ -15,7 +15,7 @@ import {
   UpdateStockStrategy,
 } from '../../wailsjs/go/main/App'
 import { EventsEmit, EventsOff, EventsOn } from '../../wailsjs/runtime'
-import { NButton, NCheckbox, NFlex, NSelect, NTag, NText, NTooltip, NDataTable, useDialog, useMessage } from 'naive-ui'
+import { NButton, NCheckbox, NFlex, NSelect, NSwitch, NTag, NText, NTooltip, NDataTable, useDialog, useMessage } from 'naive-ui'
 import { AddOutline } from '@vicons/ionicons5'
 import TechnicalIndicatorFields from './TechnicalIndicatorFields.vue'
 import StockKlineModal from './StockKlineModal.vue'
@@ -32,6 +32,12 @@ import {
   resetTechnicalIndicators,
   STRATEGY_PRESETS,
 } from '../utils/technicalIndicators'
+import {
+  OBSERVATION_STRATEGIES,
+  buildObservationStrategyPayload,
+  observationStrategyIdFromRow,
+  parseObservationMeta,
+} from '../utils/observationStrategies'
 import { getSignalTagColor, formatSignalTagLabel, buildSignalFilterOptions, passesSignalTagFilter } from '../utils/signalBuyGuide'
 import {
   describeSignalPattern,
@@ -44,6 +50,8 @@ const message = useMessage()
 const dialog = useDialog()
 const loading = ref(false)
 const strategyList = ref([])
+const observationRows = ref([])
+const observationSavingId = ref('')
 const showEdit = ref(false)
 const editingId = ref(0)
 const showResult = ref(false)
@@ -395,6 +403,7 @@ async function loadList() {
       pageSize: pagination.pageSize,
       name: '',
       queryType: '',
+      excludeQueryType: 'observation',
     })
     const rows = res?.data || []
     await Promise.all(
@@ -417,6 +426,58 @@ async function loadList() {
   }
 }
 
+const observationCards = computed(() =>
+  OBSERVATION_STRATEGIES.map((def) => {
+    const row = observationRows.value.find((item) => observationStrategyIdFromRow(item) === def.strategyId) || null
+    const meta = parseObservationMeta(row?.queryJson || '')
+    return {
+      ...def,
+      row,
+      enableCron: !!(row?.enable && row?.cronExpr),
+      feedsTradePlan: meta.feedsTradePlan === true,
+    }
+  }),
+)
+
+async function loadObservationStrategies() {
+  try {
+    const res = await GetStockStrategyList({
+      page: 1,
+      pageSize: 20,
+      name: '',
+      queryType: 'observation',
+    })
+    observationRows.value = res?.data || []
+  } catch {
+    observationRows.value = []
+  }
+}
+
+async function saveObservationCard(card, patch) {
+  observationSavingId.value = card.strategyId
+  try {
+    const payload = buildObservationStrategyPayload(card, card.row, patch)
+    const msg = payload.id ? await UpdateStockStrategy(payload) : await CreateStockStrategy(payload)
+    if (!String(msg || '').includes('成功')) {
+      message.error(msg || '保存观察策略失败')
+      return
+    }
+    await loadObservationStrategies()
+  } catch (e) {
+    message.error(`保存观察策略失败：${e}`)
+  } finally {
+    observationSavingId.value = ''
+  }
+}
+
+function setObservationCron(card, enable) {
+  saveObservationCard(card, { enable: !!enable, feedsTradePlan: card.feedsTradePlan === true })
+}
+
+function setObservationFeed(card, feedsTradePlan) {
+  saveObservationCard(card, { enable: card.enableCron, feedsTradePlan: feedsTradePlan === true })
+}
+
 async function runNow(row) {
   const loadingMsg = message.loading('正在执行策略…', { duration: 0 })
   try {
@@ -428,6 +489,9 @@ async function runNow(row) {
     }
     showRunResult(view)
     loadList()
+    if (row?.queryType === 'observation') {
+      loadObservationStrategies()
+    }
   } catch (e) {
     loadingMsg.destroy()
     message.error(String(e))
@@ -1139,6 +1203,7 @@ onBeforeMount(() => {
     darkTheme.value = !!res?.darkTheme
   })
   loadList()
+  loadObservationStrategies()
   loadIndustries()
   EventsOn('openSaveStockStrategy', openSaveFromExternal)
 })
@@ -1152,7 +1217,7 @@ onBeforeUnmount(() => {
   <div class="strategy-page">
     <div class="strategy-page-header">
     <n-space justify="space-between" align="center" wrap>
-      <n-text depth="2">保存自然语言或技术面条件，支持定时执行、冰点/买点扫描与历史记录。</n-text>
+      <n-text depth="2">保存自然语言或技术面条件。下方内置观察策略只产生观察名单，默认不进入模拟交易计划。</n-text>
       <n-space wrap>
         <n-dropdown
           trigger="click"
@@ -1169,6 +1234,54 @@ onBeforeUnmount(() => {
     </n-space>
     </div>
 
+    <div class="observation-panel">
+      <div class="observation-panel-head">
+        <n-text strong>内置观察策略</n-text>
+        <n-text depth="3">
+          观察名单不是交易指令，也不会自动下单。默认关闭定时，且不进入模拟交易计划。只打开「定时观察」不会把结果送进交易计划；需要单独打开「纳入模拟交易计划」。
+        </n-text>
+      </div>
+      <div v-for="card in observationCards" :key="card.strategyId" class="observation-card">
+        <div class="observation-card-main">
+          <n-space align="center" :size="8">
+            <n-tag size="small" type="info" :bordered="false">观察</n-tag>
+            <n-text strong>{{ card.name }}</n-text>
+            <n-text depth="3" style="font-size: 12px">{{ card.strategyId }}</n-text>
+          </n-space>
+          <n-text depth="3" style="display: block; margin-top: 4px; font-size: 12px">{{ card.blurb }}</n-text>
+        </div>
+        <n-space align="center" :size="16" wrap>
+          <n-button
+            size="small"
+            type="primary"
+            tertiary
+            :disabled="!card.row?.id || observationSavingId === card.strategyId"
+            @click="runNow(card.row)"
+          >
+            运行
+          </n-button>
+          <n-space align="center" :size="6">
+            <n-text depth="2" style="font-size: 12px">定时观察</n-text>
+            <n-switch
+              size="small"
+              :value="card.enableCron"
+              :disabled="!card.row?.id || observationSavingId === card.strategyId"
+              @update:value="(value) => setObservationCron(card, value)"
+            />
+          </n-space>
+          <n-space align="center" :size="6">
+            <n-text depth="2" style="font-size: 12px">纳入模拟交易计划</n-text>
+            <n-switch
+              size="small"
+              :value="card.feedsTradePlan"
+              :disabled="!card.row?.id || observationSavingId === card.strategyId"
+              @update:value="(value) => setObservationFeed(card, value)"
+            />
+          </n-space>
+        </n-space>
+      </div>
+    </div>
+
     <div class="strategy-page-table">
     <n-data-table
       :columns="columns"
@@ -1179,7 +1292,7 @@ onBeforeUnmount(() => {
       size="small"
       flex-height
       :scroll-x="900"
-      style="height: calc(100vh - 280px); min-height: 360px"
+      style="height: 100%; min-height: 280px"
       @update:page="(p) => { pagination.page = p; loadList() }"
     />
     </div>
@@ -1450,6 +1563,32 @@ onBeforeUnmount(() => {
 }
 .strategy-page-header {
   flex-shrink: 0;
+}
+.observation-panel {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 42vh;
+  overflow: auto;
+}
+.observation-panel-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.observation-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 8px;
+}
+.observation-card-main {
+  min-width: 0;
+  flex: 1;
 }
 .strategy-page-table {
   flex: 1;
