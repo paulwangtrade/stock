@@ -46,6 +46,17 @@ import {
   applyStockClickAction,
 } from '../utils/stockDisplayAdapters.js'
 import { formatStatus, formatFieldTooltip } from '../utils/statusDisplay.js'
+import { getScreenStrategies } from '../utils/signalSettings.js'
+import { signalSettingsState } from '../utils/signalSettingsStore'
+import {
+  buildResearchStrategyFilterOptions,
+  filterResearchCandidatesByStrategy,
+  researchCandidateRowKey,
+  researchCandidateStrategyDetailText,
+  researchCandidateStrategyId,
+  researchCandidateStrategyLabel,
+  strategyNameMapFromPresets,
+} from '../utils/researchCandidateStrategyFilter.js'
 import StockKlineModal from './StockKlineModal.vue'
 import StockLink from './StockLink.vue'
 
@@ -65,8 +76,11 @@ const rows = ref([])
 const detailOpen = ref(false)
 const detail = ref(null)
 const statusFilter = ref(null)
+/** null = 全部策略；'' = 未标注。只过滤当前列表，不回写交易或扫描。 */
+const strategyFilter = ref(null)
 const explainOpen = ref(false)
 const explain = ref(null)
+const explainStrategyId = ref('')
 
 /** Phase16.18-B1: page-local K-line modal (same pattern as TradePlan / Portfolio). */
 const klineModal = reactive({
@@ -172,7 +186,19 @@ const riskOptions = [
 
 const filterOptions = [{ label: '全部状态', value: null }, ...statusOptions]
 
-const hasData = computed(() => rows.value.length > 0)
+const strategyNameById = computed(() =>
+  strategyNameMapFromPresets(getScreenStrategies(signalSettingsState.value)),
+)
+
+const strategyFilterOptions = computed(() =>
+  buildResearchStrategyFilterOptions(rows.value, strategyNameById.value),
+)
+
+const visibleRows = computed(() =>
+  filterResearchCandidatesByStrategy(rows.value, strategyFilter.value),
+)
+
+const hasData = computed(() => visibleRows.value.length > 0)
 
 const statusFilterLabel = computed(() => {
   if (statusFilter.value == null) return '全部'
@@ -180,12 +206,19 @@ const statusFilterLabel = computed(() => {
   return opt?.label || String(statusFilter.value).toUpperCase()
 })
 
+const strategyFilterLabel = computed(() => {
+  if (strategyFilter.value == null) return '全部'
+  const opt = strategyFilterOptions.value.find((o) => o.value === strategyFilter.value)
+  if (opt?.label) return opt.label
+  if (strategyFilter.value === '') return '未标注'
+  return String(strategyFilter.value)
+})
+
 const isFilterEmpty = computed(
   () =>
-    statusFilter.value != null &&
-    rows.value.length === 0 &&
-    snapshotId.value > 0 &&
-    Boolean(tradeDate.value),
+    (statusFilter.value != null || strategyFilter.value != null) &&
+    visibleRows.value.length === 0 &&
+    (rows.value.length > 0 || (snapshotId.value > 0 && Boolean(tradeDate.value))),
 )
 
 const isSnapshotThresholdEmpty = computed(
@@ -203,7 +236,7 @@ const emptyState = computed(() => {
   }
   if (isFilterEmpty.value) {
     return {
-      description: `当前没有符合条件的研究候选（筛选：${statusFilterLabel.value}）`,
+      description: `当前没有符合条件的研究候选（筛选：状态 ${statusFilterLabel.value} · 策略 ${strategyFilterLabel.value}）`,
       showRefresh: false,
       showClearFilter: true,
       reasons: ['可清除筛选查看全部候选'],
@@ -246,6 +279,25 @@ const columns = [
     ellipsis: { tooltip: true },
     render(row) {
       return renderStockNameKlineLink(row)
+    },
+  },
+  {
+    title: '策略',
+    key: 'strategy_id',
+    width: 128,
+    ellipsis: { tooltip: true },
+    render(row) {
+      const label = researchCandidateStrategyLabel(row, strategyNameById.value)
+      const id = researchCandidateStrategyId(row)
+      if (!id || label === id) return label
+      return h(
+        NTooltip,
+        { trigger: 'hover' },
+        {
+          trigger: () => h('span', null, label),
+          default: () => id,
+        },
+      )
     },
   },
   {
@@ -368,7 +420,7 @@ const columns = [
                 size: 'tiny',
                 tertiary: true,
                 disabled: !row.explain_ref,
-                onClick: () => openExplain(row.id),
+                onClick: () => openExplain(row),
               },
               { default: () => '解释' },
             ),
@@ -392,11 +444,13 @@ function formatCandidateRisk(row) {
 
 const poolSummaryLine = computed(() => {
   const day = tradeDate.value || '—'
-  const n = rows.value.length
+  const n = visibleRows.value.length
+  const total = rows.value.length
+  const countText = strategyFilter.value != null && n !== total ? `${n}/${total}` : String(n)
   if (snapshotId.value > 0) {
-    return `当前研究池：${day} · ${n} 只股票 · 来源：盘后扫描快照 #${snapshotId.value}`
+    return `当前研究池：${day} · ${countText} 只股票 · 来源：盘后扫描快照 #${snapshotId.value}`
   }
-  return `当前研究池：${day} · ${n} 只股票`
+  return `当前研究池：${day} · ${countText} 只股票`
 })
 
 async function refresh() {
@@ -423,8 +477,10 @@ async function refresh() {
 }
 
 function clearStatusFilter() {
+  const hadStatus = statusFilter.value != null
   statusFilter.value = null
-  refresh()
+  strategyFilter.value = null
+  if (hadStatus) refresh()
 }
 
 function intentTagType(status) {
@@ -590,7 +646,9 @@ async function openDetail(row) {
   intent.value = null
   detailLoading.value = true
   try {
-    const res = await getResearchCandidate(row.id)
+    const res = await getResearchCandidate(row.id, {
+      strategyId: researchCandidateStrategyId(row),
+    })
     detail.value = res
     editForm.status = res.candidate.status || 'new'
     editForm.note = res.candidate.note || ''
@@ -604,12 +662,14 @@ async function openDetail(row) {
   }
 }
 
-async function openExplain(candidateId) {
+async function openExplain(row) {
+  const candidateId = typeof row === 'string' ? row : row?.id
+  explainStrategyId.value = typeof row === 'string' ? '' : researchCandidateStrategyId(row)
   explainOpen.value = true
   explain.value = null
   explainLoading.value = true
   try {
-    const res = await getResearchExplain(candidateId)
+    const res = await getResearchExplain(candidateId, { strategyId: explainStrategyId.value })
     explain.value = res
     explainForm.summary = res.summary || ''
     explainForm.reasonText = res.research_reason?.text || ''
@@ -631,12 +691,13 @@ async function saveAnnotation() {
       .split(/[,，]/)
       .map((s) => s.trim())
       .filter(Boolean)
-    const res = await updateResearchCandidate(detail.value.candidate.id, {
+    const strategyId = detail.value.candidate.strategy_id || ''
+    await updateResearchCandidate(detail.value.candidate.id, {
       status: editForm.status,
       note: editForm.note,
       tags,
     })
-    detail.value = res
+    detail.value = await getResearchCandidate(detail.value.candidate.id, { strategyId })
     message.success('研究备注已保存')
     await refresh()
   } catch (e) {
@@ -650,7 +711,7 @@ async function saveExplain() {
   if (!explain.value?.candidate_id) return
   explainSaving.value = true
   try {
-    const res = await updateResearchExplain(explain.value.candidate_id, {
+    await updateResearchExplain(explain.value.candidate_id, {
       summary: explainForm.summary,
       research_reason: {
         kind: 'analyst_note',
@@ -661,7 +722,9 @@ async function saveExplain() {
         : null,
       clear_risk_note: !explainForm.riskText.trim(),
     })
-    explain.value = res
+    explain.value = await getResearchExplain(explain.value.candidate_id, {
+      strategyId: explainStrategyId.value,
+    })
     message.success('研究解释已保存（人工层）')
     await refresh()
   } catch (e) {
@@ -692,6 +755,13 @@ onMounted(refresh)
         研究候选池 · 只读浏览与标注 · 不会自动下单
       </n-text>
       <n-space align="center">
+        <n-text depth="3">策略</n-text>
+        <n-select
+          v-model:value="strategyFilter"
+          :options="strategyFilterOptions"
+          size="small"
+          style="width: 180px"
+        />
         <n-select
           v-model:value="statusFilter"
           :options="filterOptions"
@@ -708,7 +778,7 @@ onMounted(refresh)
       <n-space align="center" :wrap="true" :size="[12, 4]">
         <n-text depth="3">扫描时间：{{ formatTime(asOf) }}</n-text>
         <n-text depth="3">入选评分 &gt; {{ threshold }}</n-text>
-        <n-text depth="3">筛选：{{ statusFilterLabel }}</n-text>
+        <n-text depth="3">筛选：状态 {{ statusFilterLabel }} · 策略 {{ strategyFilterLabel }}</n-text>
         <n-text v-if="hintMessage" depth="3">{{ hintMessage }}</n-text>
       </n-space>
     </n-space>
@@ -748,10 +818,11 @@ onMounted(refresh)
         class="candidate-table"
         size="small"
         :columns="columns"
-        :data="rows"
+        :data="visibleRows"
+        :row-key="researchCandidateRowKey"
         :bordered="false"
         :single-line="true"
-        :scroll-x="900"
+        :scroll-x="1040"
         flex-height
       />
     </div>
@@ -783,6 +854,9 @@ onMounted(refresh)
             </n-space>
             <n-text>来源：{{ detail.candidate.source }}（{{ detail.candidate.source_ref || '—' }}）</n-text>
             <n-text>
+              策略：{{ researchCandidateStrategyDetailText(detail.candidate, strategyNameById) }}
+            </n-text>
+            <n-text>
               信号分：{{ detail.candidate.signal_score ?? '—' }} / 标签：{{ detail.candidate.signal_tag || '—' }}
             </n-text>
             <n-text depth="3">explain_ref：{{ detail.candidate.explain_ref || detail.explanation.explain_ref || '—' }}</n-text>
@@ -807,7 +881,7 @@ onMounted(refresh)
 
             <n-space>
               <n-button type="primary" :loading="saving" @click="saveAnnotation">保存研究标注</n-button>
-              <n-button secondary @click="openExplain(detail.candidate.id)">查看研究解释</n-button>
+              <n-button secondary @click="openExplain(detail.candidate)">查看研究解释</n-button>
             </n-space>
 
             <n-divider style="margin: 12px 0">策略意图</n-divider>

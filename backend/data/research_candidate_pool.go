@@ -94,7 +94,7 @@ func normalizeFollowableCode(secucode, securityCode string) string {
 // 允许：空/NULL（旧数据）、all、research_candidate；排除 universe 等非研究用途。
 // 不删除任何 snapshot 行。
 const (
-	researchCandidatePurposeScope = "research_candidate"
+	researchCandidatePurposeScope        = "research_candidate"
 	researchCandidateSnapshotScopeClause = "(scope IS NULL OR scope = '' OR scope = ? OR scope = ?)"
 )
 
@@ -154,6 +154,133 @@ func ListResearchCandidatesForTradeDate(tradeDate string, minScore float64) *mod
 		return out
 	}
 	return fillResearchSnapshotCandidateList(out, &snap)
+}
+
+// ListResearchStrategyCandidates 列出某一交易日上、每个 strategy_id 最新一份研究快照的候选。
+// tradeDate 为空时，交易日取最新一条研究快照（与 FromLatestSnapshot 同一选取规则）的 trade_date，
+// 再并入该日其余策略的最新快照。只读；不写 CandidatePool / TradePlan / Broker。
+// strategy_id 原样来自快照列：空字符串保持为空，不映射成 default。
+func ListResearchStrategyCandidates(tradeDate string, minScore float64) *models.ResearchSnapshotCandidateList {
+	tradeDate = strings.TrimSpace(tradeDate)
+	out := newResearchSnapshotCandidateList(minScore)
+	if db.Dao == nil {
+		out.Message = "数据库未初始化"
+		return out
+	}
+	if !db.Dao.Migrator().HasTable(&models.SignalScanSnapshot{}) {
+		out.Message = "尚无信号快照表，请先生成盘后快照"
+		return out
+	}
+
+	if tradeDate == "" {
+		var latest models.SignalScanSnapshot
+		err := db.Dao.Where("status = ?", "done").
+			Where(researchCandidateSnapshotScopeClause, models.SignalScanScopeAll, researchCandidatePurposeScope).
+			Order("created_at DESC, id DESC").
+			First(&latest).Error
+		if err != nil || latest.ID == 0 {
+			out.Message = "暂无可用研究候选信号快照（status=done，已忽略 universe）"
+			return out
+		}
+		tradeDate = strings.TrimSpace(latest.TradeDate)
+	}
+
+	var snaps []models.SignalScanSnapshot
+	err := db.Dao.Where("status = ? AND trade_date = ?", "done", tradeDate).
+		Where(researchCandidateSnapshotScopeClause, models.SignalScanScopeAll, researchCandidatePurposeScope).
+		Order("created_at DESC, id DESC").
+		Find(&snaps).Error
+	if err != nil {
+		out.TradeDate = tradeDate
+		out.Message = "读取研究候选信号快照失败"
+		return out
+	}
+	picked := latestSnapshotPerStrategy(snaps)
+	if len(picked) == 0 {
+		out.TradeDate = tradeDate
+		out.Message = "指定交易日暂无可用研究候选信号快照（status=done，已忽略 universe）"
+		return out
+	}
+	return fillResearchStrategyCandidateList(out, picked)
+}
+
+// latestSnapshotPerStrategy 保留每个 strategy_id（含空串）最新的一条。snaps 须已按 created_at DESC, id DESC。
+func latestSnapshotPerStrategy(snaps []models.SignalScanSnapshot) []models.SignalScanSnapshot {
+	seen := map[string]bool{}
+	out := make([]models.SignalScanSnapshot, 0, len(snaps))
+	for _, snap := range snaps {
+		key := strings.TrimSpace(snap.StrategyID)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, snap)
+	}
+	return out
+}
+
+func fillResearchStrategyCandidateList(out *models.ResearchSnapshotCandidateList, snaps []models.SignalScanSnapshot) *models.ResearchSnapshotCandidateList {
+	if out == nil {
+		out = newResearchSnapshotCandidateList(0)
+	}
+	minScore := out.MinScore
+	if minScore <= 0 {
+		minScore = GetCandidatePoolScoreThreshold()
+		out.MinScore = minScore
+	}
+	if len(snaps) == 0 {
+		out.Message = "暂无可用信号快照（status=done）"
+		return out
+	}
+	primary := snaps[0]
+	out.SnapshotID = primary.ID
+	out.TradeDate = primary.TradeDate
+	out.Session = primary.Session
+	out.HitTotal = 0
+	strategyKey := strings.TrimSpace(primary.StrategyID)
+	sameStrategy := true
+	for _, snap := range snaps {
+		out.HitTotal += snap.HitTotal
+		if strings.TrimSpace(snap.StrategyID) != strategyKey {
+			sameStrategy = false
+		}
+	}
+	if sameStrategy {
+		out.StrategyName = strings.TrimSpace(primary.StrategyName)
+	} else {
+		out.StrategyName = ""
+	}
+	if !primary.CreatedAt.IsZero() {
+		out.SnapshotTime = primary.CreatedAt.UTC().Format(time.RFC3339)
+	}
+
+	items := make([]models.ResearchSnapshotCandidate, 0)
+	for _, snap := range snaps {
+		sid := strings.TrimSpace(snap.StrategyID)
+		sname := strings.TrimSpace(snap.StrategyName)
+		part := buildCandidatesFromResultJSON(snap.ResultJSON, minScore)
+		for i := range part {
+			part[i].StrategyID = sid
+			part[i].StrategyName = sname
+			part[i].SnapshotID = snap.ID
+		}
+		items = append(items, part...)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].SignalScore != items[j].SignalScore {
+			return items[i].SignalScore > items[j].SignalScore
+		}
+		if items[i].StockCode != items[j].StockCode {
+			return items[i].StockCode < items[j].StockCode
+		}
+		return items[i].StrategyID < items[j].StrategyID
+	})
+	out.Items = items
+	out.ItemCount = len(items)
+	if out.ItemCount == 0 {
+		out.Message = "最新快照中无信号分大于阈值的股票"
+	}
+	return out
 }
 
 func newResearchSnapshotCandidateList(minScore float64) *models.ResearchSnapshotCandidateList {
@@ -381,8 +508,8 @@ func mapToFlexibleRow(codeHint string, m map[string]any) (flexibleSnapshotRow, b
 		return flexibleSnapshotRow{}, false
 	}
 	row := flexibleSnapshotRow{
-		Code: firstString(m, "code", "stock_code", "stockCode", "SECURITY_CODE", "SECUCODE"),
-		Name: firstString(m, "name", "stock_name", "stockName", "SECURITY_NAME_ABBR"),
+		Code:      firstString(m, "code", "stock_code", "stockCode", "SECURITY_CODE", "SECUCODE"),
+		Name:      firstString(m, "name", "stock_name", "stockName", "SECURITY_NAME_ABBR"),
 		Direction: firstString(m, "direction", "predict_direction", "predictDirection"),
 		Reason:    firstString(m, "reason", "statusText", "status_text"),
 		Tag:       firstString(m, "tag", "signal_tag", "signalTag"),

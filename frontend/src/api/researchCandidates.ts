@@ -27,6 +27,9 @@ export type ResearchCandidate = {
   direction?: string
   price?: string
   reason?: string
+  /** SignalScan 快照上的 strategy_id；缺失表示未标注，不要补猜。 */
+  strategy_id?: string
+  strategy_name?: string
 }
 
 export type ResearchCandidateListResponse = {
@@ -123,8 +126,16 @@ export async function listResearchCandidates(opts?: {
   }
 }
 
-export async function getResearchCandidate(id: string): Promise<ResearchCandidateDetailResponse> {
-  const res = await fetch(`/api/research/candidates/${encodeURIComponent(id)}`)
+export async function getResearchCandidate(
+  id: string,
+  opts?: { strategyId?: string },
+): Promise<ResearchCandidateDetailResponse> {
+  const q = new URLSearchParams()
+  if (opts && Object.prototype.hasOwnProperty.call(opts, 'strategyId')) {
+    q.set('strategy_id', opts.strategyId || '')
+  }
+  const qs = q.toString()
+  const res = await fetch(`/api/research/candidates/${encodeURIComponent(id)}${qs ? `?${qs}` : ''}`)
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new Error(body?.message || body?.error || `研究候选详情失败: HTTP ${res.status}`)
@@ -148,8 +159,18 @@ export async function updateResearchCandidate(
   return await res.json()
 }
 
-export async function getResearchExplain(candidateId: string): Promise<ResearchExplain> {
-  const res = await fetch(`/api/research/candidates/${encodeURIComponent(candidateId)}/explain`)
+export async function getResearchExplain(
+  candidateId: string,
+  opts?: { strategyId?: string },
+): Promise<ResearchExplain> {
+  const q = new URLSearchParams()
+  if (opts && Object.prototype.hasOwnProperty.call(opts, 'strategyId')) {
+    q.set('strategy_id', opts.strategyId || '')
+  }
+  const qs = q.toString()
+  const res = await fetch(
+    `/api/research/candidates/${encodeURIComponent(candidateId)}/explain${qs ? `?${qs}` : ''}`,
+  )
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new Error(body?.message || body?.error || `研究解释请求失败: HTTP ${res.status}`)

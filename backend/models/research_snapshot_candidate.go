@@ -10,18 +10,22 @@ type ResearchSnapshotCandidate struct {
 	StatusText  string  `json:"statusText"`
 	Price       string  `json:"price"`
 	Industry    string  `json:"industry"`
+	// StrategyID / StrategyName 来自产生该行的 SignalScan 快照列，空则保持空（不把缺省猜成 default）。
+	StrategyID   string `json:"strategyId,omitempty"`
+	StrategyName string `json:"strategyName,omitempty"`
+	SnapshotID   uint   `json:"snapshotId,omitempty"`
 }
 
 // ResearchSnapshotCandidateList 研究页候选池响应。
 type ResearchSnapshotCandidateList struct {
-	SnapshotID     uint                        `json:"snapshotId"`
-	SnapshotTime   string                      `json:"snapshotTime"` // RFC3339
-	TradeDate      string                      `json:"tradeDate"`
-	Session        string                      `json:"session"`
-	StrategyName   string                      `json:"strategyName"`
-	MinScore       float64                     `json:"minScore"`
-	HitTotal       int                         `json:"hitTotal"`
-	ItemCount      int                         `json:"itemCount"`
-	Message        string                      `json:"message"`
-	Items          []ResearchSnapshotCandidate `json:"items"`
+	SnapshotID   uint                        `json:"snapshotId"`
+	SnapshotTime string                      `json:"snapshotTime"` // RFC3339
+	TradeDate    string                      `json:"tradeDate"`
+	Session      string                      `json:"session"`
+	StrategyName string                      `json:"strategyName"`
+	MinScore     float64                     `json:"minScore"`
+	HitTotal     int                         `json:"hitTotal"`
+	ItemCount    int                         `json:"itemCount"`
+	Message      string                      `json:"message"`
+	Items        []ResearchSnapshotCandidate `json:"items"`
 }

@@ -42,8 +42,12 @@ func assembleOne(src *models.ResearchSnapshotCandidateList, it models.ResearchSn
 
 	score := it.SignalScore
 	var snapID *uint
-	if src.SnapshotID > 0 {
-		sid := src.SnapshotID
+	sidVal := it.SnapshotID
+	if sidVal == 0 {
+		sidVal = src.SnapshotID
+	}
+	if sidVal > 0 {
+		sid := sidVal
 		snapID = &sid
 	}
 	r := rank
@@ -72,5 +76,7 @@ func assembleOne(src *models.ResearchSnapshotCandidateList, it models.ResearchSn
 		Direction:        strings.TrimSpace(it.Direction),
 		Price:            strings.TrimSpace(it.Price),
 		Reason:           strings.TrimSpace(it.StatusText),
+		StrategyID:       strings.TrimSpace(it.StrategyID),
+		StrategyName:     strings.TrimSpace(it.StrategyName),
 	}
 }
