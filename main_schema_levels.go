@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 
@@ -229,7 +230,50 @@ func applicationMigrationRegistry() (*db.MigrationRegistry, error) {
 				return strategysnapshot.MigrateStrategySnapshots(database)
 			},
 		},
+		db.Migration{
+			Version:  12,
+			Name:     "add_stock_strategy_feeds_trade_plan",
+			Checksum: schemaMigrationChecksum("v12:stock_strategies:add:feeds_trade_plan:bool:default_false:backfill_first_enable_only"),
+			Up: func(database *gorm.DB) error {
+				return migrateStockStrategyFeedsTradePlan(database)
+			},
+		},
 	)
+}
+
+// migrateStockStrategyFeedsTradePlan adds feeds_trade_plan and, only when the
+// column is first introduced, copies the historical GetFirstEnabled() row
+// (lowest id with enable=true) to feeds_trade_plan=true. Later calls do not
+// rewrite membership. If that row cannot be identified, every strategy stays
+// false (empty trade universe).
+func migrateStockStrategyFeedsTradePlan(database *gorm.DB) error {
+	if database == nil {
+		return fmt.Errorf("数据库未初始化")
+	}
+	if !database.Migrator().HasTable(&models.StockStrategy{}) {
+		return fmt.Errorf("stock_strategies table is missing")
+	}
+	if database.Migrator().HasColumn(&models.StockStrategy{}, "FeedsTradePlan") {
+		return nil
+	}
+	if err := database.Migrator().AddColumn(&models.StockStrategy{}, "FeedsTradePlan"); err != nil {
+		return fmt.Errorf("add stock_strategies.feeds_trade_plan: %w", err)
+	}
+
+	var historical models.StockStrategy
+	err := database.Where("enable = ?", true).Order("id ASC").First(&historical).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		logger.SugaredLogger.Warnf("%s", data.TradeUniverseUnhookedMessage)
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("find historical trade-universe strategy: %w", err)
+	}
+	if err := database.Model(&models.StockStrategy{}).Where("id = ?", historical.ID).Update("feeds_trade_plan", true).Error; err != nil {
+		return fmt.Errorf("backfill feeds_trade_plan id=%d: %w", historical.ID, err)
+	}
+	logger.SugaredLogger.Infof("feedsTradePlan migration: strategy id=%d name=%q (historical first enable=true); other strategies stay false", historical.ID, historical.Name)
+	return nil
 }
 
 // tradePlanLifecycleFields Phase6-A 生命周期列（GORM 字段名，供幂等 AddColumn）。
@@ -499,6 +543,10 @@ func applicationSchemaRequirements() []db.SchemaRequirement {
 				"id", "plan_id", "plan_item_id", "strategy_snapshot_id", "created_at",
 			},
 			Indexes: []string{"uidx_plan_strategy_ref"},
+		},
+		{
+			Table:   "stock_strategies",
+			Columns: []string{"id", "enable", "feeds_trade_plan"},
 		},
 	}
 }

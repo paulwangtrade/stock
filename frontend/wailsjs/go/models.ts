@@ -4602,6 +4602,7 @@ export namespace models {
 	    industry: string;
 	    cronExpr: string;
 	    enable: boolean;
+	    feedsTradePlan: boolean;
 	    pageSize: number;
 	    description: string;
 	    // Go type: time
@@ -4626,6 +4627,7 @@ export namespace models {
 	        this.industry = source["industry"];
 	        this.cronExpr = source["cronExpr"];
 	        this.enable = source["enable"];
+	        this.feedsTradePlan = source["feedsTradePlan"];
 	        this.pageSize = source["pageSize"];
 	        this.description = source["description"];
 	        this.lastRunAt = this.convertValues(source["lastRunAt"], null);
@@ -4654,6 +4656,10 @@ export namespace models {
 	export class StockStrategyPageResp {
 	    total: number;
 	    data: StockStrategy[];
+	    tradeUniverseHooked: boolean;
+	    tradeUniverseMessage: string;
+	    tradeUniverseStrategyId: number;
+	    tradeUniverseStrategyName: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new StockStrategyPageResp(source);
@@ -4663,6 +4669,10 @@ export namespace models {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.total = source["total"];
 	        this.data = this.convertValues(source["data"], StockStrategy);
+	        this.tradeUniverseHooked = source["tradeUniverseHooked"];
+	        this.tradeUniverseMessage = source["tradeUniverseMessage"];
+	        this.tradeUniverseStrategyId = source["tradeUniverseStrategyId"];
+	        this.tradeUniverseStrategyName = source["tradeUniverseStrategyName"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

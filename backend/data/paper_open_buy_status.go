@@ -12,14 +12,14 @@ import (
 
 // PaperOpenBuyStatus 开盘建仓就绪诊断（TEMP/启动检查）。
 type PaperOpenBuyStatus struct {
-	EnablePaperOpenBuy   bool   `json:"enablePaperOpenBuy"`
-	TradeDate            string `json:"tradeDate"`
-	CandidatePoolStatus  string `json:"candidatePoolStatus"`
-	CandidateCount       int    `json:"candidateCount"`
-	TradePlanStatus      string `json:"tradePlanStatus"`
-	TradePlanCount       int    `json:"tradePlanCount"`
-	ExecutionReady       bool   `json:"executionReady"`
-	Message              string `json:"message"`
+	EnablePaperOpenBuy  bool   `json:"enablePaperOpenBuy"`
+	TradeDate           string `json:"tradeDate"`
+	CandidatePoolStatus string `json:"candidatePoolStatus"`
+	CandidateCount      int    `json:"candidateCount"`
+	TradePlanStatus     string `json:"tradePlanStatus"`
+	TradePlanCount      int    `json:"tradePlanCount"`
+	ExecutionReady      bool   `json:"executionReady"`
+	Message             string `json:"message"`
 }
 
 // IsWeekdayLocal 简单交易日保护：周一至周五（不含法定节假日）。
@@ -95,9 +95,9 @@ func countEnabledStockStrategies() int {
 
 func latestStockStrategyRunSummary() string {
 	api := NewStockStrategyApi()
-	strat, err := api.GetFirstEnabled()
+	strat, err := api.GetTradeUniverseStrategy()
 	if err != nil || strat == nil {
-		return "none"
+		return "unhooked: " + TradeUniverseUnhookedMessage
 	}
 	run, rerr := api.GetLatestRun(strat.ID)
 	if rerr != nil || run == nil {
@@ -121,6 +121,7 @@ func RunPaperTradingDailyCheck() {
 	st := GetPaperOpenBuyStatus()
 
 	enabledCount := countEnabledStockStrategies()
+	feedsCount := NewStockStrategyApi().CountFeedsTradePlan()
 	latestRun := latestStockStrategyRunSummary()
 
 	poolLabel := st.CandidatePoolStatus
@@ -132,7 +133,11 @@ func RunPaperTradingDailyCheck() {
 	logger.SugaredLogger.Infof("TradeDate: %s", tradeDate)
 	logger.SugaredLogger.Infof("EnablePaperOpenBuy: %v", cfg.EnablePaperOpenBuy)
 	logger.SugaredLogger.Infof("Enabled StockStrategy Count: %d", enabledCount)
+	logger.SugaredLogger.Infof("FeedsTradePlan StockStrategy Count: %d", feedsCount)
 	logger.SugaredLogger.Infof("Latest StockStrategyRun: %s", latestRun)
+	if feedsCount == 0 {
+		logger.SugaredLogger.Warnf("%s", TradeUniverseUnhookedMessage)
+	}
 	logger.SugaredLogger.Infof("CandidatePool: %s", poolLabel)
 	logger.SugaredLogger.Infof("CandidatePool Items: %d", st.CandidateCount)
 	logger.SugaredLogger.Infof("TradePlan: %s", planLabel)

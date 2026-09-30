@@ -56,7 +56,8 @@ func TestApplicationMigrationRegistry_FreshDatabaseReady(t *testing.T) {
 	require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlan{}, "AllocationVersion"))
 	require.True(t, db.Dao.Migrator().HasTable(&strategysnapshot.StrategySnapshotRow{}))
 	require.True(t, db.Dao.Migrator().HasTable(&strategysnapshot.PlanStrategyRefRow{}))
-	require.Equal(t, 11, db.GetAppliedSchemaVersion())
+	require.True(t, db.Dao.Migrator().HasColumn(&models.StockStrategy{}, "FeedsTradePlan"))
+	require.Equal(t, 12, db.GetAppliedSchemaVersion())
 	require.True(t, validateApplicationSchema().Ready())
 }
 
@@ -90,12 +91,12 @@ CREATE TABLE candidate_pool_items (
 
 	first, err := applyApplicationMigrations()
 	require.NoError(t, err)
-	require.Equal(t, []int{2, 3, 4, 5, 6, 7, 8, 9, 10}, first.Applied)
+	require.Equal(t, []int{2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}, first.Applied)
 	require.True(t, db.Dao.Migrator().HasColumn(&models.CandidatePoolItem{}, "DecisionID"))
 	require.True(t, db.Dao.Migrator().HasIndex(&models.CandidatePoolItem{}, "DecisionID"))
 	require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlan{}, "FreezeAt"))
 	require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlan{}, "PricingPolicyVersion"))
-	require.Equal(t, 11, db.GetAppliedSchemaVersion())
+	require.Equal(t, 12, db.GetAppliedSchemaVersion())
 
 	pool := &models.CandidatePool{TradeDate: "2026-07-21"}
 	err = data.NewCandidatePoolRepo().CreatePoolWithItems(pool, []models.CandidatePoolItem{{
@@ -110,16 +111,16 @@ func TestApplicationMigrationRegistry_RepeatedApplyIsIdempotent(t *testing.T) {
 	setupMainSchemaTestDB(t)
 	first, err := applyApplicationMigrations()
 	require.NoError(t, err)
-	require.Equal(t, []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, first.Applied)
+	require.Equal(t, []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}, first.Applied)
 
 	second, err := applyApplicationMigrations()
 	require.NoError(t, err)
 	require.Empty(t, second.Applied)
-	require.Equal(t, []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, second.Skipped)
+	require.Equal(t, []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}, second.Skipped)
 
 	var count int64
 	require.NoError(t, db.Dao.Model(&db.SchemaMigration{}).Count(&count).Error)
-	require.Equal(t, int64(11), count)
+	require.Equal(t, int64(12), count)
 }
 
 func TestTradingPreflightCheck_BlocksInvalidSchemaButAppContinues(t *testing.T) {
@@ -188,7 +189,7 @@ CREATE TABLE trade_plan_items (
 
 	first, err := applyApplicationMigrations()
 	require.NoError(t, err)
-	require.Equal(t, []int{3, 4, 5, 6, 7, 8, 9, 10}, first.Applied)
+	require.Equal(t, []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 12}, first.Applied)
 	for _, field := range tradePlanLifecycleFields {
 		require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlan{}, field), field)
 	}
@@ -198,14 +199,14 @@ CREATE TABLE trade_plan_items (
 	for _, field := range tradePlanItemIntentFields {
 		require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlanItem{}, field), field)
 	}
-	require.Equal(t, 11, db.GetAppliedSchemaVersion())
+	require.Equal(t, 12, db.GetAppliedSchemaVersion())
 	require.True(t, validateApplicationSchema().Ready())
 
 	// Idempotent re-apply: skip v3+, columns remain.
 	second, err := applyApplicationMigrations()
 	require.NoError(t, err)
 	require.Empty(t, second.Applied)
-	require.Equal(t, []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, second.Skipped)
+	require.Equal(t, []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}, second.Skipped)
 	require.True(t, validateApplicationSchema().Ready())
 }
 
@@ -225,8 +226,8 @@ func TestApplicationSchemaValidation_TradePlanLifecycleBlockedAndReady(t *testin
 	ready := validateApplicationSchema()
 	require.True(t, ready.Ready())
 	require.Equal(t, db.SchemaValidationReady, ready.Status)
-	require.Equal(t, 11, ready.RequiredVersion)
-	require.Equal(t, 11, ready.CurrentVersion)
+	require.Equal(t, 12, ready.RequiredVersion)
+	require.Equal(t, 12, ready.CurrentVersion)
 
 	require.NoError(t, db.Dao.Migrator().DropColumn(&models.TradePlan{}, "FreezeAt"))
 	blocked := validateApplicationSchema()
@@ -276,8 +277,8 @@ func TestApplicationMigrationRegistry_UpgradesV3ToExecutionIntentV4(t *testing.T
 
 	first, err := applyApplicationMigrations()
 	require.NoError(t, err)
-	require.Equal(t, []int{4, 5, 6, 7, 8, 9, 10}, first.Applied)
-	require.Equal(t, 11, db.GetAppliedSchemaVersion())
+	require.Equal(t, []int{4, 5, 6, 7, 8, 9, 10, 11, 12}, first.Applied)
+	require.Equal(t, 12, db.GetAppliedSchemaVersion())
 	for _, field := range tradePlanIntentDefaultFields {
 		require.True(t, db.Dao.Migrator().HasColumn(&models.TradePlan{}, field), field)
 	}
@@ -306,7 +307,7 @@ func TestApplicationMigrationRegistry_UpgradesV3ToExecutionIntentV4(t *testing.T
 	second, err := applyApplicationMigrations()
 	require.NoError(t, err)
 	require.Empty(t, second.Applied)
-	require.Equal(t, []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, second.Skipped)
+	require.Equal(t, []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}, second.Skipped)
 }
 
 func TestApplicationMigrationRegistry_ExecutionIntentAddColumnIdempotent(t *testing.T) {
@@ -336,7 +337,7 @@ func TestApplicationSchemaValidation_ExecutionIntentBlockedAndReady(t *testing.T
 	require.NoError(t, runSchemaMigrations())
 	ready := validateApplicationSchema()
 	require.True(t, ready.Ready())
-	require.Equal(t, 11, ready.RequiredVersion)
+	require.Equal(t, 12, ready.RequiredVersion)
 
 	require.NoError(t, db.Dao.Migrator().DropColumn(&models.TradePlanItem{}, "RefPrice"))
 	blocked := validateApplicationSchema()
@@ -358,7 +359,7 @@ func TestApplicationMigrationRegistry_ProviderMetadataNoBackfill(t *testing.T) {
 	setupMainSchemaTestDB(t)
 	_, err := applyApplicationMigrations()
 	require.NoError(t, err)
-	require.Equal(t, 11, db.GetAppliedSchemaVersion())
+	require.Equal(t, 12, db.GetAppliedSchemaVersion())
 
 	plan := models.TradePlan{
 		TradeDate: "2026-08-21", Status: models.TradePlanStatusDraft,
@@ -393,25 +394,86 @@ func TestApplicationMigrationRegistry_UpgradesV10ToStrategySnapshotsV11(t *testi
 	setupMainSchemaTestDB(t)
 	_, err := applyApplicationMigrations()
 	require.NoError(t, err)
-	require.Equal(t, 11, db.GetAppliedSchemaVersion())
+	require.Equal(t, 12, db.GetAppliedSchemaVersion())
 
 	// Simulate stock.db stopped at v10 (provider metadata applied, no snapshot tables).
 	require.NoError(t, db.Dao.Migrator().DropTable(&strategysnapshot.StrategySnapshotRow{}))
 	require.NoError(t, db.Dao.Migrator().DropTable(&strategysnapshot.PlanStrategyRefRow{}))
-	require.NoError(t, db.Dao.Where("version = ?", 11).Delete(&db.SchemaMigration{}).Error)
+	require.NoError(t, db.Dao.Where("version > ?", 10).Delete(&db.SchemaMigration{}).Error)
 	require.Equal(t, 10, db.GetAppliedSchemaVersion())
 	require.False(t, db.Dao.Migrator().HasTable(&strategysnapshot.StrategySnapshotRow{}))
 
 	first, err := applyApplicationMigrations()
 	require.NoError(t, err)
-	require.Equal(t, []int{11}, first.Applied)
+	require.Equal(t, []int{11, 12}, first.Applied)
 	require.True(t, db.Dao.Migrator().HasTable(&strategysnapshot.StrategySnapshotRow{}))
 	require.True(t, db.Dao.Migrator().HasTable(&strategysnapshot.PlanStrategyRefRow{}))
-	require.Equal(t, 11, db.GetAppliedSchemaVersion())
+	require.True(t, db.Dao.Migrator().HasColumn(&models.StockStrategy{}, "FeedsTradePlan"))
+	require.Equal(t, 12, db.GetAppliedSchemaVersion())
 	require.True(t, validateApplicationSchema().Ready())
 
 	second, err := applyApplicationMigrations()
 	require.NoError(t, err)
 	require.Empty(t, second.Applied)
 	require.Contains(t, second.Skipped, 11)
+	require.Contains(t, second.Skipped, 12)
+}
+
+func TestMigrateStockStrategyFeedsTradePlan_BackfillsHistoricalFirstEnabledOnly(t *testing.T) {
+	setupMainSchemaTestDB(t)
+	_, err := applyApplicationMigrations()
+	require.NoError(t, err)
+
+	historical := models.StockStrategy{Name: "historical-feed", QueryType: "eastmoney_nl", Enable: true, CronExpr: "0 35 9 * * 1-5"}
+	observe := models.StockStrategy{Name: "observe-scan", QueryType: "eastmoney_nl", Enable: true, CronExpr: "0 5 15 * * 1-5"}
+	disabled := models.StockStrategy{Name: "disabled", QueryType: "eastmoney_nl", Enable: false}
+	require.NoError(t, db.Dao.Create(&historical).Error)
+	require.NoError(t, db.Dao.Create(&observe).Error)
+	require.NoError(t, db.Dao.Create(&disabled).Error)
+
+	require.NoError(t, db.Dao.Migrator().DropColumn(&models.StockStrategy{}, "FeedsTradePlan"))
+	require.False(t, db.Dao.Migrator().HasColumn(&models.StockStrategy{}, "FeedsTradePlan"))
+	require.NoError(t, db.Dao.Where("version = ?", 12).Delete(&db.SchemaMigration{}).Error)
+
+	applied, err := applyApplicationMigrations()
+	require.NoError(t, err)
+	require.Equal(t, []int{12}, applied.Applied)
+	require.True(t, db.Dao.Migrator().HasColumn(&models.StockStrategy{}, "FeedsTradePlan"))
+
+	var rows []models.StockStrategy
+	require.NoError(t, db.Dao.Order("id asc").Find(&rows).Error)
+	require.Len(t, rows, 3)
+	require.Equal(t, "historical-feed", rows[0].Name)
+	require.True(t, rows[0].FeedsTradePlan)
+	require.True(t, rows[0].Enable)
+	require.False(t, rows[1].FeedsTradePlan, "later enable=true strategy stays observation")
+	require.True(t, rows[1].Enable)
+	require.False(t, rows[2].FeedsTradePlan)
+
+	require.NoError(t, db.Dao.Model(&models.StockStrategy{}).Where("id = ?", rows[0].ID).Update("feeds_trade_plan", false).Error)
+	require.NoError(t, migrateStockStrategyFeedsTradePlan(db.Dao))
+	var again models.StockStrategy
+	require.NoError(t, db.Dao.First(&again, rows[0].ID).Error)
+	require.False(t, again.FeedsTradePlan, "repeat migration must not re-hook a strategy the user turned off")
+}
+
+func TestMigrateStockStrategyFeedsTradePlan_NoEnabledLeavesUniverseUnhooked(t *testing.T) {
+	setupMainSchemaTestDB(t)
+	_, err := applyApplicationMigrations()
+	require.NoError(t, err)
+
+	watch := models.StockStrategy{Name: "watch-only", QueryType: "eastmoney_nl", Enable: false}
+	require.NoError(t, db.Dao.Create(&watch).Error)
+	require.NoError(t, db.Dao.Migrator().DropColumn(&models.StockStrategy{}, "FeedsTradePlan"))
+	require.NoError(t, db.Dao.Where("version = ?", 12).Delete(&db.SchemaMigration{}).Error)
+
+	_, err = applyApplicationMigrations()
+	require.NoError(t, err)
+
+	var got models.StockStrategy
+	require.NoError(t, db.Dao.First(&got, watch.ID).Error)
+	require.False(t, got.FeedsTradePlan)
+	strat, uerr := data.NewStockStrategyApi().GetTradeUniverseStrategy()
+	require.Error(t, uerr)
+	require.Nil(t, strat)
 }

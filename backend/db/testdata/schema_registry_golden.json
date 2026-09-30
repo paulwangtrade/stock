@@ -49,6 +49,16 @@
       "version": 10,
       "name": "add_trade_plan_provider_metadata",
       "checksum": "ed18460cef50b128aea5d993a6b09d83a123194591146f4abbac61e963c78af0"
+    },
+    {
+      "version": 11,
+      "name": "create_strategy_snapshots",
+      "checksum": "3cea05c0a977eeaa1702592f4b46d82bb6b9cc19c66d5fff35d085f9dc32f83a"
+    },
+    {
+      "version": 12,
+      "name": "add_stock_strategy_feeds_trade_plan",
+      "checksum": "6e9b8270252755eecd3553084877cc6a02f547ff52d556b7a8c91f65d7f793ef"
     }
   ],
   "requirements": [
@@ -190,6 +200,37 @@
         "lot_size"
       ],
       "indexes": ["uidx_instrument_quantity_meta_stock_code"]
+    },
+    {
+      "table": "strategy_snapshots",
+      "columns": [
+        "id",
+        "snapshot_id",
+        "snapshot_version",
+        "scope",
+        "plan_id",
+        "plan_item_id",
+        "trade_date",
+        "payload_json",
+        "created_at",
+        "updated_at"
+      ],
+      "indexes": ["idx_strategy_snapshots_snapshot_id"]
+    },
+    {
+      "table": "plan_strategy_refs",
+      "columns": [
+        "id",
+        "plan_id",
+        "plan_item_id",
+        "strategy_snapshot_id",
+        "created_at"
+      ],
+      "indexes": ["uidx_plan_strategy_ref"]
+    },
+    {
+      "table": "stock_strategies",
+      "columns": ["id", "enable", "feeds_trade_plan"]
     }
   ]
 }

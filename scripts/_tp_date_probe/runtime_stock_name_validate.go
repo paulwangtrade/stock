@@ -27,11 +27,11 @@ func main() {
 	}
 	db.Dao = gdb
 
-	// Inspect latest enabled strategy run for target codes.
+	// TradePlan universe is feedsTradePlan, not the first cron-enabled strategy.
 	api := data.NewStockStrategyApi()
-	strat, err := api.GetFirstEnabled()
+	strat, err := api.GetTradeUniverseStrategy()
 	if err != nil || strat == nil {
-		fmt.Fprintln(os.Stderr, "no enabled strategy:", err)
+		fmt.Fprintln(os.Stderr, "no feedsTradePlan strategy:", err)
 		os.Exit(1)
 	}
 	run, err := api.GetLatestRun(strat.ID)

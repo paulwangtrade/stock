@@ -4,22 +4,23 @@ import "time"
 
 // StockStrategy 本地选股策略（自然语言 / 技术面）
 type StockStrategy struct {
-	ID           uint       `json:"id" gorm:"primarykey"`
-	CreatedAt    time.Time  `json:"createdAt"`
-	UpdatedAt    time.Time  `json:"updatedAt"`
-	Name         string     `json:"name" gorm:"size:255;not null"`
-	QueryType    string     `json:"queryType" gorm:"size:32;not null"` // eastmoney_nl | technical
-	QueryText    string     `json:"queryText" gorm:"type:text"`
-	QueryJSON    string     `json:"queryJson" gorm:"type:text"`
-	Keyword      string     `json:"keyword" gorm:"size:255"`
-	Industry     string     `json:"industry" gorm:"size:512"`
-	CronExpr     string     `json:"cronExpr" gorm:"size:100"`
-	Enable       bool       `json:"enable" gorm:"default:false"`
-	PageSize     int        `json:"pageSize" gorm:"default:50"`
-	Description  string     `json:"description" gorm:"size:500"`
-	LastRunAt    *time.Time `json:"lastRunAt"`
-	LastRunCount int        `json:"lastRunCount"`
-	LastRunError string     `json:"lastRunError" gorm:"size:500"`
+	ID             uint       `json:"id" gorm:"primarykey"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	UpdatedAt      time.Time  `json:"updatedAt"`
+	Name           string     `json:"name" gorm:"size:255;not null"`
+	QueryType      string     `json:"queryType" gorm:"size:32;not null"` // eastmoney_nl | technical
+	QueryText      string     `json:"queryText" gorm:"type:text"`
+	QueryJSON      string     `json:"queryJson" gorm:"type:text"`
+	Keyword        string     `json:"keyword" gorm:"size:255"`
+	Industry       string     `json:"industry" gorm:"size:512"`
+	CronExpr       string     `json:"cronExpr" gorm:"size:100"`
+	Enable         bool       `json:"enable" gorm:"default:false"`         // 仅定时/手动调度，不表示进入交易宇宙
+	FeedsTradePlan bool       `json:"feedsTradePlan" gorm:"default:false"` // Track-B 模拟 TradePlan 宇宙；默认关闭
+	PageSize       int        `json:"pageSize" gorm:"default:50"`
+	Description    string     `json:"description" gorm:"size:500"`
+	LastRunAt      *time.Time `json:"lastRunAt"`
+	LastRunCount   int        `json:"lastRunCount"`
+	LastRunError   string     `json:"lastRunError" gorm:"size:500"`
 }
 
 func (StockStrategy) TableName() string {
@@ -48,8 +49,12 @@ type StockStrategyQuery struct {
 }
 
 type StockStrategyPageResp struct {
-	Total int             `json:"total"`
-	Data  []StockStrategy `json:"data"`
+	Total                     int             `json:"total"`
+	Data                      []StockStrategy `json:"data"`
+	TradeUniverseHooked       bool            `json:"tradeUniverseHooked"`
+	TradeUniverseMessage      string          `json:"tradeUniverseMessage"`
+	TradeUniverseStrategyID   uint            `json:"tradeUniverseStrategyId"`
+	TradeUniverseStrategyName string          `json:"tradeUniverseStrategyName"`
 }
 
 type StockStrategyRunQuery struct {
