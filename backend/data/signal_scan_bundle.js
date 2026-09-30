@@ -1509,7 +1509,7 @@ var SignalScanBatch = (() => {
 
   // frontend/src/utils/signalSettings.js
   var DEFAULT_SCREEN_STRATEGY_ID = "default";
-  var DEFAULT_SCREEN_STRATEGY_NAME = "\u9ED8\u8BA4\u7B56\u7565";
+  var DEFAULT_SCREEN_STRATEGY_NAME = "\u9ED8\u8BA4\u53C2\u6570\u9884\u8BBE";
   var DEFAULT_SIGNAL_SETTINGS = {
     automation: DEFAULT_QUANT_AUTOMATION,
     display: {
@@ -1895,6 +1895,26 @@ var SignalScanBatch = (() => {
     }
     return base;
   }
+  function resolveRawPresetList(raw) {
+    if (!raw || typeof raw !== "object") return [];
+    if (Array.isArray(raw.signalPresets) && raw.signalPresets.length) return raw.signalPresets;
+    if (Array.isArray(raw.screenStrategies) && raw.screenStrategies.length) return raw.screenStrategies;
+    return [];
+  }
+  function resolveRawActivePresetId(raw, fallback) {
+    if (!raw || typeof raw !== "object") return fallback;
+    const fromNew = String(raw.activeSignalPresetId || "").trim();
+    if (fromNew) return fromNew;
+    const fromOld = String(raw.activeScreenStrategyId || "").trim();
+    if (fromOld) return fromOld;
+    return fallback;
+  }
+  function mirrorSignalPresetAliases(base) {
+    if (!base || typeof base !== "object") return base;
+    base.signalPresets = base.screenStrategies;
+    base.activeSignalPresetId = base.activeScreenStrategyId;
+    return base;
+  }
   function cloneDefaultSignalSettings() {
     const base = deepClone(DEFAULT_SIGNAL_SETTINGS);
     base.activeScreenStrategyId = DEFAULT_SCREEN_STRATEGY_ID;
@@ -1905,7 +1925,7 @@ var SignalScanBatch = (() => {
         settings: cloneDefaultSignalSettingsCore()
       }
     ];
-    return base;
+    return mirrorSignalPresetAliases(base);
   }
   function mergeSignalSettings(raw) {
     const base = cloneDefaultSignalSettings();
@@ -1925,11 +1945,14 @@ var SignalScanBatch = (() => {
       if (!raw[key] || typeof raw[key] !== "object") continue;
       base[key] = { ...base[key], ...raw[key] };
     }
-    base.activeScreenStrategyId = String(raw.activeScreenStrategyId || base.activeScreenStrategyId || DEFAULT_SCREEN_STRATEGY_ID);
-    const rawStrategies = Array.isArray(raw.screenStrategies) ? raw.screenStrategies : [];
+    base.activeScreenStrategyId = resolveRawActivePresetId(
+      raw,
+      base.activeScreenStrategyId || DEFAULT_SCREEN_STRATEGY_ID
+    );
+    const rawStrategies = resolveRawPresetList(raw);
     const strategies = rawStrategies.map((item, index) => {
       const id = String(item?.id || "").trim() || `strategy-${index + 1}`;
-      const name = String(item?.name || "").trim() || `\u7B56\u7565 ${index + 1}`;
+      const name = String(item?.name || "").trim() || `\u53C2\u6570\u9884\u8BBE ${index + 1}`;
       const settings = mergeSignalStrategySettings(item?.settings || {});
       return { id, name, settings };
     }).filter((item) => item.id && item.name);
@@ -1948,7 +1971,7 @@ var SignalScanBatch = (() => {
       ];
       base.activeScreenStrategyId = DEFAULT_SCREEN_STRATEGY_ID;
     }
-    return base;
+    return mirrorSignalPresetAliases(base);
   }
   function parseSignalParams(raw) {
     if (!raw) return cloneDefaultSignalSettings();
@@ -2050,6 +2073,217 @@ var SignalScanBatch = (() => {
   var SCREEN_SNAPSHOT_SIGNAL_TAGS = ["\u5F3A", "\u8D8B", "\u8F6C", "\u7A81", "\u5F39", "\u4E70"];
   var SCREEN_SNAPSHOT_SIGNAL_TAG_SET = new Set(SCREEN_SNAPSHOT_SIGNAL_TAGS);
 
+  // frontend/src/utils/nextDaySetupWatch.js
+  var NEXT_DAY_SETUP_DISCLAIMER = "\u82E5\u89E6\u53CA\u53EF\u80FD\u5F62\u6210\uFF0C\u4E0D\u4FDD\u8BC1\uFF0C\u975E\u4E70\u5356\u6307\u4EE4";
+  var NEXT_DAY_SETUP_MAX_DISTANCE_PCT = 0.05;
+  function smaAt2(closes, period, index) {
+    if (index < period - 1) return null;
+    let s = 0;
+    for (let j = 0; j < period; j++) {
+      const v = closes[index - j];
+      if (v == null || !Number.isFinite(v)) return null;
+      s += v;
+    }
+    return s / period;
+  }
+  function smaSeries(closes, period) {
+    const out = new Array(closes.length).fill(null);
+    for (let i = period - 1; i < closes.length; i++) {
+      out[i] = smaAt2(closes, period, i);
+    }
+    return out;
+  }
+  function roundPrice(v) {
+    return Math.round(v * 1e4) / 1e4;
+  }
+  function maxDistancePct(options) {
+    const n = Number(options?.setupMaxDistancePct);
+    if (Number.isFinite(n) && n > 0) return n;
+    return NEXT_DAY_SETUP_MAX_DISTANCE_PCT;
+  }
+  function baseWatch(partial) {
+    return {
+      confirmed: false,
+      orderIntent: false,
+      observationOnly: true,
+      disclaimer: NEXT_DAY_SETUP_DISCLAIMER,
+      statusText: "\u672A\u786E\u8BA4 \xB7 \u6B21\u65E5\u89C2\u5BDF",
+      triggerPrice: null,
+      distancePct: null,
+      conditionGaps: [],
+      gapText: "",
+      ...partial
+    };
+  }
+  function evaluateBreakoutHighSetup(bars, options = {}) {
+    const closes = bars?.closes || [];
+    const opens = bars?.opens || [];
+    const highs = bars?.highs || [];
+    const lows = bars?.lows || [];
+    const len = closes.length;
+    const i = len - 1;
+    const boxPeriod = Math.max(2, Math.floor(Number(options.boxPeriod) || 20));
+    const maxRangePct = Number(options.maxRangePct ?? 0.2);
+    const breakBuffer = Number(options.breakBuffer ?? 5e-3);
+    if (i < boxPeriod - 1) return null;
+    const lookStart = i + 1 - boxPeriod;
+    const lookEnd = i;
+    if (lookStart < 0) return null;
+    let boxHigh = -Infinity;
+    let boxLow = Infinity;
+    for (let j = lookStart; j <= lookEnd; j++) {
+      const c = closes[j];
+      const o = opens[j] ?? c;
+      const h = highs[j] ?? (o != null && c != null ? Math.max(o, c) : c);
+      const l = lows[j] ?? (o != null && c != null ? Math.min(o, c) : c);
+      if (h == null || l == null || !Number.isFinite(h) || !Number.isFinite(l)) return null;
+      boxHigh = Math.max(boxHigh, h);
+      boxLow = Math.min(boxLow, l);
+    }
+    const mid = (boxHigh + boxLow) / 2;
+    if (!(mid > 0) || !(boxHigh > boxLow)) return null;
+    if ((boxHigh - boxLow) / mid > maxRangePct) return null;
+    const trigger = boxHigh * (1 + (Number.isFinite(breakBuffer) ? breakBuffer : 0));
+    const close = closes[i];
+    if (!(close > 0) || !(trigger > close)) return null;
+    const distancePct = (trigger - close) / close;
+    if (distancePct > maxDistancePct(options)) return null;
+    const ma5 = smaAt2(closes, 5, i);
+    const ma10 = smaAt2(closes, 10, i);
+    const ma20 = smaAt2(closes, 20, i);
+    if (ma5 == null || ma10 == null || ma5 < ma10) return null;
+    if (ma20 != null && ma10 < ma20 * 0.995) return null;
+    const minGap = Math.max(1, Math.floor(Number(options.minGap) || 15));
+    const confirmed = computeBreakoutSignals(
+      { closes, opens, highs, lows, volumes: bars?.volumes || [] },
+      options
+    );
+    for (const b of confirmed) {
+      if (i + 1 - b < minGap) return null;
+    }
+    const volPeriod = Math.max(1, Math.floor(Number(options.volPeriod) || 5));
+    const volMult = options.volMult ?? 1.25;
+    const confirm = Math.max(0, Math.floor(Number(options.confirmDays ?? options.breakoutConfirmDays) || 0));
+    const gaps = [
+      "\u6B21\u65E5\u987B\u6536\u9633\uFF08\u6536\u76D8 > \u5F00\u76D8\uFF09\uFF0C\u5F00\u76D8\u5728 T \u6536\u76D8\u672A\u77E5",
+      `\u6B21\u65E5\u6210\u4EA4\u91CF\u987B \u2265 \u8FD1 ${volPeriod} \u65E5\u5747\u91CF \xD7 ${volMult}\uFF08\u542B\u6B21\u65E5\u91CF\uFF0C\u65E0\u6CD5\u5728 T \u9501\u5B9A\uFF09`,
+      "\u7A81\u7834\u65E5\u4E0A\u5F71\u7EBF\u5360\u6BD4\u987B\u8FBE\u6807",
+      "\u5747\u7EBF\u591A\u5934\u6309 T \u6536\u76D8\u6838\u5BF9\uFF0C\u6B21\u65E5\u5747\u7EBF\u4F1A\u968F\u6536\u76D8\u53D8\u52A8"
+    ];
+    if (confirm > 0) {
+      gaps.push(`\u5DF2\u786E\u8BA4\u300C\u7A81\u300D\u8FD8\u987B\u7A81\u7834\u540E\u518D\u7AD9\u7A33 ${confirm} \u65E5\uFF1B\u672C\u884C\u53EA\u662F\u7A81\u7834\u53C2\u8003\u4EF7\uFF0C\u4E0D\u662F\u5DF2\u786E\u8BA4\u4FE1\u53F7`);
+    }
+    return baseWatch({
+      engine: "breakout_high",
+      tag: "\u7A81",
+      priceMode: "price",
+      triggerPrice: roundPrice(trigger),
+      closeT: close,
+      distancePct,
+      asOfIndex: i,
+      conditionGaps: gaps,
+      gapText: gaps.join("\uFF1B"),
+      summary: `\u6B21\u65E5\u6536\u76D8\u7AD9\u4E0A ${roundPrice(trigger)} \u53EF\u80FD\u8FDB\u5165\u5E73\u53F0\u7A81\u7834\u65E5`
+    });
+  }
+  function evaluateMa20ReclaimSetup(bars, options = {}) {
+    const closes = bars?.closes || [];
+    const opens = bars?.opens || [];
+    const highs = bars?.highs || [];
+    const lows = bars?.lows || [];
+    const len = closes.length;
+    const i = len - 1;
+    const period = Math.max(2, Math.floor(Number(options.maPeriod) || 20));
+    const confirm = Math.max(1, Math.floor(Number(options.reboundConfirmDays) || 2));
+    const need = confirm - 1;
+    if (i < period || i < need) return null;
+    const ma = smaSeries(closes, period);
+    const above = (j) => closes[j] != null && ma[j] != null && closes[j] >= ma[j];
+    if (need === 0) {
+      if (above(i)) return null;
+    } else {
+      for (let k = 0; k < need; k++) {
+        if (!above(i - k)) return null;
+      }
+      const before = i - need;
+      if (before < 0 || above(before)) return null;
+    }
+    const base = computeTradeSignals(closes, { ...options, maPeriod: period });
+    const sellSet = /* @__PURE__ */ new Set([...base.sellRsi || [], ...base.sellMa20 || []]);
+    const sellLookback = Math.max(1, Math.floor(Number(options.reboundSellLookback) || 6));
+    const minDays = Math.max(0, Math.floor(Number(options.reboundMinDaysAfterSell) || 1));
+    const signalDay = i + 1;
+    let sellIdx = null;
+    for (let j = signalDay - 1; j >= Math.max(0, signalDay - sellLookback); j--) {
+      if (sellSet.has(j)) {
+        sellIdx = j;
+        break;
+      }
+    }
+    if (sellIdx == null || signalDay - sellIdx < minDays) return null;
+    const standStart = need > 0 ? i - need + 1 : signalDay;
+    if (need > 0 && standStart <= sellIdx) return null;
+    const from = i - (period - 2);
+    if (from < 0) return null;
+    let sum = 0;
+    for (let j = from; j <= i; j++) {
+      if (closes[j] == null || !Number.isFinite(closes[j])) return null;
+      sum += closes[j];
+    }
+    const trigger = sum / (period - 1);
+    const close = closes[i];
+    if (!(trigger > 0) || !(close > 0)) return null;
+    const distancePct = (trigger - close) / close;
+    if (distancePct > maxDistancePct(options)) return null;
+    const rebound = computeReboundAfterSell(
+      { closes, opens, highs, lows },
+      base,
+      /* @__PURE__ */ new Set(),
+      {
+        sellLookback,
+        minDaysAfterSell: minDays,
+        confirmDays: confirm,
+        minReboundPct: options.reboundMinPct ?? 0.05,
+        minBodyPct: options.reboundMinBodyPct ?? 0.015,
+        maxRsi: options.reboundMaxRsi ?? 60,
+        minGap: options.reboundMinGap ?? 6,
+        maxUpperWickRatio: options.reboundMaxUpperWickRatio ?? 0.5
+      }
+    );
+    if (rebound.includes(i)) return null;
+    const gaps = [
+      "\u6B21\u65E5\u987B\u6536\u9633\u4E14\u5B9E\u4F53\u8FBE\u6807",
+      "\u6B21\u65E5 RSI\u3001MA5\u2265MA10\u3001MA20 \u8D70\u5E73/\u5411\u4E0A\u3001\u4E0A\u5F71\u7EBF\u65E0\u6CD5\u5728 T \u6536\u76D8\u6536\u6210\u552F\u4E00\u4EF7"
+    ];
+    if (distancePct <= 0) {
+      gaps.push("\u53C2\u8003\u4EF7\u662F\u6B21\u65E5\u6536\u76D8\u4E0D\u4F4E\u4E8E\u8BE5\u4EF7\u624D\u8865\u4E0A\u7AD9\u7A33\uFF1B\u8DCC\u7834\u5219\u8FD9\u4E00\u6B65\u4E0D\u6210\u7ACB");
+    } else {
+      gaps.push("\u53C2\u8003\u4EF7\u662F\u6B21\u65E5\u6536\u76D8\u8FBE\u5230\u8BE5\u4EF7\u624D\u56DE\u5230 MA20 \u4E4B\u4E0A");
+    }
+    const px = roundPrice(trigger);
+    const summary = distancePct > 0 ? `\u6B21\u65E5\u6536\u76D8 \u2265 ${px} \u53EF\u80FD\u8865\u4E0A MA20 \u7AD9\u7A33\u7684\u6700\u540E\u4E00\u65E5` : `\u6B21\u65E5\u6536\u76D8\u4E0D\u4F4E\u4E8E ${px} \u53EF\u80FD\u8865\u4E0A MA20 \u7AD9\u7A33\u7684\u6700\u540E\u4E00\u65E5`;
+    return baseWatch({
+      engine: "ma20_reclaim",
+      tag: "\u5F39",
+      priceMode: "price",
+      triggerPrice: px,
+      closeT: close,
+      distancePct,
+      asOfIndex: i,
+      conditionGaps: gaps,
+      gapText: gaps.join("\uFF1B"),
+      summary
+    });
+  }
+  function evaluateNextDaySetups(bars, options = {}) {
+    const out = [];
+    const breakout = evaluateBreakoutHighSetup(bars, options);
+    if (breakout) out.push(breakout);
+    const reclaim = evaluateMa20ReclaimSetup(bars, options);
+    if (reclaim) out.push(reclaim);
+    return out;
+  }
+
   // scripts/scansignals/scan-batch.ts
   function runSignalScanBatch(input) {
     const stocks = input?.stocks || [];
@@ -2068,6 +2302,7 @@ var SignalScanBatch = (() => {
       includeSell: input?.includeSell !== false
     };
     const items = [];
+    const setups = [];
     for (const s of stocks) {
       const bars = {
         closes: s.closes,
@@ -2080,9 +2315,40 @@ var SignalScanBatch = (() => {
       };
       const lastIdx = s.lastBarIndex != null && s.lastBarIndex >= 0 ? Math.min(s.lastBarIndex, s.closes.length - 1) : s.closes.length - 1;
       if (lastIdx < 0) continue;
+      const row = s.row || {};
+      const end = lastIdx + 1;
+      const trimmed = {
+        closes: (s.closes || []).slice(0, end),
+        opens: (s.opens || []).slice(0, end),
+        highs: (s.highs || []).slice(0, end),
+        lows: (s.lows || []).slice(0, end),
+        volumes: (s.volumes || []).slice(0, end),
+        dayKeys: (s.dayKeys || []).slice(0, end)
+      };
+      for (const setup of evaluateNextDaySetups(trimmed, options)) {
+        setups.push({
+          SECUCODE: row.SECUCODE || s.secucode || s.code,
+          SECURITY_CODE: row.SECURITY_CODE || "",
+          SECURITY_NAME_ABBR: row.SECURITY_NAME_ABBR || s.name || "",
+          engine: setup.engine,
+          tag: setup.tag,
+          priceMode: setup.priceMode,
+          triggerPrice: setup.triggerPrice,
+          closeT: setup.closeT,
+          distancePct: setup.distancePct,
+          gapText: setup.gapText,
+          summary: setup.summary,
+          statusText: setup.statusText,
+          disclaimer: NEXT_DAY_SETUP_DISCLAIMER,
+          asOfDate: trimmed.dayKeys[trimmed.dayKeys.length - 1] || "",
+          conditionGaps: setup.conditionGaps,
+          confirmed: false,
+          orderIntent: false,
+          observationOnly: true
+        });
+      }
       const summary = summarizeBuySignal(bars, { ...options, signalLastIndex: lastIdx });
       if (!summary?.tag || !SCREEN_SNAPSHOT_SIGNAL_TAG_SET.has(summary.tag)) continue;
-      const row = s.row || {};
       const buyRange = calcBuyPriceRange(summary, bars, { ...options, signalLastIndex: lastIdx });
       const tag = summary.tag;
       const isConfirmBar = tag === "\u5F3A" || tag === "\u7A81";
@@ -2129,7 +2395,13 @@ var SignalScanBatch = (() => {
       if (ra !== rb) return rb - ra;
       return String(a.SECURITY_NAME_ABBR || "").localeCompare(String(b.SECURITY_NAME_ABBR || ""), "zh-CN");
     });
-    return { items, hitTotal: items.length };
+    setups.sort((a, b) => {
+      const da = Math.abs(Number(a.distancePct) || 0);
+      const db = Math.abs(Number(b.distancePct) || 0);
+      if (da !== db) return da - db;
+      return String(a.SECURITY_NAME_ABBR || "").localeCompare(String(b.SECURITY_NAME_ABBR || ""), "zh-CN");
+    });
+    return { items, hitTotal: items.length, setups, setupTotal: setups.length };
   }
   if (typeof globalThis !== "undefined") {
     ;

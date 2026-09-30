@@ -18,10 +18,10 @@ import (
 )
 
 const (
-	signalScanKlineBars       = 120
-	signalScanFetchPageSize   = 500
-	signalScanKlineConcurrency = 32
-	signalScanJSChunkSize     = 400
+	signalScanKlineBars         = 120
+	signalScanFetchPageSize     = 500
+	signalScanKlineConcurrency  = 32
+	signalScanJSChunkSize       = 400
 	signalScanDefaultStrategyID = "default"
 )
 
@@ -282,6 +282,7 @@ func (a *SignalScanApi) RunFullMarketSnapshot(session string, signalParamsOverri
 	wg.Wait()
 
 	allItems := make([]map[string]any, 0, 256)
+	allSetups := make([]map[string]any, 0, 256)
 	for i := 0; i < len(prepared); i += signalScanJSChunkSize {
 		end := i + signalScanJSChunkSize
 		if end > len(prepared) {
@@ -301,21 +302,22 @@ func (a *SignalScanApi) RunFullMarketSnapshot(session string, signalParamsOverri
 			logger.SugaredLogger.Errorf("signal scan js chunk %d: %v", i/signalScanJSChunkSize, err)
 			return nil, err
 		}
-		allItems = append(allItems, out.Items...)
+		appendScanBatch(out, &allItems, &allSetups)
 		if onProgress != nil {
 			onProgress(SignalScanProgress{Phase: "compute", Done: end, Total: len(prepared), Session: session})
 		}
 	}
 
 	payload := models.SignalScanResultPayload{
-		Items:        mapSliceToHits(allItems),
-		ScannedTotal: len(rows),
-		HitTotal:     len(allItems),
-		TradeDate:    tradeDate,
-		Session:      session,
-		StrategyID:   strategyID,
-		StrategyName: strategyName,
-		CompletedAt:  FormatShanghaiTime(time.Now()),
+		Items:         mapSliceToHits(allItems),
+		ScannedTotal:  len(rows),
+		HitTotal:      len(allItems),
+		TradeDate:     tradeDate,
+		Session:       session,
+		StrategyID:    strategyID,
+		StrategyName:  strategyName,
+		CompletedAt:   FormatShanghaiTime(time.Now()),
+		NextDaySetups: finalizeNextDaySetups(allSetups),
 	}
 	resultJSON, _ := json.Marshal(payload)
 

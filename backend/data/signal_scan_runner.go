@@ -24,17 +24,17 @@ func initSignalScanVM() {
 }
 
 type signalScanStockInput struct {
-	Code          string         `json:"code"`
-	Name          string         `json:"name"`
-	Secucode      string         `json:"secucode,omitempty"`
-	Closes        []float64      `json:"closes"`
-	Opens         []float64      `json:"opens"`
-	Highs         []float64      `json:"highs"`
-	Lows          []float64      `json:"lows"`
-	Volumes       []float64      `json:"volumes"`
-	DayKeys       []string       `json:"dayKeys"`
-	LastBarIndex  int            `json:"lastBarIndex,omitempty"`
-	Row           map[string]any `json:"row,omitempty"`
+	Code         string         `json:"code"`
+	Name         string         `json:"name"`
+	Secucode     string         `json:"secucode,omitempty"`
+	Closes       []float64      `json:"closes"`
+	Opens        []float64      `json:"opens"`
+	Highs        []float64      `json:"highs"`
+	Lows         []float64      `json:"lows"`
+	Volumes      []float64      `json:"volumes"`
+	DayKeys      []string       `json:"dayKeys"`
+	LastBarIndex int            `json:"lastBarIndex,omitempty"`
+	Row          map[string]any `json:"row,omitempty"`
 }
 
 type signalScanBatchInput struct {
@@ -45,8 +45,10 @@ type signalScanBatchInput struct {
 }
 
 type signalScanBatchOutput struct {
-	Items    []map[string]any `json:"items"`
-	HitTotal int              `json:"hitTotal"`
+	Items      []map[string]any `json:"items"`
+	HitTotal   int              `json:"hitTotal"`
+	Setups     []map[string]any `json:"setups"`
+	SetupTotal int              `json:"setupTotal"`
 }
 
 // RunSignalScanBatchJS 使用内嵌 JS（与前端 icePointSignals 同源）批量计算信号
