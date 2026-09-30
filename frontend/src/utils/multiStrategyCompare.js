@@ -15,6 +15,46 @@ export const COMPARE_FOOTER_TEXT = '仅观察对照 · 不进入模拟交易计�
 
 export const UNWIRED_REASON = '不能在本地对单只股票求值，未接入对照'
 
+/** 预设没有自己的求值时失败关闭，禁止借用别的策略命中文案。 */
+export const PRESET_UNIMPLEMENTED_REASON = '未实现独立求值'
+
+/**
+ * 设置页会丢掉 scanKind。这些 id 不是冰点参数预设，不能走日 K 主信号。
+ * 截面动量 / 均线趋势 / 突破观察等若未在对照里单独求值，一律失败关闭。
+ */
+const KNOWN_PRESET_SCAN_KIND = {
+  default: 'ice',
+  ext_xsmom_v1: 'xsmom',
+  ext_ma_trend_v1: 'ma_trend',
+  ext_breakout_v1: 'breakout',
+  ext_vol_mom_v1: 'vol_mom',
+  ext_ma_pullback_v1: 'ma_pullback',
+  ext_meanrev_watch_v1: 'meanrev',
+}
+
+const UNIMPLEMENTED_PRESET_IDS = new Set([
+  'ext_xsmom_v1',
+  'ext_ma_trend_v1',
+  'ext_breakout_v1',
+  'ext_vol_mom_v1',
+  'ext_ma_pullback_v1',
+  'ext_meanrev_watch_v1',
+])
+
+const UNIMPLEMENTED_SCAN_KINDS = new Set([
+  'xsmom',
+  'ma_trend',
+  'breakout',
+  'vol_mom',
+  'ma_pullback',
+  'meanrev',
+])
+
+const PLANNED_PRESET_IDS = new Set(['ext_vol_mom_v1', 'ext_ma_pullback_v1', 'ext_meanrev_watch_v1'])
+
+const ICE_SCAN_KINDS = new Set(['', 'ice', 'ice_point'])
+const ICE_TEMPLATE_IDS = new Set(['', 'ice_point', 'default'])
+
 /** 信号扫描包里已经会算、并能对单票日 K 求值的观察引擎。 */
 export const WIRED_SCAN_ENGINES = [
   { strategyId: 'scan_strong_v1', name: '强化买点', tag: '强', kind: 'scan_family', wired: true },
@@ -123,42 +163,155 @@ function readFamily(engine, sig, last, options) {
   }
 }
 
-function readPreset(summary) {
-  const tag = summary?.tag || ''
-  if (!tag) {
-    const text = String(summary?.latestStatus?.text || summary?.statusText || '').trim()
-    return {
-      verdict: '未命中',
-      bias: '—',
-      reason: text && text !== '—' ? text : '最新数据日无观察信号',
-    }
-  }
-  return {
-    verdict: '命中',
-    bias: biasForTag(tag),
-    reason: String(summary.statusText || '').trim() || tag,
-  }
-}
-
 function presetOptions(engine, fallback) {
   if (engine.settings) return scanReadOptions(buildSignalOptions(engine.settings))
   return scanReadOptions(fallback)
 }
 
+const FAMILY_BY_ID = Object.fromEntries(WIRED_SCAN_ENGINES.map((item) => [item.strategyId, item]))
+
+export function bareStrategyId(strategyId) {
+  const id = String(strategyId || '').trim()
+  return id.startsWith('preset:') ? id.slice('preset:'.length) : id
+}
+
+function presetLabel(engine) {
+  const name = String(engine?.name || '').trim()
+  if (name) return name
+  return bareStrategyId(engine?.strategyId) || '该预设'
+}
+
+function withQuoteRsi(reason, rsi) {
+  const formatted = formatRsi(rsi)
+  if (formatted === '—') return reason
+  return `${reason} · RSI ${formatted}`
+}
+
+function appendQuotedRsi(reason, familyReason) {
+  const match = String(familyReason || '').match(/RSI\s+(\d+(?:\.\d+)?)/)
+  if (!match) return reason
+  return `${reason} · RSI ${match[1]}`
+}
+
+/** 别的策略的命中句。只检查预设名之后的规则正文，避免预设名本身撞上这些词。 */
+function usesForeignHitPhrase(reason, label) {
+  const text = String(reason || '')
+  const body = label && text.startsWith(label) ? text.slice(label.length) : text
+  return /今日转势买点|今日强化买点|今日趋势买点|今日平台突破|今日卖后站稳|今日出冰点买点|今日减|转势买点|强化买点|趋势买点|平台突破|卖后站稳|出冰点买点|破 MA20|RSI 回落/.test(body)
+}
+
 /**
- * 设置里的信号参数预设。它们走同一套日 K 扫描，只是参数不同，可以本地求值。
+ * ice：用该预设自己的参数做主信号，理由必须带预设名。
+ * shared：scanKind / templateId 明确指向某条已接入引擎，结论可以相同，理由必须写「与{源}同源」。
+ * unimplemented：没有独立求值，失败关闭，不抄任何命中句。
+ */
+export function resolvePresetEvaluation(engine) {
+  const id = bareStrategyId(engine?.strategyId)
+  const scanKind = String(engine?.scanKind || KNOWN_PRESET_SCAN_KIND[id] || '').trim()
+  const templateId = String(engine?.templateId || '').trim()
+  if (engine?.engineStatus === 'planned' || PLANNED_PRESET_IDS.has(id)) {
+    return { mode: 'unimplemented', source: null }
+  }
+  if (UNIMPLEMENTED_PRESET_IDS.has(id) || UNIMPLEMENTED_PRESET_IDS.has(templateId)) {
+    return { mode: 'unimplemented', source: null }
+  }
+  if (UNIMPLEMENTED_SCAN_KINDS.has(scanKind) || UNIMPLEMENTED_SCAN_KINDS.has(templateId)) {
+    return { mode: 'unimplemented', source: null }
+  }
+  const shared = FAMILY_BY_ID[scanKind] || FAMILY_BY_ID[templateId] || null
+  if (shared) return { mode: 'shared', source: shared }
+  if ((scanKind && !ICE_SCAN_KINDS.has(scanKind)) || (templateId && !ICE_TEMPLATE_IDS.has(templateId))) {
+    return { mode: 'unimplemented', source: null }
+  }
+  return { mode: 'ice', source: null }
+}
+
+function concludeIcePreset(engine, summary) {
+  const label = presetLabel(engine)
+  const tag = String(summary?.tag || '').trim()
+  const rsi = summary?.latestStatus?.rsi
+  if (!tag) {
+    return {
+      verdict: '未命中',
+      bias: '—',
+      reason: withQuoteRsi(`${label} · 本预设规则未触发`, rsi),
+    }
+  }
+  const reason = withQuoteRsi(`${label} · 本预设规则触发（${tag}）`, rsi)
+  if (usesForeignHitPhrase(reason, label)) {
+    return { verdict: '数据不足', bias: '—', reason: PRESET_UNIMPLEMENTED_REASON }
+  }
+  return {
+    verdict: '命中',
+    bias: biasForTag(tag),
+    reason,
+  }
+}
+
+function labelSharedPreset(engine, source, familyRead) {
+  const label = presetLabel(engine)
+  const sourceName = source?.name || source?.strategyId || '源策略'
+  const head = `与${sourceName}同源 · ${label}`
+  if (!familyRead) {
+    return { verdict: '数据不足', bias: '—', reason: `${head} · 未取到源规则读数` }
+  }
+  if (familyRead.verdict === '命中') {
+    const reason = appendQuotedRsi(head, familyRead.reason)
+    return {
+      verdict: '命中',
+      bias: familyRead.bias || '—',
+      reason,
+    }
+  }
+  return {
+    verdict: familyRead.verdict || '未命中',
+    bias: '—',
+    reason: `${head} · 源规则未触发`,
+  }
+}
+
+/**
+ * 预设结论。summary.statusText 是日 K 主信号的展示句，这里故意不读，避免把「今日转势买点」贴到别的策略上。
+ */
+export function concludePresetObservation(engine, input = {}) {
+  const decision = resolvePresetEvaluation(engine)
+  if (decision.mode === 'unimplemented') {
+    return { verdict: '数据不足', bias: '—', reason: PRESET_UNIMPLEMENTED_REASON }
+  }
+  if (decision.mode === 'shared') {
+    return labelSharedPreset(engine, decision.source, input.familyRead || null)
+  }
+  return concludeIcePreset(engine, input.summary)
+}
+
+function catalogPresetMeta(item) {
+  const id = String(item?.id || '').trim()
+  const scanKind = String(item?.scanKind || KNOWN_PRESET_SCAN_KIND[id] || '').trim()
+  let templateId = String(item?.templateId || '').trim()
+  if (!templateId && id === 'default') templateId = 'ice_point'
+  if (!templateId && KNOWN_PRESET_SCAN_KIND[id] && id !== 'default') templateId = id
+  const engineStatus = item?.engineStatus === 'planned' || PLANNED_PRESET_IDS.has(id) ? 'planned' : String(item?.engineStatus || '')
+  return { scanKind, templateId, engineStatus }
+}
+
+/**
+ * 设置里的信号参数预设。冰点参数预设按自己的阈值求值。
+ * 其他 scanKind 没有独立求值时不会借用冰点主信号文案。
  */
 export function presetEnginesFromSettings(settings) {
-  return getScreenStrategies(settings).map((item) => ({
-    strategyId: `preset:${item.id}`,
-    name: item.name,
-    kind: 'scan_preset',
-    wired: true,
-    settings: item.settings,
-    // 只给角色标签辨认同源预设；不参与求值。
-    scanKind: item.scanKind || '',
-    templateId: item.templateId || '',
-  }))
+  return getScreenStrategies(settings).map((item) => {
+    const meta = catalogPresetMeta(item)
+    return {
+      strategyId: `preset:${item.id}`,
+      name: item.name,
+      kind: 'scan_preset',
+      wired: true,
+      settings: item.settings,
+      scanKind: meta.scanKind,
+      templateId: meta.templateId,
+      engineStatus: meta.engineStatus,
+    }
+  })
 }
 
 /**
@@ -255,7 +408,11 @@ export function evaluateObservationCompare({ bars, engines, activeSignalOptions 
   const noBars = last < 0
 
   let familySig = null
-  const needFamily = selected.some((item) => item.kind === 'scan_family' && item.wired)
+  const needFamily = selected.some((item) => {
+    if (!item?.wired) return false
+    if (item.kind === 'scan_family') return true
+    return item.kind === 'scan_preset' && resolvePresetEvaluation(item).mode === 'shared'
+  })
   if (!noBars && needFamily && closes.length >= 20) {
     familySig = computeFullSignals(
       {
@@ -291,17 +448,35 @@ export function evaluateObservationCompare({ bars, engines, activeSignalOptions 
     }
 
     if (engine.kind === 'scan_preset') {
-      const options = presetOptions(engine, activeOptions)
+      const decision = resolvePresetEvaluation(engine)
+      if (decision.mode === 'unimplemented') {
+        return emptyRow(engine, { ...concludePresetObservation(engine), dataDay })
+      }
+      if (decision.mode === 'shared') {
+        const need = minBarsFor(decision.source, activeOptions)
+        if (closes.length < need || !familySig) {
+          const sourceName = decision.source.name || decision.source.strategyId
+          return emptyRow(engine, {
+            verdict: '数据不足',
+            bias: '—',
+            reason: `与${sourceName}同源 · ${presetLabel(engine)} · 日 K 不足，无法计算`,
+            dataDay,
+          })
+        }
+        const familyRead = readFamily(decision.source, familySig, last, activeOptions)
+        return emptyRow(engine, { ...concludePresetObservation(engine, { familyRead }), dataDay })
+      }
       if (closes.length < 20) {
         return emptyRow(engine, {
           verdict: '数据不足',
           bias: '—',
-          reason: '日 K 不足，无法计算',
+          reason: `${presetLabel(engine)} · 日 K 不足，无法计算`,
           dataDay,
         })
       }
+      const options = presetOptions(engine, activeOptions)
       const summary = summarizeBuySignal(bars, { ...options, signalLastIndex: last })
-      return emptyRow(engine, { ...readPreset(summary), dataDay })
+      return emptyRow(engine, { ...concludePresetObservation(engine, { summary }), dataDay })
     }
 
     const options = activeOptions
