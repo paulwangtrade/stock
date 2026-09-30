@@ -37,6 +37,7 @@ import {
   UpdateGroupSort
 } from '../../wailsjs/go/main/App'
 import {
+  NAlert,
   NAvatar,
   NButton,
   NFlex,
@@ -3004,6 +3005,9 @@ watch(watchlistGridCols, (v) => {
   </div>
   <n-modal transform-origin="center" size="small" v-model:show="modalShow" :title="formModel.name" style="width: 800px"
            :preset="'card'">
+    <n-alert type="info" :bordered="false" style="margin-bottom: 12px">
+      此处只改自选股成本/数量，用于提醒与做T观察。真实持股请到「我的组合 → 实盘镜像（观察）」录入。不会写入模拟账本，也不会进入交易计划。
+    </n-alert>
     <n-form :model="formModel" :rules="{
               costPrice: { required: true, message: '请输入成本'},
               volume: { required: true, message: '请输入数量'},

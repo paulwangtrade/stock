@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import {
+  NAlert,
   NButton,
   NEmpty,
   NSpin,
@@ -13,11 +14,15 @@ import {
   useMessage,
 } from 'naive-ui'
 import {
-  GetFollowRealtimeList,
   GetPaperAccountSnapshot,
   GetPaperMarginSnapshot,
   GetStockRealTimePrice,
 } from '../../wailsjs/go/main/App'
+import ExternalMirrorPanel from './ExternalMirrorPanel.vue'
+import {
+  LIVE_BROKER_PLACEHOLDER,
+  PAPER_SIM_MIRROR_HINT,
+} from '../utils/externalMirrorEntry.js'
 import {
   accountModeText,
   formatMoney,
@@ -38,18 +43,13 @@ import {
   indexPositionStatesBySymbol,
 } from '../api/portfolioPositionState'
 import { positionStateTagType } from '../utils/positionStateDisplay.js'
-import { canShowSellButton } from '../utils/portfolioSellEntry.js'
-import SellDraftDialog from './SellDraftDialog.vue'
 
 const message = useMessage()
-const activeTab = ref('self')
+const activeTab = ref('paper_sim')
 const loading = ref(false)
 const loadError = ref('')
-const selfPositions = ref([])
 const paperSnapshot = ref(null)
 const paperPrices = ref({})
-const sellDialogVisible = ref(false)
-const sellTargetRow = ref(null)
 /** Phase11-K PositionState index (symbol → row); never invent 新仓 from qty. */
 const positionStateBySymbol = ref(Object.create(null))
 
@@ -80,25 +80,6 @@ async function loadAdvancedRiskReport() {
 /** 持仓页整页刷新兜底，防止实时行情 Wails 调用长期不返回 */
 const HOLDINGS_UI_TIMEOUT_MS = 20_000
 
-const ownRows = computed(() => selfPositions.value.map((item) => {
-  const price = toNumber(pickField(item, '当前价格', 'Price', 'price'))
-  const cost = toNumber(pickField(item, 'costPrice', 'CostPrice'))
-  const volume = toNumber(pickField(item, 'costVolume', 'CostVolume', 'Volume', 'volume'))
-  const marketValue = price * volume
-  const profit = marketValue - cost * volume
-  return {
-    key: `self-${pickField(item, '股票代码', 'StockCode', 'stockCode')}`,
-    code: pickField(item, '股票代码', 'StockCode', 'stockCode') || '--',
-    name: pickField(item, '股票名称', 'Name', 'stockName') || '--',
-    price,
-    cost,
-    volume,
-    marketValue,
-    profit,
-    profitRate: cost > 0 ? (price / cost - 1) * 100 : 0,
-  }
-}))
-
 const quantRows = computed(() => (paperSnapshot.value?.positions || []).map((item) => {
   const code = pickField(item, 'stockCode', 'StockCode') || '--'
   const avgCost = toNumber(pickField(item, 'avgCost', 'AvgCost'))
@@ -107,6 +88,8 @@ const quantRows = computed(() => (paperSnapshot.value?.positions || []).map((ite
   const ps = positionStateBySymbol.value[String(code).toLowerCase()] || null
   return {
     key: `paper-${pickField(item, 'id', 'ID', 'stockCode', 'StockCode')}`,
+    // 本页历史模拟执行账户，不是 external_mirror，也不当作 paper_sim 可卖库存。
+    accountType: 'legacy_paper',
     code,
     name: pickField(item, 'stockName', 'StockName') || '--',
     avgCost,
@@ -133,13 +116,6 @@ const quantRows = computed(() => (paperSnapshot.value?.positions || []).map((ite
   }
 }))
 
-const ownStats = computed(() => ownRows.value.reduce((stats, row) => {
-  stats.marketValue += row.marketValue
-  stats.costValue += row.cost * row.volume
-  stats.profit += row.profit
-  return stats
-}, { marketValue: 0, costValue: 0, profit: 0 }))
-
 const quantStats = computed(() => {
   const account = paperSnapshot.value?.account || {}
   const positionCost = quantRows.value.reduce((sum, row) => sum + row.avgCost * row.volume, 0)
@@ -159,14 +135,11 @@ async function refresh() {
   loadError.value = ''
   try {
     await withTimeout((async () => {
-      const [followed, snapshot, psBundle] = await Promise.all([
-        GetFollowRealtimeList(0),
+      const [snapshot, psBundle] = await Promise.all([
         GetPaperAccountSnapshot(0),
         getPortfolioPositionState().catch(() => null),
       ])
       positionStateBySymbol.value = indexPositionStatesBySymbol(psBundle?.positions || [])
-      selfPositions.value = (Array.isArray(followed) ? followed : [])
-        .filter(item => toNumber(pickField(item, 'costVolume', 'CostVolume', 'Volume', 'volume')) > 0)
       const seedMarks = (snapshot?.positions || []).map((item) => ({
         stockCode: String(pickField(item, 'stockCode', 'StockCode') || ''),
         price: toNumber(pickField(item, 'marketPrice', 'MarketPrice', 'avgCost', 'AvgCost')),
@@ -201,11 +174,6 @@ async function refresh() {
 }
 
 onMounted(refresh)
-
-function openQuantSell(row) {
-  sellTargetRow.value = row
-  sellDialogVisible.value = true
-}
 </script>
 
 <template>
@@ -213,7 +181,7 @@ function openQuantSell(row) {
     <header class="page-header">
       <div>
         <h2>持仓中心</h2>
-        <p>自主交易与量化模拟仓位独立核算</p>
+        <p>模拟量化、实盘镜像观察、实盘券商分开。镜像只观察，不进模拟账本。</p>
       </div>
       <n-button :loading="loading" secondary @click="refresh">刷新</n-button>
     </header>
@@ -259,43 +227,10 @@ function openQuantSell(row) {
 
     <n-spin :show="loading">
       <n-tabs v-model:value="activeTab" type="line" animated>
-        <n-tab-pane name="self" tab="自持仓">
-          <div class="stats-grid">
-            <n-statistic label="持仓市值" :value="formatMoney(ownStats.marketValue)" />
-            <n-statistic label="持仓成本" :value="formatMoney(ownStats.costValue)" />
-            <n-statistic label="持仓盈亏">
-              <span :class="profitClass(ownStats.profit)">{{ formatMoney(ownStats.profit) }}</span>
-            </n-statistic>
-            <n-statistic label="持仓股票" :value="ownRows.length" suffix="只" />
-          </div>
-          <div class="table-wrap">
-            <table v-if="ownRows.length" class="position-table">
-              <thead>
-                <tr>
-                  <th>代码</th><th>名称</th><th>现价</th><th>成本</th>
-                  <th>数量</th><th>市值</th><th>盈亏</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="row in ownRows" :key="row.key">
-                  <td class="code">{{ row.code }}</td>
-                  <td>{{ row.name }}</td>
-                  <td>{{ formatPrice(row.price) }}</td>
-                  <td>{{ formatPrice(row.cost) }}</td>
-                  <td>{{ formatVolume(row.volume) }}</td>
-                  <td>{{ formatMoney(row.marketValue) }}</td>
-                  <td :class="profitClass(row.profit)">
-                    {{ formatMoney(row.profit) }}
-                    <small>{{ row.profitRate >= 0 ? '+' : '' }}{{ row.profitRate.toFixed(2) }}%</small>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            <n-empty v-else description="暂无自持仓" />
-          </div>
-        </n-tab-pane>
-
-        <n-tab-pane name="quant" tab="量化仓">
+        <n-tab-pane name="paper_sim" tab="模拟量化">
+          <n-alert type="info" :bordered="false" style="margin: 8px 0">
+            {{ PAPER_SIM_MIRROR_HINT }} 权威模拟持仓在「我的组合」。本表是历史模拟执行账户展示，不能把真实持股录成模拟仓，也不能在这里对镜像下卖出。
+          </n-alert>
           <div class="stats-grid">
             <n-statistic label="账户模式" :value="accountModeText(quantStats.margin.accountMode)" />
             <n-statistic label="融资余额" :value="formatMoney(quantStats.margin.financingBalance)" />
@@ -347,32 +282,27 @@ function openQuantSell(row) {
                     <small>{{ row.profitRate >= 0 ? '+' : '' }}{{ row.profitRate.toFixed(2) }}%</small>
                   </td>
                   <td>
-                    <n-button
-                      v-if="canShowSellButton(row)"
-                      size="tiny"
-                      type="warning"
-                      secondary
-                      @click="openQuantSell(row)"
-                    >
-                      卖出
-                    </n-button>
-                    <n-text v-else depth="3">—</n-text>
+                    <n-text depth="3">请到我的组合</n-text>
                   </td>
                 </tr>
               </tbody>
             </table>
-            <n-empty v-else description="暂无量化模拟持仓" />
+            <n-empty v-else description="暂无模拟持仓" />
           </div>
+        </n-tab-pane>
+
+        <n-tab-pane name="external_mirror" tab="实盘镜像（观察）">
+          <ExternalMirrorPanel />
+        </n-tab-pane>
+
+        <n-tab-pane name="live_broker" tab="实盘券商（未启用）">
+          <n-alert type="default" :bordered="false" style="margin-top: 8px">
+            {{ LIVE_BROKER_PLACEHOLDER }}
+          </n-alert>
+          <n-empty description="Track-A 未启用" style="margin-top: 16px" />
         </n-tab-pane>
       </n-tabs>
     </n-spin>
-
-    <SellDraftDialog
-      v-model:show="sellDialogVisible"
-      :row="sellTargetRow"
-      actor="ui:holdings-sell"
-      @created="refresh"
-    />
   </section>
 </template>
 
