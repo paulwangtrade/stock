@@ -146,9 +146,13 @@ const SCREEN_TAG_LABELS = {
   BREAKOUT_N: '突破观察',
 }
 
-/** 股票筛选页专用：买点标签，以及观察扫描标签 */
-export function buildScreenSignalFilterOptions() {
-  return SCREEN_SNAPSHOT_SIGNAL_TAGS.map((t) => ({
+/**
+ * 机会页信号下拉。传入当前策略允许的标签；不传则是快照白名单全量。
+ * 空数组保持为空（计划中的策略没有可筛标签）。
+ */
+export function buildScreenSignalFilterOptions(tags) {
+  const list = Array.isArray(tags) ? tags : SCREEN_SNAPSHOT_SIGNAL_TAGS
+  return list.map((t) => ({
     label: SCREEN_TAG_LABELS[t] ? `${t} ${SCREEN_TAG_LABELS[t]}` : t,
     value: t,
   }))

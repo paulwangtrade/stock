@@ -36,6 +36,7 @@ import {
 import { scanRowsLastBarSignals } from "../utils/watchlistSignalScan"
 import { calcTrendCompositeScore, getTrendScoreStyle } from "../utils/trendBreakoutScore"
 import { passesSignalTagFilter, passesReboundScreenFilter, getSignalTagColor, buildScreenSignalFilterOptions, formatSignalTagLabel, normalizeScreenSignalTag, SCREEN_SNAPSHOT_SIGNAL_TAG_SET } from "../utils/signalBuyGuide"
+import { reconcileScreenSignalTagSelection, signalTagsForScreenStrategy } from "../utils/screenStrategySignalFilter"
 import {
   getActiveScreenStrategyId,
   getReboundScreenMaxRsi,
@@ -233,7 +234,6 @@ const filterMarketSegment = ref('')
 const filterSignalTags = ref([])
 const filterCollapseExpanded = ref([])
 const industryOptions = ref([{ label: '全部行业', value: '' }])
-const signalFilterOptions = buildScreenSignalFilterOptions()
 const hasSignalFilter = computed(() => filterSignalTags.value.length > 0)
 const hasReboundFilter = computed(() => filterSignalTags.value.includes('弹'))
 const selectedScreenStrategy = computed(() => {
@@ -246,6 +246,29 @@ const selectedScreenStrategyParams = computed(() => {
   if (!settings) return null
   return getScreenStrategySettingsById(settings, selectedScreenStrategyId.value)
 })
+const allowedScreenSignalTags = computed(() => signalTagsForScreenStrategy(selectedScreenStrategy.value))
+const signalFilterOptions = computed(() => buildScreenSignalFilterOptions(allowedScreenSignalTags.value))
+
+function syncSignalTagsToStrategy() {
+  const next = reconcileScreenSignalTagSelection(filterSignalTags.value, allowedScreenSignalTags.value)
+  const prev = filterSignalTags.value
+  const changed = next.length !== prev.length || next.some((tag, index) => tag !== prev[index])
+  if (changed) filterSignalTags.value = next
+  return changed
+}
+
+function refreshStocksWhenIdle(page = 1) {
+  if (!loadingRef.value) {
+    refreshStocks(page)
+    return
+  }
+  const stop = watch(loadingRef, (loading) => {
+    if (loading) return
+    stop()
+    refreshStocks(page)
+  })
+}
+
 const selectedScreenStrategyNote = computed(() => selectedScreenStrategy.value?.usageNote || '')
 const selectedScreenStrategyPlanned = computed(() => selectedScreenStrategy.value?.engineStatus === 'planned')
 const reboundScreenMaxRsi = computed(() => getReboundScreenMaxRsi(selectedScreenStrategyParams.value))
@@ -275,6 +298,7 @@ function applyScreenStrategiesFromConfig(raw) {
   const strategies = getScreenStrategies(settings)
   screenStrategyOptions.value = strategies.map((item) => ({ label: item.name, value: item.id }))
   selectedScreenStrategyId.value = getActiveScreenStrategyId(settings)
+  if (syncSignalTagsToStrategy()) refreshStocksWhenIdle(1)
 }
 
 const scanProgressPercent = computed(() => {
@@ -869,6 +893,7 @@ function onSnapshotHistoryChange(val) {
 }
 
 function onScreenStrategyChange() {
+  syncSignalTagsToStrategy()
   snapshotTradeDate.value = ''
   selectedSnapshotHistoryValue.value = null
   snapshotMeta.value = null
