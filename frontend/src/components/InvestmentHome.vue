@@ -48,6 +48,7 @@ import { formatFieldTooltip } from '../utils/statusDisplay.js'
 import StockKlineModal from './StockKlineModal.vue'
 import StockLink from './StockLink.vue'
 import OpportunityProjectionDrawer from './OpportunityProjectionDrawer.vue'
+import DailyDisciplineTip from './DailyDisciplineTip.vue'
 
 /** Hidden, not deleted. Flip to true only for developer inspection. */
 const SHOW_LEGACY_HOME_BLOCKS = false
@@ -619,6 +620,8 @@ onMounted(refresh)
     <n-alert type="info" :bordered="false" style="margin-bottom: 14px">
       模拟账户，不是券商资金。非投资建议，不生成买卖指令。
     </n-alert>
+
+    <DailyDisciplineTip />
 
     <section class="block beta-flow-card" data-phase="PHASE14A-R0-D">
       <n-space justify="space-between" align="center" :wrap="true" style="margin-bottom: 10px">
