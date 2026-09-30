@@ -47,7 +47,7 @@ func ListCandidates(q ListQuery) (ListResult, error) {
 		return ListResult{}, err
 	}
 
-	src := data.ListResearchCandidatesForTradeDate(strings.TrimSpace(q.TradeDate), q.MinScore)
+	src := data.ListResearchStrategyCandidates(strings.TrimSpace(q.TradeDate), q.MinScore)
 	out := AssembleFromSnapshot(src)
 	applyAnnotations(out.Items)
 	attachExplainMetaAll(out.Items)
@@ -56,8 +56,19 @@ func ListCandidates(q ListQuery) (ListResult, error) {
 }
 
 // GetCandidate returns detail for one id (Explain shell projected from ResearchExplain).
+// When several strategies produced the same stock, the first assembled row is used.
 func GetCandidate(id string) (DetailResult, error) {
-	c, err := loadCandidate(id)
+	return candidateDetail(id, false, "")
+}
+
+// GetCandidateForStrategy returns the row whose snapshot strategy_id equals strategyID.
+// Empty strategyID matches only unlabeled snapshots (fail-closed; does not treat blank as default).
+func GetCandidateForStrategy(id, strategyID string) (DetailResult, error) {
+	return candidateDetail(id, true, strings.TrimSpace(strategyID))
+}
+
+func candidateDetail(id string, exactStrategy bool, strategyID string) (DetailResult, error) {
+	c, err := loadCandidate(id, exactStrategy, strategyID)
 	if err != nil {
 		return DetailResult{}, err
 	}
@@ -97,7 +108,7 @@ func UpdateCandidate(id string, patch UpdatePatch) (DetailResult, error) {
 	}
 
 	// Ensure candidate exists in current research universe before writing overlay.
-	if _, err := loadCandidate(id); err != nil {
+	if _, err := loadCandidate(id, false, ""); err != nil {
 		return DetailResult{}, err
 	}
 
@@ -107,23 +118,34 @@ func UpdateCandidate(id string, patch UpdatePatch) (DetailResult, error) {
 	return GetCandidate(id)
 }
 
-func loadCandidate(id string) (Candidate, error) {
+func loadCandidate(id string, exactStrategy bool, strategyID string) (Candidate, error) {
 	id = strings.TrimSpace(id)
 	tradeDate, stockCode, ok := ParseCandidateID(id)
 	if !ok {
 		return Candidate{}, ErrNotFound{ID: id}
 	}
 
-	src := data.ListResearchCandidatesForTradeDate(tradeDate, 0)
+	src := data.ListResearchStrategyCandidates(tradeDate, 0)
 	assembled := AssembleFromSnapshot(src)
 
-	var found *Candidate
+	var fallback *Candidate
+	var exact *Candidate
 	for i := range assembled.Items {
 		it := &assembled.Items[i]
-		if it.ID == id || it.StockCode == stockCode {
-			found = it
+		if it.ID != id && it.StockCode != stockCode {
+			continue
+		}
+		if fallback == nil {
+			fallback = it
+		}
+		if strings.TrimSpace(it.StrategyID) == strategyID {
+			exact = it
 			break
 		}
+	}
+	found := fallback
+	if exactStrategy {
+		found = exact
 	}
 	if found == nil {
 		return Candidate{}, ErrNotFound{ID: id}

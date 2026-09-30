@@ -7,8 +7,19 @@ import (
 )
 
 // GetExplain returns ResearchExplain for a candidate id (derive + optional overlay).
+// When the same stock appears under several strategies, the first assembled row is used.
 func GetExplain(candidateID string) (Explain, error) {
-	c, err := loadCandidate(candidateID)
+	return explainForCandidate(candidateID, false, "")
+}
+
+// GetExplainForStrategy derives explain from the row with this snapshot strategy_id.
+// Empty strategyID matches only unlabeled rows.
+func GetExplainForStrategy(candidateID, strategyID string) (Explain, error) {
+	return explainForCandidate(candidateID, true, strings.TrimSpace(strategyID))
+}
+
+func explainForCandidate(candidateID string, exactStrategy bool, strategyID string) (Explain, error) {
+	c, err := loadCandidate(candidateID, exactStrategy, strategyID)
 	if err != nil {
 		return Explain{}, err
 	}
@@ -56,7 +67,7 @@ func UpdateExplain(candidateID string, patch ExplainPatch) (Explain, error) {
 		}
 	}
 
-	if _, err := loadCandidate(candidateID); err != nil {
+	if _, err := loadCandidate(candidateID, false, ""); err != nil {
 		return Explain{}, err
 	}
 	if _, err := DefaultExplainStore().Patch(candidateID, patch); err != nil {

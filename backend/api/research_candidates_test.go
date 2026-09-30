@@ -268,6 +268,131 @@ func TestResearchExplainAPI_GetAndPatch(t *testing.T) {
 	require.NotEmpty(t, ex2.Evidence.SignalTag)
 }
 
+func TestResearchCandidatesAPI_StrategyIDOnListAndDetail(t *testing.T) {
+	setupAPITestDB(t)
+	require.NoError(t, db.Dao.AutoMigrate(&models.SignalScanSnapshot{}, &data.Settings{}))
+	data.ResetSettingCacheForTest()
+	research.SetStoreForTest(research.NewMemoryStoreForTest())
+	research.SetExplainStoreForTest(research.NewExplainMemoryStoreForTest())
+	t.Cleanup(func() {
+		research.ResetStoreForTest()
+		research.ResetExplainStoreForTest()
+	})
+
+	days0 := 0
+	mk := func(code, name, tag string) string {
+		payload := models.SignalScanResultPayload{
+			Items: []models.SignalScanHit{
+				{SECUCODE: code, SECURITY_CODE: code, SECURITY_NAME_ABBR: name, Tag: tag, DaysAgo: &days0, RSI: 28, NEW_PRICE: "10"},
+			},
+			HitTotal: 1,
+		}
+		raw, err := json.Marshal(payload)
+		require.NoError(t, err)
+		return string(raw)
+	}
+	day := "2026-08-18"
+	require.NoError(t, db.Dao.Create(&models.SignalScanSnapshot{
+		CreatedAt:    time.Date(2026, 8, 18, 15, 0, 0, 0, time.UTC),
+		TradeDate:    day,
+		Session:      "close",
+		Scope:        models.SignalScanScopeAll,
+		StrategyID:   "ext_xsmom_v1",
+		StrategyName: "截面动量V1",
+		Status:       "done",
+		HitTotal:     1,
+		ResultJSON:   mk("600000.SH", "浦发", "强"),
+	}).Error)
+	require.NoError(t, db.Dao.Create(&models.SignalScanSnapshot{
+		CreatedAt:  time.Date(2026, 8, 18, 15, 5, 0, 0, time.UTC),
+		TradeDate:  day,
+		Session:    "close",
+		Scope:      models.SignalScanScopeAll,
+		StrategyID: "",
+		Status:     "done",
+		HitTotal:   1,
+		ResultJSON: mk("000001.SZ", "平安", "强"),
+	}).Error)
+
+	mux := http.NewServeMux()
+	api.RegisterResearchCandidatesRoutes(mux)
+	req := httptest.NewRequest(http.MethodGet, "/api/research/candidates?trade_date="+day, nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var list research.ListResult
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
+	require.Len(t, list.Items, 2)
+	var labeled, unlabeled *research.Candidate
+	for i := range list.Items {
+		it := &list.Items[i]
+		switch it.StockCode {
+		case "sh600000":
+			labeled = it
+		case "sz000001":
+			unlabeled = it
+		}
+	}
+	require.NotNil(t, labeled)
+	require.Equal(t, "ext_xsmom_v1", labeled.StrategyID)
+	require.Equal(t, "截面动量V1", labeled.StrategyName)
+	require.NotNil(t, unlabeled)
+	require.Equal(t, "", unlabeled.StrategyID)
+
+	reqLabeled := httptest.NewRequest(http.MethodGet, "/api/research/candidates/"+labeled.ID+"?strategy_id=ext_xsmom_v1", nil)
+	recLabeled := httptest.NewRecorder()
+	mux.ServeHTTP(recLabeled, reqLabeled)
+	require.Equal(t, http.StatusOK, recLabeled.Code)
+	var detail research.DetailResult
+	require.NoError(t, json.Unmarshal(recLabeled.Body.Bytes(), &detail))
+	require.Equal(t, "sh600000", detail.Candidate.StockCode)
+	require.Equal(t, "ext_xsmom_v1", detail.Candidate.StrategyID)
+
+	reqBlank := httptest.NewRequest(http.MethodGet, "/api/research/candidates/"+unlabeled.ID+"?strategy_id=", nil)
+	recBlank := httptest.NewRecorder()
+	mux.ServeHTTP(recBlank, reqBlank)
+	require.Equal(t, http.StatusOK, recBlank.Code)
+	var blank research.DetailResult
+	require.NoError(t, json.Unmarshal(recBlank.Body.Bytes(), &blank))
+	require.Equal(t, "sz000001", blank.Candidate.StockCode)
+	require.Equal(t, "", blank.Candidate.StrategyID)
+
+	reqMiss := httptest.NewRequest(http.MethodGet, "/api/research/candidates/"+labeled.ID+"?strategy_id=missing", nil)
+	recMiss := httptest.NewRecorder()
+	mux.ServeHTTP(recMiss, reqMiss)
+	require.Equal(t, http.StatusNotFound, recMiss.Code)
+
+	// Same stock, two strategies: explain follows the requested snapshot strategy, not the other row.
+	require.NoError(t, db.Dao.Create(&models.SignalScanSnapshot{
+		CreatedAt:    time.Date(2026, 8, 18, 16, 0, 0, 0, time.UTC),
+		TradeDate:    day,
+		Session:      "close",
+		Scope:        models.SignalScanScopeAll,
+		StrategyID:   "beta_v1",
+		StrategyName: "Beta",
+		Status:       "done",
+		HitTotal:     1,
+		ResultJSON:   mk("600000.SH", "浦发", "趋"),
+	}).Error)
+	explainURL := "/api/research/candidates/" + labeled.ID + "/explain?strategy_id=beta_v1"
+	reqEx := httptest.NewRequest(http.MethodGet, explainURL, nil)
+	recEx := httptest.NewRecorder()
+	mux.ServeHTTP(recEx, reqEx)
+	require.Equal(t, http.StatusOK, recEx.Code)
+	var ex research.Explain
+	require.NoError(t, json.Unmarshal(recEx.Body.Bytes(), &ex))
+	require.Equal(t, "趋", ex.Evidence.SignalTag)
+
+	reqExMom := httptest.NewRequest(http.MethodGet, "/api/research/candidates/"+labeled.ID+"/explain?strategy_id=ext_xsmom_v1", nil)
+	recExMom := httptest.NewRecorder()
+	mux.ServeHTTP(recExMom, reqExMom)
+	require.Equal(t, http.StatusOK, recExMom.Code)
+	var exMom research.Explain
+	require.NoError(t, json.Unmarshal(recExMom.Body.Bytes(), &exMom))
+	require.Equal(t, "强", exMom.Evidence.SignalTag)
+}
+
 func TestResearchExplainAPI_NotFound(t *testing.T) {
 	seedResearchSnapshot(t)
 	mux := http.NewServeMux()

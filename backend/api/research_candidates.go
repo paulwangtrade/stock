@@ -13,12 +13,14 @@ import (
 
 // ResearchCandidatesHandler serves Phase13 Research Candidate + Explain APIs.
 // Paths:
-//   GET   /api/research/candidates
-//   GET   /api/research/candidates/{id}
-//   PATCH /api/research/candidates/{id}           (status / note / tags)
-//   GET   /api/research/candidates/{id}/explain
-//   PATCH /api/research/candidates/{id}/explain   (manual summary / reason / risk_note)
-//   GET   /api/research/explains/{explain_id}     (alias)
+//
+//	GET   /api/research/candidates
+//	GET   /api/research/candidates/{id}
+//	PATCH /api/research/candidates/{id}           (status / note / tags)
+//	GET   /api/research/candidates/{id}/explain
+//	PATCH /api/research/candidates/{id}/explain   (manual summary / reason / risk_note)
+//	GET   /api/research/explains/{explain_id}     (alias)
+//
 // Does NOT implement Promote / TradeCandidate / Draft / Broker / AI.
 type ResearchCandidatesHandler struct{}
 
@@ -127,7 +129,16 @@ func (h *ResearchCandidatesHandler) handleByID(w http.ResponseWriter, r *http.Re
 }
 
 func (h *ResearchCandidatesHandler) handleDetail(w http.ResponseWriter, r *http.Request, id string) {
-	out, err := research.GetCandidate(id)
+	var (
+		out research.DetailResult
+		err error
+	)
+	if _, ok := r.URL.Query()["strategy_id"]; ok {
+		// Present key (including empty) is an exact snapshot strategy match. Blank is unlabeled, not "default".
+		out, err = research.GetCandidateForStrategy(id, r.URL.Query().Get("strategy_id"))
+	} else {
+		out, err = research.GetCandidate(id)
+	}
 	if err != nil {
 		writeResearchErr(w, err)
 		return
@@ -188,7 +199,15 @@ func (h *ResearchCandidatesHandler) handleUpdate(w http.ResponseWriter, r *http.
 func (h *ResearchCandidatesHandler) handleExplain(w http.ResponseWriter, r *http.Request, candidateID string) {
 	switch r.Method {
 	case http.MethodGet:
-		out, err := research.GetExplain(candidateID)
+		var (
+			out research.Explain
+			err error
+		)
+		if _, ok := r.URL.Query()["strategy_id"]; ok {
+			out, err = research.GetExplainForStrategy(candidateID, r.URL.Query().Get("strategy_id"))
+		} else {
+			out, err = research.GetExplain(candidateID)
+		}
 		if err != nil {
 			writeResearchErr(w, err)
 			return

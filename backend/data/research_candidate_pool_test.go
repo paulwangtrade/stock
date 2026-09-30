@@ -168,3 +168,132 @@ func TestListResearchCandidates_AllowsLegacyEmptyScope(t *testing.T) {
 	require.Equal(t, 1, list.ItemCount)
 	require.Equal(t, "sz000001", list.Items[0].StockCode)
 }
+
+func TestListResearchStrategyCandidates_MixedStrategiesFailClosed(t *testing.T) {
+	setupSignalScanListTestDB(t)
+	days0 := 0
+	mk := func(code, name, tag string) string {
+		payload := models.SignalScanResultPayload{
+			Items: []models.SignalScanHit{
+				{SECUCODE: code, SECURITY_CODE: code, SECURITY_NAME_ABBR: name, Tag: tag, DaysAgo: &days0, RSI: 28, NEW_PRICE: "10"},
+			},
+			HitTotal: 1,
+		}
+		raw, err := json.Marshal(payload)
+		require.NoError(t, err)
+		return string(raw)
+	}
+
+	day := "2099-06-01"
+	require.NoError(t, db.Dao.Create(&models.SignalScanSnapshot{
+		CreatedAt:    time.Date(2099, 6, 1, 9, 0, 0, 0, time.UTC),
+		TradeDate:    day,
+		Session:      "close",
+		Scope:        models.SignalScanScopeAll,
+		StrategyID:   "ext_xsmom_v1",
+		StrategyName: "旧截面",
+		Status:       "done",
+		HitTotal:     1,
+		ResultJSON:   mk("600000.SH", "旧行", "强"),
+	}).Error)
+	require.NoError(t, db.Dao.Create(&models.SignalScanSnapshot{
+		CreatedAt:    time.Date(2099, 6, 1, 10, 0, 0, 0, time.UTC),
+		TradeDate:    day,
+		Session:      "close",
+		Scope:        models.SignalScanScopeAll,
+		StrategyID:   "ext_xsmom_v1",
+		StrategyName: "截面动量V1",
+		Status:       "done",
+		HitTotal:     1,
+		ResultJSON:   mk("600000.SH", "浦发", "强"),
+	}).Error)
+	require.NoError(t, db.Dao.Create(&models.SignalScanSnapshot{
+		CreatedAt:    time.Date(2099, 6, 1, 11, 0, 0, 0, time.UTC),
+		TradeDate:    day,
+		Session:      "close",
+		Scope:        models.SignalScanScopeAll,
+		StrategyID:   "alpha_v1",
+		StrategyName: "",
+		Status:       "done",
+		HitTotal:     1,
+		ResultJSON:   mk("000001.SZ", "平安", "趋"),
+	}).Error)
+	require.NoError(t, db.Dao.Create(&models.SignalScanSnapshot{
+		CreatedAt:  time.Date(2099, 6, 1, 10, 30, 0, 0, time.UTC),
+		TradeDate:  day,
+		Session:    "close",
+		Scope:      models.SignalScanScopeAll,
+		StrategyID: "   ",
+		Status:     "done",
+		HitTotal:   1,
+		ResultJSON: mk("300001.SZ", "特锐德", "强"),
+	}).Error)
+	// 更早交易日不进入「最新研究日」的合并结果。
+	require.NoError(t, db.Dao.Create(&models.SignalScanSnapshot{
+		CreatedAt:  time.Date(2099, 6, 1, 8, 0, 0, 0, time.UTC),
+		TradeDate:  "2099-05-01",
+		Session:    "close",
+		Scope:      models.SignalScanScopeAll,
+		StrategyID: "other_day",
+		Status:     "done",
+		HitTotal:   1,
+		ResultJSON: mk("601398.SH", "工行", "强"),
+	}).Error)
+	require.NoError(t, db.Dao.Create(&models.SignalScanSnapshot{
+		CreatedAt:  time.Date(2099, 6, 1, 12, 0, 0, 0, time.UTC),
+		TradeDate:  day,
+		Session:    "close",
+		Scope:      models.SignalScanScopeUniverse,
+		StrategyID: "universe_only",
+		Status:     "done",
+		HitTotal:   1,
+		ResultJSON: mk("601988.SH", "中行", "强"),
+	}).Error)
+
+	list := ListResearchStrategyCandidates("", 60)
+	require.Equal(t, day, list.TradeDate)
+	require.Equal(t, "", list.StrategyName)
+	require.Equal(t, 3, list.ItemCount)
+
+	byKey := map[string]models.ResearchSnapshotCandidate{}
+	for _, it := range list.Items {
+		byKey[it.StrategyID+"|"+it.StockCode] = it
+	}
+	mom := byKey["ext_xsmom_v1|sh600000"]
+	require.Equal(t, "浦发", mom.StockName)
+	require.Equal(t, "截面动量V1", mom.StrategyName)
+	require.NotZero(t, mom.SnapshotID)
+
+	alpha := byKey["alpha_v1|sz000001"]
+	require.Equal(t, "alpha_v1", alpha.StrategyID)
+	require.Equal(t, "", alpha.StrategyName)
+
+	unlabeled := byKey["|sz300001"]
+	require.Equal(t, "", unlabeled.StrategyID)
+	require.Equal(t, "", unlabeled.StrategyName)
+	_, leaked := byKey["other_day|sh601398"]
+	require.False(t, leaked)
+	_, universe := byKey["universe_only|sh601988"]
+	require.False(t, universe)
+
+	// Same stock under two strategies stays two rows; ids are not collapsed.
+	require.NoError(t, db.Dao.Create(&models.SignalScanSnapshot{
+		CreatedAt:    time.Date(2099, 6, 1, 11, 30, 0, 0, time.UTC),
+		TradeDate:    day,
+		Session:      "close",
+		Scope:        models.SignalScanScopeAll,
+		StrategyID:   "beta_v1",
+		StrategyName: "Beta",
+		Status:       "done",
+		HitTotal:     1,
+		ResultJSON:   mk("600000.SH", "浦发乙", "强"),
+	}).Error)
+	again := ListResearchStrategyCandidates(day, 60)
+	count600 := 0
+	for _, it := range again.Items {
+		if it.StockCode == "sh600000" {
+			count600++
+		}
+	}
+	require.Equal(t, 2, count600)
+}

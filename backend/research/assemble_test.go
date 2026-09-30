@@ -56,6 +56,28 @@ func TestAssembleFromSnapshot_StableIDAndDefaults(t *testing.T) {
 	require.Equal(t, []string{"银行"}, c.Tags)
 	require.NotNil(t, c.Rank)
 	require.Equal(t, 1, *c.Rank)
+	require.Equal(t, "", c.StrategyID)
+	require.Equal(t, "", c.StrategyName)
+}
+
+func TestAssembleFromSnapshot_KeepsStrategyIDWithoutGuessing(t *testing.T) {
+	src := &models.ResearchSnapshotCandidateList{
+		SnapshotID: 9,
+		TradeDate:  "2026-08-17",
+		Items: []models.ResearchSnapshotCandidate{
+			{StockCode: "sh600000", StockName: "浦发", SignalScore: 90, StrategyID: "ext_xsmom_v1", StrategyName: "截面动量V1", SnapshotID: 9},
+			{StockCode: "sz000001", StockName: "平安", SignalScore: 80, StrategyID: "", StrategyName: "", SnapshotID: 8},
+		},
+	}
+	out := AssembleFromSnapshot(src)
+	require.Equal(t, "ext_xsmom_v1", out.Items[0].StrategyID)
+	require.Equal(t, "截面动量V1", out.Items[0].StrategyName)
+	require.NotNil(t, out.Items[0].SignalSnapshotID)
+	require.Equal(t, uint(9), *out.Items[0].SignalSnapshotID)
+	require.Equal(t, "", out.Items[1].StrategyID)
+	require.Equal(t, "", out.Items[1].StrategyName)
+	require.NotNil(t, out.Items[1].SignalSnapshotID)
+	require.Equal(t, uint(8), *out.Items[1].SignalSnapshotID)
 }
 
 func TestValidateTradeDate(t *testing.T) {

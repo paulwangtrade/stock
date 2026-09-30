@@ -43,6 +43,9 @@ type Candidate struct {
 	Direction string `json:"direction,omitempty"`
 	Price     string `json:"price,omitempty"`
 	Reason    string `json:"reason,omitempty"`
+	// StrategyID 是产生该行的 SignalScan 快照 strategy_id。空表示快照未标注，调用方不得补猜。
+	StrategyID   string `json:"strategy_id,omitempty"`
+	StrategyName string `json:"strategy_name,omitempty"`
 }
 
 // ListResult is GET /api/research/candidates response body.
@@ -87,7 +90,7 @@ type ListQuery struct {
 // UpdatePatch is PATCH body for research annotation (status / note / tags).
 // Nil pointer = field not provided (leave unchanged).
 type UpdatePatch struct {
-	Status *string  `json:"status"`
-	Note   *string  `json:"note"`
+	Status *string   `json:"status"`
+	Note   *string   `json:"note"`
 	Tags   *[]string `json:"tags"`
 }
