@@ -38,10 +38,10 @@ func (SignalScanSnapshot) TableName() string {
 }
 
 type SignalScanSnapshotQuery struct {
-	Page      int    `json:"page"`
-	PageSize  int    `json:"pageSize"`
-	TradeDate string `json:"tradeDate"`
-	Session   string `json:"session"`
+	Page       int    `json:"page"`
+	PageSize   int    `json:"pageSize"`
+	TradeDate  string `json:"tradeDate"`
+	Session    string `json:"session"`
 	StrategyID string `json:"strategyId"`
 }
 
@@ -52,26 +52,26 @@ type SignalScanSnapshotPageResp struct {
 
 // SignalScanHit 单只股票信号结果（与前端列表字段对齐）
 type SignalScanHit struct {
-	SECUCODE         string `json:"SECUCODE"`
-	SECURITY_CODE    string `json:"SECURITY_CODE"`
-	SECURITY_NAME_ABBR string `json:"SECURITY_NAME_ABBR"`
-	NEW_PRICE        string `json:"NEW_PRICE,omitempty"`
-	CHANGE_RATE      string `json:"CHANGE_RATE,omitempty"`
-	HIGH_PRICE       string `json:"HIGH_PRICE,omitempty"`
-	LOW_PRICE        string `json:"LOW_PRICE,omitempty"`
-	PRE_CLOSE_PRICE  string `json:"PRE_CLOSE_PRICE,omitempty"`
-	VOLUME           string `json:"VOLUME,omitempty"`
-	DEAL_AMOUNT      string `json:"DEAL_AMOUNT,omitempty"`
-	TURNOVERRATE     string `json:"TURNOVERRATE,omitempty"`
-	VOLUME_RATIO     string `json:"VOLUME_RATIO,omitempty"`
-	INDUSTRY         string `json:"INDUSTRY,omitempty"`
-	CONCEPT          string `json:"CONCEPT,omitempty"`
-	MARKET           string `json:"MARKET,omitempty"`
-	Tag              string `json:"tag"`
-	DaysAgo          *int   `json:"recentSignalDaysAgo"`
-	StatusText       string `json:"statusText"`
-	SortRank         int    `json:"sortRank"`
-	RSI              float64 `json:"rsi,omitempty"`
+	SECUCODE           string  `json:"SECUCODE"`
+	SECURITY_CODE      string  `json:"SECURITY_CODE"`
+	SECURITY_NAME_ABBR string  `json:"SECURITY_NAME_ABBR"`
+	NEW_PRICE          string  `json:"NEW_PRICE,omitempty"`
+	CHANGE_RATE        string  `json:"CHANGE_RATE,omitempty"`
+	HIGH_PRICE         string  `json:"HIGH_PRICE,omitempty"`
+	LOW_PRICE          string  `json:"LOW_PRICE,omitempty"`
+	PRE_CLOSE_PRICE    string  `json:"PRE_CLOSE_PRICE,omitempty"`
+	VOLUME             string  `json:"VOLUME,omitempty"`
+	DEAL_AMOUNT        string  `json:"DEAL_AMOUNT,omitempty"`
+	TURNOVERRATE       string  `json:"TURNOVERRATE,omitempty"`
+	VOLUME_RATIO       string  `json:"VOLUME_RATIO,omitempty"`
+	INDUSTRY           string  `json:"INDUSTRY,omitempty"`
+	CONCEPT            string  `json:"CONCEPT,omitempty"`
+	MARKET             string  `json:"MARKET,omitempty"`
+	Tag                string  `json:"tag"`
+	DaysAgo            *int    `json:"recentSignalDaysAgo"`
+	StatusText         string  `json:"statusText"`
+	SortRank           int     `json:"sortRank"`
+	RSI                float64 `json:"rsi,omitempty"`
 
 	// SignalEvent 最小字段（Phase14-C）：与实时行情 NEW_PRICE 严格分离
 	SchemaVersion     string  `json:"schema_version,omitempty"`
@@ -86,16 +86,41 @@ type SignalScanHit struct {
 }
 
 type SignalScanResultPayload struct {
-	Items         []SignalScanHit `json:"items"`
-	ScannedTotal  int             `json:"scannedTotal"`
-	HitTotal      int             `json:"hitTotal"`
-	TradeDate     string          `json:"tradeDate"`
-	Session       string          `json:"session"`
-	StrategyID    string          `json:"strategyId,omitempty"`
-	StrategyName  string          `json:"strategyName,omitempty"`
-	CompletedAt   string          `json:"completedAt"`
+	Items        []SignalScanHit `json:"items"`
+	ScannedTotal int             `json:"scannedTotal"`
+	HitTotal     int             `json:"hitTotal"`
+	TradeDate    string          `json:"tradeDate"`
+	Session      string          `json:"session"`
+	StrategyID   string          `json:"strategyId,omitempty"`
+	StrategyName string          `json:"strategyName,omitempty"`
+	CompletedAt  string          `json:"completedAt"`
 	// Config carries M1 universe snapshot metadata (no new DB column / config_json).
 	Config *UniverseSignalSnapshotConfig `json:"config,omitempty"`
+	// NextDaySetups 是 T 收盘后的观察列表，与 Items（已确认信号）分开。
+	// 不是已确认信号，不得据此写 TradePlan 或委托。
+	NextDaySetups []NextDaySetupWatch `json:"nextDaySetups"`
+}
+
+// NextDaySetupWatch 次日观察：距已知规则还差一步。Confirmed / OrderIntent 必须为 false。
+type NextDaySetupWatch struct {
+	SECUCODE           string   `json:"SECUCODE"`
+	SECURITY_CODE      string   `json:"SECURITY_CODE,omitempty"`
+	SECURITY_NAME_ABBR string   `json:"SECURITY_NAME_ABBR,omitempty"`
+	Engine             string   `json:"engine"`
+	Tag                string   `json:"tag"`
+	PriceMode          string   `json:"priceMode"`
+	TriggerPrice       *float64 `json:"triggerPrice,omitempty"`
+	CloseT             float64  `json:"closeT,omitempty"`
+	DistancePct        *float64 `json:"distancePct,omitempty"`
+	GapText            string   `json:"gapText,omitempty"`
+	Summary            string   `json:"summary,omitempty"`
+	StatusText         string   `json:"statusText,omitempty"`
+	Disclaimer         string   `json:"disclaimer"`
+	AsOfDate           string   `json:"asOfDate,omitempty"`
+	ConditionGaps      []string `json:"conditionGaps,omitempty"`
+	Confirmed          bool     `json:"confirmed"`
+	OrderIntent        bool     `json:"orderIntent"`
+	ObservationOnly    bool     `json:"observationOnly"`
 }
 
 // UniverseSignalSnapshotConfig is persisted inside result_json for M1 universe snaps.

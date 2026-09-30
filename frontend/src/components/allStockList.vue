@@ -26,6 +26,7 @@ import StockKlineModal from "./StockKlineModal.vue"
 import StockLink from "./StockLink.vue"
 import OpportunityProjectionDrawer from "./OpportunityProjectionDrawer.vue"
 import InvestmentNarrativePanel from './InvestmentNarrativePanel.vue'
+import NextDaySetupPanel from './NextDaySetupPanel.vue'
 import { resolveStrategyRowCode, resolveStrategyRowName, toEastMoneyCode, toFollowCodeFromRow } from "../utils/stockCode"
 import { applyStockClickAction, toStockDisplayModel } from "../utils/stockDisplayAdapters.js"
 import {
@@ -200,6 +201,8 @@ const snapshotTradeDate = ref('')
 const selectedSnapshotHistoryValue = ref(null)
 const snapshotMeta = ref(null)
 const signalDataSource = ref('')
+const nextDaySetups = ref([])
+const nextDaySetupsLegacy = ref(false)
 const lastSnapshotPayload = ref(null)
 const backendScanLoading = ref(false)
 const snapshotHistoryOptions = ref([])
@@ -664,6 +667,21 @@ async function refreshLiveQuotesForRows(rows) {
   }
 }
 
+function applyNextDaySetupsFromPayload(payload) {
+  if (Array.isArray(payload?.nextDaySetups)) {
+    nextDaySetups.value = payload.nextDaySetups
+    nextDaySetupsLegacy.value = false
+    return
+  }
+  nextDaySetups.value = []
+  nextDaySetupsLegacy.value = true
+}
+
+function clearNextDaySetups() {
+  nextDaySetups.value = []
+  nextDaySetupsLegacy.value = false
+}
+
 function applySnapshotPayload(payload, snap) {
   signalScanGeneration.value++
   const prevSnapId = snapshotMeta.value?.id
@@ -692,6 +710,7 @@ function applySnapshotPayload(payload, snap) {
   paginationReactive.itemCount = signalFilteredRows.value.length
   paginationReactive.pageCount = Math.max(1, Math.ceil(signalFilteredRows.value.length / paginationReactive.pageSize))
   snapshotMeta.value = snap
+  applyNextDaySetupsFromPayload(payload)
   if (snap?.id != null && snap.id !== prevSnapId) {
     liveQuoteByCode.value = new Map()
   }
@@ -857,6 +876,7 @@ function onSnapshotHistoryChange(val) {
     snapshotMeta.value = null
     lastSnapshotPayload.value = null
     signalDataSource.value = ''
+    clearNextDaySetups()
     if (hasSignalFilter.value) refreshStocks()
     return
   }
@@ -871,6 +891,7 @@ function onScreenStrategyChange() {
   selectedSnapshotHistoryValue.value = null
   snapshotMeta.value = null
   signalDataSource.value = ''
+  clearNextDaySetups()
   signalByCode.value = new Map()
   signalFilteredRows.value = []
   paginationReactive.page = 1
@@ -1070,6 +1091,7 @@ async function loadLiveSignalScan() {
   snapshotTradeDate.value = ''
   selectedSnapshotHistoryValue.value = null
   lastSnapshotPayload.value = null
+  clearNextDaySetups()
   signalDataSource.value = 'live'
   signalFilteredRows.value = []
   signalByCode.value = new Map()
@@ -2615,6 +2637,13 @@ const toNumber = (value, defaultValue = 0) => {
       </n-text>
       <n-text v-else depth="3" class="snapshot-hint">点击生成盘后快照（后台执行）；按信号筛选须先有快照</n-text>
     </div>
+
+    <NextDaySetupPanel
+      v-if="signalDataSource === 'snapshot'"
+      :setups="nextDaySetups"
+      :as-of-date="snapshotMeta?.tradeDate || ''"
+      :legacy-snapshot="nextDaySetupsLegacy"
+    />
 
     <div class="stock-toolbar">
       <n-select

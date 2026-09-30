@@ -4262,6 +4262,52 @@ export namespace models {
 	        this.strategyKey = source["strategyKey"];
 	    }
 	}
+	export class NextDaySetupWatch {
+	    SECUCODE: string;
+	    SECURITY_CODE?: string;
+	    SECURITY_NAME_ABBR?: string;
+	    engine: string;
+	    tag: string;
+	    priceMode: string;
+	    triggerPrice?: number;
+	    closeT?: number;
+	    distancePct?: number;
+	    gapText?: string;
+	    summary?: string;
+	    statusText?: string;
+	    disclaimer: string;
+	    asOfDate?: string;
+	    conditionGaps?: string[];
+	    confirmed: boolean;
+	    orderIntent: boolean;
+	    observationOnly: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new NextDaySetupWatch(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.SECUCODE = source["SECUCODE"];
+	        this.SECURITY_CODE = source["SECURITY_CODE"];
+	        this.SECURITY_NAME_ABBR = source["SECURITY_NAME_ABBR"];
+	        this.engine = source["engine"];
+	        this.tag = source["tag"];
+	        this.priceMode = source["priceMode"];
+	        this.triggerPrice = source["triggerPrice"];
+	        this.closeT = source["closeT"];
+	        this.distancePct = source["distancePct"];
+	        this.gapText = source["gapText"];
+	        this.summary = source["summary"];
+	        this.statusText = source["statusText"];
+	        this.disclaimer = source["disclaimer"];
+	        this.asOfDate = source["asOfDate"];
+	        this.conditionGaps = source["conditionGaps"];
+	        this.confirmed = source["confirmed"];
+	        this.orderIntent = source["orderIntent"];
+	        this.observationOnly = source["observationOnly"];
+	    }
+	}
 	export class SignalScanResultPayload {
 	    items: SignalScanHit[];
 	    scannedTotal: number;
@@ -4272,6 +4318,7 @@ export namespace models {
 	    strategyName?: string;
 	    completedAt: string;
 	    config?: UniverseSignalSnapshotConfig;
+	    nextDaySetups?: NextDaySetupWatch[];
 	
 	    static createFrom(source: any = {}) {
 	        return new SignalScanResultPayload(source);
@@ -4288,6 +4335,7 @@ export namespace models {
 	        this.strategyName = source["strategyName"];
 	        this.completedAt = source["completedAt"];
 	        this.config = this.convertValues(source["config"], UniverseSignalSnapshotConfig);
+	        this.nextDaySetups = this.convertValues(source["nextDaySetups"], NextDaySetupWatch);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

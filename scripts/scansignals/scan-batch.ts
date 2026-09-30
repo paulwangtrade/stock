@@ -13,6 +13,10 @@ import {
   parseSignalParams,
 } from '../../frontend/src/utils/signalSettings'
 import { SCREEN_SNAPSHOT_SIGNAL_TAG_SET } from '../../frontend/src/utils/signalTagConstants'
+import {
+  evaluateNextDaySetups,
+  NEXT_DAY_SETUP_DISCLAIMER,
+} from '../../frontend/src/utils/nextDaySetupWatch'
 
 type StockInput = {
   code: string
@@ -54,6 +58,7 @@ export function runSignalScanBatch(input: ScanInput) {
   }
 
   const items: Array<Record<string, unknown>> = []
+  const setups: Array<Record<string, unknown>> = []
   for (const s of stocks) {
     const bars = {
       closes: s.closes,
@@ -69,9 +74,41 @@ export function runSignalScanBatch(input: ScanInput) {
         ? Math.min(s.lastBarIndex, s.closes.length - 1)
         : s.closes.length - 1
     if (lastIdx < 0) continue
+    const row = s.row || {}
+    const end = lastIdx + 1
+    const trimmed = {
+      closes: (s.closes || []).slice(0, end),
+      opens: (s.opens || []).slice(0, end),
+      highs: (s.highs || []).slice(0, end),
+      lows: (s.lows || []).slice(0, end),
+      volumes: (s.volumes || []).slice(0, end),
+      dayKeys: (s.dayKeys || []).slice(0, end),
+    }
+    for (const setup of evaluateNextDaySetups(trimmed, options)) {
+      setups.push({
+        SECUCODE: row.SECUCODE || s.secucode || s.code,
+        SECURITY_CODE: row.SECURITY_CODE || '',
+        SECURITY_NAME_ABBR: row.SECURITY_NAME_ABBR || s.name || '',
+        engine: setup.engine,
+        tag: setup.tag,
+        priceMode: setup.priceMode,
+        triggerPrice: setup.triggerPrice,
+        closeT: setup.closeT,
+        distancePct: setup.distancePct,
+        gapText: setup.gapText,
+        summary: setup.summary,
+        statusText: setup.statusText,
+        disclaimer: NEXT_DAY_SETUP_DISCLAIMER,
+        asOfDate: trimmed.dayKeys[trimmed.dayKeys.length - 1] || '',
+        conditionGaps: setup.conditionGaps,
+        confirmed: false,
+        orderIntent: false,
+        observationOnly: true,
+      })
+    }
+
     const summary = summarizeBuySignal(bars, { ...options, signalLastIndex: lastIdx })
     if (!summary?.tag || !SCREEN_SNAPSHOT_SIGNAL_TAG_SET.has(summary.tag)) continue
-    const row = s.row || {}
     const buyRange = calcBuyPriceRange(summary, bars, { ...options, signalLastIndex: lastIdx })
     const tag = summary.tag
     const isConfirmBar = tag === '强' || tag === '突'
@@ -123,7 +160,13 @@ export function runSignalScanBatch(input: ScanInput) {
     if (ra !== rb) return rb - ra
     return String(a.SECURITY_NAME_ABBR || '').localeCompare(String(b.SECURITY_NAME_ABBR || ''), 'zh-CN')
   })
-  return { items, hitTotal: items.length }
+  setups.sort((a, b) => {
+    const da = Math.abs(Number(a.distancePct) || 0)
+    const db = Math.abs(Number(b.distancePct) || 0)
+    if (da !== db) return da - db
+    return String(a.SECURITY_NAME_ABBR || '').localeCompare(String(b.SECURITY_NAME_ABBR || ''), 'zh-CN')
+  })
+  return { items, hitTotal: items.length, setups, setupTotal: setups.length }
 }
 
 // IIFE 导出供 Go goja / Node 调用
