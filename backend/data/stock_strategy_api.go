@@ -20,6 +20,12 @@ func NewStockStrategyApi() *StockStrategyApi {
 }
 
 func (a *StockStrategyApi) Create(s *models.StockStrategy) error {
+	if s == nil {
+		return fmt.Errorf("策略为空")
+	}
+	if s.QueryType == ObservationQueryType {
+		normalizeObservationStrategy(s, nil)
+	}
 	if s.PageSize <= 0 {
 		s.PageSize = 50
 	}
@@ -27,8 +33,21 @@ func (a *StockStrategyApi) Create(s *models.StockStrategy) error {
 }
 
 func (a *StockStrategyApi) Update(s *models.StockStrategy) error {
+	if s == nil {
+		return fmt.Errorf("策略为空")
+	}
 	if s.PageSize <= 0 {
 		s.PageSize = 50
+	}
+	if s.QueryType == ObservationQueryType {
+		var prev *models.StockStrategy
+		if s.ID > 0 {
+			if existing, err := a.GetByID(s.ID); err == nil {
+				prev = existing
+			}
+		}
+		normalizeObservationStrategy(s, prev)
+		return a.updateObservationColumns(s)
 	}
 	return db.Dao.Save(s).Error
 }
@@ -45,9 +64,10 @@ func (a *StockStrategyApi) GetByID(id uint) (*models.StockStrategy, error) {
 }
 
 // GetFirstEnabled 返回第一个启用的选股策略（Phase1 宇宙源）。
+// 观察策略不走这条路径：定时观察只产生观察名单，纳入模拟计划由 feedsTradePlan 单独控制。
 func (a *StockStrategyApi) GetFirstEnabled() (*models.StockStrategy, error) {
 	var s models.StockStrategy
-	err := db.Dao.Where("enable = ?", true).Order("id ASC").First(&s).Error
+	err := db.Dao.Where("enable = ? AND query_type <> ?", true, ObservationQueryType).Order("id ASC").First(&s).Error
 	if err != nil {
 		return nil, err
 	}
@@ -65,6 +85,14 @@ func (a *StockStrategyApi) GetLatestRun(strategyID uint) (*models.StockStrategyR
 }
 
 func (a *StockStrategyApi) List(q *models.StockStrategyQuery) *models.StockStrategyPageResp {
+	if q == nil {
+		q = &models.StockStrategyQuery{}
+	}
+	if q.QueryType == ObservationQueryType {
+		if err := a.EnsureObservationStrategies(); err != nil {
+			logger.SugaredLogger.Errorf("ensure observation strategies: %v", err)
+		}
+	}
 	var list []models.StockStrategy
 	var total int64
 	query := db.Dao.Model(&models.StockStrategy{})
@@ -73,6 +101,12 @@ func (a *StockStrategyApi) List(q *models.StockStrategyQuery) *models.StockStrat
 	}
 	if q.QueryType != "" {
 		query = query.Where("query_type = ?", q.QueryType)
+	} else {
+		exclude := strings.TrimSpace(q.ExcludeQueryType)
+		if exclude == "" {
+			exclude = ObservationQueryType
+		}
+		query = query.Where("query_type <> ?", exclude)
 	}
 	query.Count(&total)
 	page, pageSize := q.Page, q.PageSize
@@ -149,6 +183,11 @@ func (a *StockStrategyApi) SummaryText(s *models.StockStrategy) string {
 			return "技术面条件（未勾选）"
 		}
 		return strings.Join(parts, "；")
+	case ObservationQueryType:
+		if def, ok := observationDefByID(observationStrategyID(s)); ok {
+			return def.Blurb
+		}
+		return "观察名单（不是买卖指令）"
 	default:
 		return s.QueryType
 	}
@@ -281,6 +320,9 @@ func (a *StockStrategyApi) RunStrategy(s *models.StockStrategy) *models.StockStr
 		}
 		resp := NewStockDataApi().GetAllStocks(1, pageSize, strings.TrimSpace(s.Keyword), strings.TrimSpace(s.Industry), "", "", ind)
 		view = mapTechnicalResult(s.ID, resp)
+	case ObservationQueryType:
+		view = a.runObservationStrategy(s)
+		return view
 	default:
 		view.Message = "不支持的策略类型: " + s.QueryType
 	}
@@ -358,10 +400,10 @@ func (a *StockStrategyApi) saveRun(s *models.StockStrategy, view *models.StockSt
 		errMsg = view.Message
 	}
 	_ = db.Dao.Model(&models.StockStrategy{}).Where("id = ?", s.ID).Updates(map[string]any{
-		"last_run_at":     now,
-		"last_run_count":  view.StockCount,
-		"last_run_error":  errMsg,
-		"updated_at":      now,
+		"last_run_at":    now,
+		"last_run_count": view.StockCount,
+		"last_run_error": errMsg,
+		"updated_at":     now,
 	}).Error
 	raw, err := json.Marshal(view)
 	if err != nil {

@@ -8,7 +8,7 @@ type StockStrategy struct {
 	CreatedAt    time.Time  `json:"createdAt"`
 	UpdatedAt    time.Time  `json:"updatedAt"`
 	Name         string     `json:"name" gorm:"size:255;not null"`
-	QueryType    string     `json:"queryType" gorm:"size:32;not null"` // eastmoney_nl | technical
+	QueryType    string     `json:"queryType" gorm:"size:32;not null"` // eastmoney_nl | technical | observation
 	QueryText    string     `json:"queryText" gorm:"type:text"`
 	QueryJSON    string     `json:"queryJson" gorm:"type:text"`
 	Keyword      string     `json:"keyword" gorm:"size:255"`
@@ -41,10 +41,11 @@ func (StockStrategyRun) TableName() string {
 }
 
 type StockStrategyQuery struct {
-	Page      int    `json:"page"`
-	PageSize  int    `json:"pageSize"`
-	Name      string `json:"name"`
-	QueryType string `json:"queryType"`
+	Page             int    `json:"page"`
+	PageSize         int    `json:"pageSize"`
+	Name             string `json:"name"`
+	QueryType        string `json:"queryType"`
+	ExcludeQueryType string `json:"excludeQueryType"`
 }
 
 type StockStrategyPageResp struct {
