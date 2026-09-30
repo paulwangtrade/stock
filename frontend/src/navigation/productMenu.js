@@ -143,15 +143,42 @@ export function createProductMenuOptions(ctx) {
       ],
     },
     routeLink('tradePlanUpcoming', '交易计划', 'tradePlanUpcoming', TimeOutline),
-    routeLink('research', '事件监控', 'eventMonitor', TrendingUp, {
-      to: { name: 'research', query: { name: '异动监控' } },
-      onClick: () => {
-        setKey('eventMonitor')
-        setTimeout(() => {
-          EventsEmit('changeResearchTab', { ID: 2, name: '异动监控' })
-        }, 100)
-      },
-    }),
+    {
+      label: () =>
+        h(
+          RouterLink,
+          {
+            to: { name: 'research', query: { name: '异动监控' } },
+            onClick: () => {
+              setKey('eventMonitorChanges')
+              setTimeout(() => {
+                EventsEmit('changeResearchTab', { ID: 2, name: '异动监控' })
+              }, 100)
+            },
+          },
+          { default: () => '事件监控' },
+        ),
+      key: 'eventMonitor',
+      icon: renderIcon(TrendingUp),
+      children: [
+        routeLink('research', '异动监控', 'eventMonitorChanges', TrendingUp, {
+          to: { name: 'research', query: { name: '异动监控' } },
+          onClick: () => {
+            setTimeout(() => {
+              EventsEmit('changeResearchTab', { ID: 2, name: '异动监控' })
+            }, 100)
+          },
+        }),
+        routeLink('research', '归因观察', 'eventMonitorAttribution', AnalyticsOutline, {
+          to: { name: 'research', query: { name: '归因观察' } },
+          onClick: () => {
+            setTimeout(() => {
+              EventsEmit('changeResearchTab', { name: '归因观察' })
+            }, 100)
+          },
+        }),
+      ],
+    },
     stockNode,
 
     {

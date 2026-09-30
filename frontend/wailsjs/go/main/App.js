@@ -442,6 +442,10 @@ export function GetResearchExplain(arg1) {
   return window['go']['main']['App']['GetResearchExplain'](arg1);
 }
 
+export function GetSignalScanAttribution(arg1) {
+  return window['go']['main']['App']['GetSignalScanAttribution'](arg1);
+}
+
 export function GetSignalScanSnapshotDetail(arg1) {
   return window['go']['main']['App']['GetSignalScanSnapshotDetail'](arg1);
 }
