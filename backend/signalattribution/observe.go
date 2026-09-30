@@ -425,6 +425,10 @@ func Assemble(meta SnapshotMeta, hits []HitInput, bars map[string][]DayBar, cal 
 		view.LargeSampleWarning = LargeSampleWarning
 	}
 	view.Cohort = BuildCohort(all, large)
+	view.WhatIf = BuildWhatIf(all, view.Cohort, WhatIfInput{
+		Explicit: opt.WhatIfSet,
+		Keys:     opt.WhatIfKeys,
+	})
 	view.Total = len(all)
 	page, pageSize = normalizePage(page, pageSize, len(all))
 	view.Page = page
@@ -456,6 +460,7 @@ func EmptyView(message string) *View {
 	view.Message = message
 	view.Summary = summarize(nil)
 	view.Cohort = BuildCohort(nil, false)
+	view.WhatIf = BuildWhatIf(nil, view.Cohort, WhatIfInput{})
 	view.Page = 1
 	view.PageSize = 50
 	return view

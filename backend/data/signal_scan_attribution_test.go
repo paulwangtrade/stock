@@ -303,3 +303,39 @@ func TestSignalScanAttribution_SignalTagFiltersCohort(t *testing.T) {
 		t.Fatalf("cohort must use the filtered subset: %+v", view.Cohort)
 	}
 }
+
+func TestSignalScanAttribution_WhatIfSandbox(t *testing.T) {
+	attributionTestDB(t)
+	up := []KLineData{{Day: "2026-07-17", Close: "10"}, {Day: "2026-07-20", Close: "11"}}
+	down := []KLineData{{Day: "2026-07-17", Close: "10"}, {Day: "2026-07-20", Close: "9"}}
+	klineCachePut("1.600000", "101", "", "latest", len(up), &up)
+	klineCachePut("0.000001", "101", "", "latest", len(down), &down)
+	klineCachePut("0.000002", "101", "", "latest", len(down), &down)
+	snap := insertAttributionSnapshot(t, "default", "", "done", []models.SignalScanHit{
+		{SECUCODE: "600000.SH", SECURITY_CODE: "600000", SECURITY_NAME_ABBR: "浦发银行", Tag: "强", INDUSTRY: "电子", VOLUME_RATIO: "3.0"},
+		{SECUCODE: "000001.SZ", SECURITY_CODE: "000001", SECURITY_NAME_ABBR: "平安银行", Tag: "强", INDUSTRY: "银行", VOLUME_RATIO: "0.5"},
+		{SECUCODE: "000002.SZ", SECURITY_CODE: "000002", SECURITY_NAME_ABBR: "万科A", Tag: "强", INDUSTRY: "电子", VOLUME_RATIO: "2.9"},
+	})
+	view := BuildSignalScanAttribution(&signalattribution.Query{SnapshotID: snap.ID})
+	if !view.OK || !view.WhatIf.OK {
+		t.Fatalf("what-if %+v msg %s", view.WhatIf, view.Message)
+	}
+	if !strings.Contains(view.WhatIf.Note, "对照实验，不是买卖指令") {
+		t.Fatalf("note %s", view.WhatIf.Note)
+	}
+	if view.WhatIf.Baseline.HitCount != 3 || view.WhatIf.Scenario.HitCount != 2 {
+		t.Fatalf("hits baseline %d scenario %d", view.WhatIf.Baseline.HitCount, view.WhatIf.Scenario.HitCount)
+	}
+	sc1 := view.WhatIf.Scenario.Horizons[0]
+	if sc1.Horizon != 1 || sc1.Complete != 2 || sc1.MeanText != "+0.00%" {
+		t.Fatalf("scenario +1 should include the down name with up-like volume: %+v", sc1)
+	}
+	if !strings.Contains(view.WhatIf.Warning, "不足 8") {
+		t.Fatalf("warning %s", view.WhatIf.Warning)
+	}
+	t.Logf("smoke data what-if baseline=%d scenario=%d +1=%s", view.WhatIf.Baseline.HitCount, view.WhatIf.Scenario.HitCount, sc1.MeanText)
+	cleared := BuildSignalScanAttribution(&signalattribution.Query{SnapshotID: snap.ID, WhatIfSet: true})
+	if cleared.WhatIf.OK || !strings.Contains(cleared.WhatIf.Message, "未勾选") {
+		t.Fatalf("cleared %+v", cleared.WhatIf)
+	}
+}

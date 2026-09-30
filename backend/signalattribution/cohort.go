@@ -188,56 +188,26 @@ func buildContrasts(upRows, downRows []HitRow) []scoredContrast {
 		out = append(out, c)
 	}
 
-	upShare := industryShares(upRows)
-	downShare := industryShares(downRows)
-	names := map[string]bool{}
-	for name := range upShare {
-		names[name] = true
-	}
-	for name := range downShare {
-		names[name] = true
-	}
-	bestName := ""
-	bestDiff := 0.0
-	bestScore := -1.0
-	for name := range names {
-		diff := upShare[name] - downShare[name]
-		score := math.Abs(diff)
-		if score > bestScore || (score == bestScore && (bestName == "" || name < bestName)) {
-			bestName = name
-			bestDiff = diff
-			bestScore = score
-		}
-	}
-	if bestName != "" {
+	if gap, ok := topIndustryGap(upRows, downRows); ok {
 		out = append(out, scoredContrast{
 			item: CohortContrast{
 				Key:      "industry",
-				Label:    "行业「" + bestName + "」占比",
-				UpText:   fmt.Sprintf("%.0f%%", upShare[bestName]*100),
-				DownText: fmt.Sprintf("%.0f%%", downShare[bestName]*100),
-				DiffText: fmt.Sprintf("差 %+.0f 个百分点", bestDiff*100),
+				Label:    "行业「" + gap.name + "」占比",
+				UpText:   fmt.Sprintf("%.0f%%", gap.upShare*100),
+				DownText: fmt.Sprintf("%.0f%%", gap.downShare*100),
+				DiffText: fmt.Sprintf("差 %+.0f 个百分点", gap.diff*100),
 			},
-			score: bestScore,
+			score: gap.score,
 		})
 	}
 	return out
 }
 
-// BuildCohort splits rows by the +1 return. Features are as-of-known only.
-// largeSample turns off highlight so a wide snapshot is not described as commonality.
-func BuildCohort(rows []HitRow, largeSample bool) CohortPanel {
-	panel := CohortPanel{
-		Note:        CohortNote,
-		SizeNote:    CohortSizeNote,
-		LargeSample: largeSample,
-		Contrasts:   []CohortContrast{},
-	}
-	var up, down, flat []HitRow
+func splitByPlusOne(rows []HitRow) (up, down, flat []HitRow, excluded int) {
 	for _, row := range rows {
 		dir, ok := plusOneDirection(row)
 		if !ok {
-			panel.Excluded++
+			excluded++
 			continue
 		}
 		switch dir {
@@ -249,6 +219,60 @@ func BuildCohort(rows []HitRow, largeSample bool) CohortPanel {
 			flat = append(flat, row)
 		}
 	}
+	return
+}
+
+type industryGap struct {
+	name      string
+	upShare   float64
+	downShare float64
+	diff      float64
+	score     float64
+}
+
+func topIndustryGap(upRows, downRows []HitRow) (industryGap, bool) {
+	upShare := industryShares(upRows)
+	downShare := industryShares(downRows)
+	names := map[string]bool{}
+	for name := range upShare {
+		names[name] = true
+	}
+	for name := range downShare {
+		names[name] = true
+	}
+	best := industryGap{score: -1}
+	found := false
+	for name := range names {
+		diff := upShare[name] - downShare[name]
+		score := math.Abs(diff)
+		if !found || score > best.score || (score == best.score && name < best.name) {
+			best = industryGap{
+				name:      name,
+				upShare:   upShare[name],
+				downShare: downShare[name],
+				diff:      diff,
+				score:     score,
+			}
+			found = true
+		}
+	}
+	if !found {
+		return industryGap{}, false
+	}
+	return best, true
+}
+
+// BuildCohort splits rows by the +1 return. Features are as-of-known only.
+// largeSample turns off highlight so a wide snapshot is not described as commonality.
+func BuildCohort(rows []HitRow, largeSample bool) CohortPanel {
+	panel := CohortPanel{
+		Note:        CohortNote,
+		SizeNote:    CohortSizeNote,
+		LargeSample: largeSample,
+		Contrasts:   []CohortContrast{},
+	}
+	up, down, flat, excluded := splitByPlusOne(rows)
+	panel.Excluded = excluded
 	panel.Up = fillGroup("up", "上涨", up)
 	panel.Down = fillGroup("down", "下跌", down)
 	panel.Flat = fillGroup("flat", "持平", flat)
