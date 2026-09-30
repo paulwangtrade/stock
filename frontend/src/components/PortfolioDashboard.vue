@@ -35,7 +35,15 @@ import {
   useMessage,
 } from 'naive-ui'
 import ExternalMirrorPanel from './ExternalMirrorPanel.vue'
+import ExitWatchList from './ExitWatchList.vue'
 import { LIVE_BROKER_PLACEHOLDER, PAPER_SIM_MIRROR_HINT } from '../utils/externalMirrorEntry.js'
+import { getExitWatch } from '../api/exitWatch'
+import {
+  EXIT_WATCH_DISCLAIMER,
+  canOfferExitWatchSell,
+  filterExitWatchBySource,
+  readExitWatchItem,
+} from '../utils/exitWatchDisplay.js'
 import { getPortfolioDashboard } from '../api/portfolioDashboard'
 import { getPortfolioSnapshot } from '../api/portfolioSnapshot'
 import { getPaperExitEvaluation } from '../api/paperObservation'
@@ -118,6 +126,11 @@ const tSuitByCode = ref({})
 const exitObsByCode = ref({})
 /** idle | loading | ready | error — missing class after ready/error is 数据不足 */
 const exitObservePhase = ref('pending')
+const exitWatchItems = ref([])
+const exitWatchPhase = ref('pending')
+const exitWatchPolicyRef = ref('')
+const exitWatchAsOf = ref('')
+const exitWatchSources = ref([])
 /** @type {import('vue').Ref<Record<string, { bucket: string, planId: number }>>} */
 const sourceChipByCode = ref({})
 let sourceEnrichToken = 0
@@ -261,6 +274,56 @@ function openSellDialog(row) {
   sellSourceLabel.value = ''
   sellTargetRow.value = row
   sellDialogVisible.value = true
+}
+
+const paperExitWatchItems = computed(() => filterExitWatchBySource(exitWatchItems.value, 'paper_sim'))
+const mirrorExitWatchItems = computed(() => filterExitWatchBySource(exitWatchItems.value, 'external_mirror'))
+
+function exitWatchSourceMessage(source) {
+  const hit = (exitWatchSources.value || []).find((s) => s?.source === source)
+  if (exitWatchPhase.value === 'error') return '退出观察读取失败，已失败关闭为数据不足'
+  if (hit && hit.ok === false) return hit.message || '退出观察读取失败，已失败关闭为数据不足'
+  return ''
+}
+
+function confirmExitWatchSell(item) {
+  const rowItem = readExitWatchItem(item, 'ready')
+  if (!canOfferExitWatchSell(rowItem)) return
+  dialog.warning({
+    title: '人工确认模拟卖出草稿',
+    content: `${EXIT_WATCH_DISCLAIMER}。确认后才打开已有的模拟卖出草稿，不会自动卖出。`,
+    positiveText: '继续填写模拟卖出',
+    negativeText: '取消',
+    maskClosable: false,
+    onPositiveClick: () => {
+      const row = positions.value.find((p) => normCode(p.stockCode) === normCode(rowItem.stockCode))
+      if (!row) {
+        message.warning('未找到对应模拟持仓，不能打开卖出草稿')
+        return
+      }
+      sellActor.value = 'ui:exit-watch'
+      sellDefaultReason.value = `exit_watch:${rowItem.class};${(rowItem.reasonCodes || []).join(',')}`
+      sellSourceLabel.value = '退出观察'
+      sellTargetRow.value = { ...row, source: 'paper_sim' }
+      sellDialogVisible.value = true
+    },
+  })
+}
+
+async function loadExitWatch() {
+  exitWatchPhase.value = 'loading'
+  try {
+    const view = await getExitWatch()
+    exitWatchItems.value = view.items || []
+    exitWatchSources.value = view.sources || []
+    exitWatchPolicyRef.value = view.policyRef || ''
+    exitWatchAsOf.value = view.asOf || ''
+    exitWatchPhase.value = 'ready'
+  } catch (_) {
+    exitWatchItems.value = []
+    exitWatchSources.value = []
+    exitWatchPhase.value = 'error'
+  }
 }
 
 function confirmExitSellIntent(row) {
@@ -1218,6 +1281,7 @@ async function refresh() {
     message.error(errorMessage.value)
   } finally {
     loading.value = false
+    void loadExitWatch()
   }
 }
 
@@ -1245,6 +1309,15 @@ onMounted(refresh)
     <n-alert type="warning" :bordered="false" style="margin-bottom: 14px">
       {{ disclaimer }}
     </n-alert>
+    <ExitWatchList
+      :items="paperExitWatchItems"
+      :phase="exitWatchPhase"
+      source="paper_sim"
+      :policy-ref="exitWatchPolicyRef"
+      :as-of="exitWatchAsOf"
+      :source-message="exitWatchSourceMessage('paper_sim')"
+      @sell-intent="confirmExitWatchSell"
+    />
 
     <n-spin :show="loading">
       <template v-if="errorMessage && !snapshot">
@@ -1452,6 +1525,14 @@ onMounted(refresh)
     </n-spin>
       </n-tab-pane>
       <n-tab-pane name="external_mirror" tab="实盘镜像（观察）">
+        <ExitWatchList
+          :items="mirrorExitWatchItems"
+          :phase="exitWatchPhase"
+          source="external_mirror"
+          :policy-ref="exitWatchPolicyRef"
+          :as-of="exitWatchAsOf"
+          :source-message="exitWatchSourceMessage('external_mirror')"
+        />
         <ExternalMirrorPanel />
       </n-tab-pane>
       <n-tab-pane name="live_broker" tab="实盘券商（未启用）">

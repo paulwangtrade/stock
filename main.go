@@ -304,6 +304,7 @@ func main() {
 				api.WatchlistAssetMiddleware,              // Phase16.26-C2.1: GET /api/watchlist
 				api.PortfolioDashboardAssetMiddleware,     // Phase11-B.2: GET /api/portfolio/dashboard
 				api.ExternalMirrorAssetMiddleware,         // 实盘镜像观察 CRUD（不写 paper_sim）
+				api.ExitWatchAssetMiddleware,              // 共享只读退出观察（不自动卖出）
 				api.TradingDayMonitorAssetMiddleware,      // Phase11-C: GET /api/trading/day-monitor
 				api.DailyInvestmentSummaryAssetMiddleware, // Phase11-E: GET /api/investment/daily-summary
 				api.OpsTradingDayAssetMiddleware,
