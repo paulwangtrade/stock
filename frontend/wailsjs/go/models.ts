@@ -4688,6 +4688,7 @@ export namespace models {
 	    pageSize: number;
 	    name: string;
 	    queryType: string;
+	    excludeQueryType?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new StockStrategyQuery(source);
@@ -4699,6 +4700,7 @@ export namespace models {
 	        this.pageSize = source["pageSize"];
 	        this.name = source["name"];
 	        this.queryType = source["queryType"];
+	        this.excludeQueryType = source["excludeQueryType"];
 	    }
 	}
 	export class StockStrategyRun {

@@ -18,10 +18,10 @@ import (
 )
 
 const (
-	signalScanKlineBars       = 120
-	signalScanFetchPageSize   = 500
-	signalScanKlineConcurrency = 32
-	signalScanJSChunkSize     = 400
+	signalScanKlineBars         = 120
+	signalScanFetchPageSize     = 500
+	signalScanKlineConcurrency  = 32
+	signalScanJSChunkSize       = 400
 	signalScanDefaultStrategyID = "default"
 )
 
@@ -296,6 +296,7 @@ func (a *SignalScanApi) RunFullMarketSnapshot(session string, signalParamsOverri
 			IndexClose:       indexClose,
 			SignalParamsJSON: signalParams,
 			IncludeSell:      true,
+			StrategyID:       strategyID,
 		})
 		if err != nil {
 			logger.SugaredLogger.Errorf("signal scan js chunk %d: %v", i/signalScanJSChunkSize, err)

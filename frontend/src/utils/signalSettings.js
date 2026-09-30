@@ -1,6 +1,7 @@
 /** K 线买卖点信号参数：默认值、合并、转 computeFullSignals 选项 */
 
-import { DEFAULT_QUANT_AUTOMATION, mergeQuantAutomation } from './quantAutomationSettings'
+import { DEFAULT_QUANT_AUTOMATION, mergeQuantAutomation } from './quantAutomationSettings.js'
+import { OBSERVATION_STRATEGIES, isObservationStrategyId } from './observationStrategies.js'
 
 export const DEFAULT_SCREEN_STRATEGY_ID = 'default'
 export const DEFAULT_SCREEN_STRATEGY_NAME = '默认参数预设'
@@ -522,16 +523,58 @@ function mirrorSignalPresetAliases(base) {
   return base
 }
 
+function observationPresetFromDef(def) {
+  return {
+    id: def.strategyId,
+    name: def.name,
+    settings: cloneDefaultSignalSettingsCore(),
+    builtin: true,
+    observationOnly: true,
+    feedsTradePlan: false,
+    enableCron: false,
+    trackA: false,
+    blurb: def.blurb,
+    strategyId: def.strategyId,
+  }
+}
+
+/** 内置观察预设始终留在列表里；已有项只在显式 true 时保留 feedsTradePlan / enableCron。 */
+function ensureObservationPresets(strategies) {
+  const list = Array.isArray(strategies) ? strategies.slice() : []
+  const seen = new Set(list.map((item) => item.id))
+  for (const def of OBSERVATION_STRATEGIES) {
+    if (!seen.has(def.strategyId)) {
+      list.push(observationPresetFromDef(def))
+      seen.add(def.strategyId)
+    }
+  }
+  return list.map((item) => {
+    if (!isObservationStrategyId(item.id)) return item
+    const def = OBSERVATION_STRATEGIES.find((row) => row.strategyId === item.id)
+    return {
+      ...item,
+      builtin: true,
+      observationOnly: true,
+      feedsTradePlan: item.feedsTradePlan === true,
+      enableCron: item.enableCron === true,
+      trackA: false,
+      blurb: item.blurb || def?.blurb || '',
+      strategyId: def?.strategyId || item.id,
+      name: item.name || def?.name || item.id,
+    }
+  })
+}
+
 export function cloneDefaultSignalSettings() {
   const base = deepClone(DEFAULT_SIGNAL_SETTINGS)
   base.activeScreenStrategyId = DEFAULT_SCREEN_STRATEGY_ID
-  base.screenStrategies = [
+  base.screenStrategies = ensureObservationPresets([
     {
       id: DEFAULT_SCREEN_STRATEGY_ID,
       name: DEFAULT_SCREEN_STRATEGY_NAME,
       settings: cloneDefaultSignalSettingsCore(),
     },
-  ]
+  ])
   return mirrorSignalPresetAliases(base)
 }
 
@@ -562,27 +605,35 @@ export function mergeSignalSettings(raw) {
     base.activeScreenStrategyId || DEFAULT_SCREEN_STRATEGY_ID,
   )
   const rawStrategies = resolveRawPresetList(raw)
-  const strategies = rawStrategies
-    .map((item, index) => {
-      const id = String(item?.id || '').trim() || `strategy-${index + 1}`
-      const name = String(item?.name || '').trim() || `参数预设 ${index + 1}`
-      const settings = mergeSignalStrategySettings(item?.settings || {})
-      return { id, name, settings }
-    })
-    .filter((item) => item.id && item.name)
+  const strategies = ensureObservationPresets(
+    rawStrategies
+      .map((item, index) => {
+        const id = String(item?.id || '').trim() || `strategy-${index + 1}`
+        const name = String(item?.name || '').trim() || `参数预设 ${index + 1}`
+        const settings = mergeSignalStrategySettings(item?.settings || {})
+        const next = { id, name, settings }
+        if (isObservationStrategyId(id)) {
+          next.feedsTradePlan = item?.feedsTradePlan === true
+          next.enableCron = item?.enableCron === true
+          next.blurb = item?.blurb
+        }
+        return next
+      })
+      .filter((item) => item.id && item.name),
+  )
   if (strategies.length) {
     base.screenStrategies = strategies
     if (!strategies.some((item) => item.id === base.activeScreenStrategyId)) {
       base.activeScreenStrategyId = strategies[0].id
     }
   } else {
-    base.screenStrategies = [
+    base.screenStrategies = ensureObservationPresets([
       {
         id: DEFAULT_SCREEN_STRATEGY_ID,
         name: DEFAULT_SCREEN_STRATEGY_NAME,
         settings: mergeSignalStrategySettings(base),
       },
-    ]
+    ])
     base.activeScreenStrategyId = DEFAULT_SCREEN_STRATEGY_ID
   }
   return mirrorSignalPresetAliases(base)

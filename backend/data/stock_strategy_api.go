@@ -20,6 +20,9 @@ func NewStockStrategyApi() *StockStrategyApi {
 }
 
 func (a *StockStrategyApi) Create(s *models.StockStrategy) error {
+	if err := normalizeObservationStrategy(s); err != nil {
+		return err
+	}
 	if s.PageSize <= 0 {
 		s.PageSize = 50
 	}
@@ -27,6 +30,9 @@ func (a *StockStrategyApi) Create(s *models.StockStrategy) error {
 }
 
 func (a *StockStrategyApi) Update(s *models.StockStrategy) error {
+	if err := normalizeObservationStrategy(s); err != nil {
+		return err
+	}
 	if s.PageSize <= 0 {
 		s.PageSize = 50
 	}
@@ -73,6 +79,9 @@ func (a *StockStrategyApi) List(q *models.StockStrategyQuery) *models.StockStrat
 	}
 	if q.QueryType != "" {
 		query = query.Where("query_type = ?", q.QueryType)
+	}
+	if q.ExcludeQueryType != "" {
+		query = query.Where("query_type <> ?", q.ExcludeQueryType)
 	}
 	query.Count(&total)
 	page, pageSize := q.Page, q.PageSize
@@ -149,6 +158,17 @@ func (a *StockStrategyApi) SummaryText(s *models.StockStrategy) string {
 			return "技术面条件（未勾选）"
 		}
 		return strings.Join(parts, "；")
+	case ObservationQueryType:
+		meta, _ := ParseObservationMeta(s.QueryJSON)
+		feed := "不进入交易计划"
+		if meta.FeedsTradePlan {
+			feed = "已允许进入交易计划"
+		}
+		id := meta.StrategyID
+		if id == "" {
+			id = "observation"
+		}
+		return id + " · " + feed
 	default:
 		return s.QueryType
 	}
@@ -281,6 +301,20 @@ func (a *StockStrategyApi) RunStrategy(s *models.StockStrategy) *models.StockStr
 		}
 		resp := NewStockDataApi().GetAllStocks(1, pageSize, strings.TrimSpace(s.Keyword), strings.TrimSpace(s.Industry), "", "", ind)
 		view = mapTechnicalResult(s.ID, resp)
+	case ObservationQueryType:
+		meta, ok := ParseObservationMeta(s.QueryJSON)
+		if !ok || !IsObservationStrategyID(meta.StrategyID) {
+			view.Message = "观察策略无效"
+			a.saveRun(s, view)
+			return view
+		}
+		// Observation run records the screen id only. It does not build a TradePlan
+		// and does not enable Track-A / paper open-buy.
+		view.Code = 0
+		view.QueryType = ObservationQueryType
+		view.StockCount = 0
+		view.DataList = []any{}
+		view.Message = fmt.Sprintf("观察名单已记录（%s）。未生成交易计划，也未打开自动下单。", meta.StrategyID)
 	default:
 		view.Message = "不支持的策略类型: " + s.QueryType
 	}
@@ -358,10 +392,10 @@ func (a *StockStrategyApi) saveRun(s *models.StockStrategy, view *models.StockSt
 		errMsg = view.Message
 	}
 	_ = db.Dao.Model(&models.StockStrategy{}).Where("id = ?", s.ID).Updates(map[string]any{
-		"last_run_at":     now,
-		"last_run_count":  view.StockCount,
-		"last_run_error":  errMsg,
-		"updated_at":      now,
+		"last_run_at":    now,
+		"last_run_count": view.StockCount,
+		"last_run_error": errMsg,
+		"updated_at":     now,
 	}).Error
 	raw, err := json.Marshal(view)
 	if err != nil {

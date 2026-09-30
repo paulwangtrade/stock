@@ -547,7 +547,7 @@ var SignalScanBatch = (() => {
     const ma10 = sma(closes, 10);
     const rsi = baseSig?.rsi;
     const sellSet = /* @__PURE__ */ new Set([...baseSig?.sellRsi || [], ...baseSig?.sellMa20 || []]);
-    const skip = skipIndices instanceof Set ? skipIndices : new Set(skipIndices || []);
+    const skip2 = skipIndices instanceof Set ? skipIndices : new Set(skipIndices || []);
     const reboundBuy = [];
     function lastSellBefore(i) {
       for (let j = i - 1; j >= Math.max(0, i - sellLookback); j--) {
@@ -600,7 +600,7 @@ var SignalScanBatch = (() => {
       return true;
     }
     for (let i = confirm - 1; i < len; i++) {
-      if (skip.has(i)) continue;
+      if (skip2.has(i)) continue;
       if (nearBuySignal(i)) continue;
       if (!passesSignalDayFilters(i)) continue;
       const standStart = i - confirm + 1;
@@ -642,7 +642,7 @@ var SignalScanBatch = (() => {
     const ma10 = sma(closes, 10);
     const ma20 = baseSig?.ma20 ?? sma(closes, 20);
     const rsi = baseSig?.rsi;
-    const skip = skipIndices instanceof Set ? skipIndices : new Set(skipIndices || []);
+    const skip2 = skipIndices instanceof Set ? skipIndices : new Set(skipIndices || []);
     const minBodyPct = options.reversalMinBodyPct ?? 0.01;
     const rsiMin = options.reversalRsiMin ?? 45;
     const rsiMax = options.reversalRsiMax ?? 70;
@@ -656,7 +656,7 @@ var SignalScanBatch = (() => {
     const minBelowCount = Math.max(1, Math.ceil(recentBelowDays * recentBelowMinRatio));
     const reversalBuy = [];
     for (let i = crossPeriod; i < len; i++) {
-      if (skip.has(i)) continue;
+      if (skip2.has(i)) continue;
       const mc = maCross[i];
       const mcPrev = maCross[i - 1];
       const c = closes[i];
@@ -1507,9 +1507,270 @@ var SignalScanBatch = (() => {
     return base;
   }
 
+  // frontend/src/utils/observationStrategies.js
+  var OBSERVATION_QUERY_TYPE = "observation";
+  var OBSERVATION_STRATEGY_IDS = {
+    maPullback: "ext_ma_pullback",
+    volBreakout: "ext_vol_breakout",
+    ddBounce: "ext_dd_bounce"
+  };
+  var MA_PULLBACK = {
+    maPeriod: 20,
+    slopeLookback: 5,
+    touchPct: 0.02,
+    pullbackWindow: 3,
+    maxPiercePct: 0.03
+  };
+  var VOL_BREAKOUT = {
+    lookback: 20,
+    volPeriod: 20,
+    volMult: 1.5
+  };
+  var DD_BOUNCE = {
+    peakLookback: 20,
+    minDrawdown: 0.08,
+    maxDrawdown: 0.18,
+    iceLookback: 60,
+    rsiPeriod: 14,
+    /** 与冰点阈值对齐：RSI 低于 30 视为冰点重叠，跳过。 */
+    iceRsi: 30
+  };
+  var OBSERVATION_STRATEGIES = [
+    {
+      strategyId: OBSERVATION_STRATEGY_IDS.maPullback,
+      name: "\u5747\u7EBF\u8D8B\u52BF\u56DE\u8E29",
+      blurb: "\u65E5\u7EBF\u6536\u76D8\u7AD9\u5728\u4E0A\u5347\u7684 20 \u65E5\u5747\u7EBF\u4E4B\u4E0A\uFF0C\u4E14\u8FD1 3 \u65E5\u5185\u4F4E\u70B9\u66FE\u9760\u8FD1\u8BE5\u5747\u7EBF\u540E\u6536\u56DE\u9633\u7EBF\u3002\u53EA\u4F5C\u89C2\u5BDF\u540D\u5355\uFF0C\u4E0D\u662F\u4E70\u5356\u6307\u4EE4\u3002K \u7EBF\u4E0D\u8DB3\u3001\u4EF7\u683C\u65E0\u6548\u6216\u5747\u7EBF\u672A\u4E0A\u5347\u65F6\u8DF3\u8FC7\u3002",
+      feedsTradePlan: false,
+      enableCron: false,
+      observationOnly: true,
+      trackA: false,
+      queryType: OBSERVATION_QUERY_TYPE
+    },
+    {
+      strategyId: OBSERVATION_STRATEGY_IDS.volBreakout,
+      name: "\u653E\u91CF\u7A81\u7834\u786E\u8BA4",
+      blurb: "\u6536\u76D8\u4EF7\u7A81\u7834\u6B64\u524D 20 \u65E5\u6700\u9AD8\u4EF7\uFF0C\u4E14\u5F53\u65E5\u6210\u4EA4\u91CF\u9AD8\u4E8E\u6B64\u524D 20 \u65E5\u5747\u91CF\u7684 1.5 \u500D\u3002\u53EA\u4F5C\u89C2\u5BDF\u540D\u5355\uFF0C\u4E0D\u662F\u4E70\u5356\u6307\u4EE4\u3002\u6210\u4EA4\u91CF\u7F3A\u5931\u3001\u4E3A\u96F6\u6216\u672A\u653E\u5927\u65F6\u8DF3\u8FC7\u3002",
+      feedsTradePlan: false,
+      enableCron: false,
+      observationOnly: true,
+      trackA: false,
+      queryType: OBSERVATION_QUERY_TYPE
+    },
+    {
+      strategyId: OBSERVATION_STRATEGY_IDS.ddBounce,
+      name: "\u53D7\u63A7\u56DE\u64A4\u53CD\u5F39",
+      blurb: "\u81EA\u8FD1 20 \u65E5\u9AD8\u70B9\u56DE\u64A4\u7EA6 8%\u201318% \u540E\u51FA\u73B0\u9633\u7EBF\u53CD\u5F39\uFF0C\u4E14\u4E0D\u662F 60 \u65E5\u65B0\u4F4E\u3001RSI \u4E0D\u4F4E\u4E8E 30\u3002\u53EA\u4F5C\u89C2\u5BDF\u540D\u5355\uFF0C\u4E0D\u662F\u4E70\u5356\u6307\u4EE4\u3002\u56DE\u64A4\u8FC7\u6DF1\u3001\u8FC7\u6D45\uFF0C\u6216\u4E0E\u51B0\u70B9\u65B0\u4F4E/\u8D85\u5356\u91CD\u53E0\u65F6\u8DF3\u8FC7\u3002",
+      feedsTradePlan: false,
+      enableCron: false,
+      observationOnly: true,
+      trackA: false,
+      queryType: OBSERVATION_QUERY_TYPE
+    }
+  ];
+  var BY_ID = new Map(OBSERVATION_STRATEGIES.map((item) => [item.strategyId, item]));
+  function isObservationStrategyId(strategyId) {
+    return BY_ID.has(String(strategyId || "").trim());
+  }
+  function observationStrategyById(strategyId) {
+    return BY_ID.get(String(strategyId || "").trim()) || null;
+  }
+  function finitePositive(value) {
+    return Number.isFinite(value) && value > 0;
+  }
+  function alignedLength(bars, { requireVolume = false } = {}) {
+    const n = bars?.closes?.length || 0;
+    if (!n) return 0;
+    if (!Array.isArray(bars.opens) || bars.opens.length !== n) return -1;
+    if (!Array.isArray(bars.highs) || bars.highs.length !== n) return -1;
+    if (!Array.isArray(bars.lows) || bars.lows.length !== n) return -1;
+    if (requireVolume && (!Array.isArray(bars.volumes) || bars.volumes.length !== n)) return -1;
+    return n;
+  }
+  function smaAt2(values, index, period) {
+    if (index < period - 1) return null;
+    let sum = 0;
+    for (let j = 0; j < period; j++) {
+      const v = values[index - j];
+      if (!finitePositive(v)) return null;
+      sum += v;
+    }
+    return sum / period;
+  }
+  function skip(reason) {
+    return { pass: false, reason, statusText: "" };
+  }
+  function pass(def) {
+    return {
+      pass: true,
+      reason: "",
+      statusText: `${def.name} \xB7 \u89C2\u5BDF\u540D\u5355 \xB7 \u4E0D\u662F\u4EA4\u6613\u6307\u4EE4`
+    };
+  }
+  function screenMaPullback(bars) {
+    const n = alignedLength(bars);
+    if (n < 0) return skip("invalid_bars");
+    const need = MA_PULLBACK.maPeriod + MA_PULLBACK.slopeLookback;
+    if (n <= need) return skip("insufficient_bars");
+    const i = n - 1;
+    const ma = smaAt2(bars.closes, i, MA_PULLBACK.maPeriod);
+    const maPrev = smaAt2(bars.closes, i - MA_PULLBACK.slopeLookback, MA_PULLBACK.maPeriod);
+    if (ma == null || maPrev == null) return skip("ma_unavailable");
+    if (!(ma > maPrev)) return skip("ma_not_rising");
+    const close = bars.closes[i];
+    const open = bars.opens[i];
+    if (!finitePositive(close) || !finitePositive(open)) return skip("invalid_bar");
+    if (!(close > ma)) return skip("close_not_above_ma");
+    if (!(close > open)) return skip("not_recovery_bar");
+    let touched = false;
+    for (let k = 0; k < MA_PULLBACK.pullbackWindow; k++) {
+      const idx = i - k;
+      const maK = smaAt2(bars.closes, idx, MA_PULLBACK.maPeriod);
+      const lowK = bars.lows[idx];
+      if (maK == null || !finitePositive(lowK)) return skip("invalid_bar");
+      const upper = maK * (1 + MA_PULLBACK.touchPct);
+      const lower = maK * (1 - MA_PULLBACK.maxPiercePct);
+      if (lowK <= upper && lowK >= lower) touched = true;
+    }
+    if (!touched) return skip("no_pullback");
+    return pass(observationStrategyById(OBSERVATION_STRATEGY_IDS.maPullback));
+  }
+  function screenVolBreakout(bars) {
+    const n = alignedLength(bars, { requireVolume: true });
+    if (n < 0) return skip("invalid_bars");
+    const need = Math.max(VOL_BREAKOUT.lookback, VOL_BREAKOUT.volPeriod) + 1;
+    if (n < need) return skip("insufficient_bars");
+    const i = n - 1;
+    const close = bars.closes[i];
+    const high = bars.highs[i];
+    const vol = bars.volumes[i];
+    if (!finitePositive(close) || !finitePositive(high) || !finitePositive(vol)) return skip("invalid_bar");
+    let priorHigh = -Infinity;
+    for (let j = i - VOL_BREAKOUT.lookback; j < i; j++) {
+      const h = bars.highs[j];
+      if (!finitePositive(h)) return skip("invalid_bar");
+      if (h > priorHigh) priorHigh = h;
+    }
+    if (!(close > priorHigh)) return skip("no_breakout");
+    let volSum = 0;
+    for (let j = i - VOL_BREAKOUT.volPeriod; j < i; j++) {
+      const v = bars.volumes[j];
+      if (!finitePositive(v)) return skip("volume_missing");
+      volSum += v;
+    }
+    const avg = volSum / VOL_BREAKOUT.volPeriod;
+    if (!(avg > 0) || !(vol > avg * VOL_BREAKOUT.volMult)) return skip("volume_not_confirmed");
+    return pass(observationStrategyById(OBSERVATION_STRATEGY_IDS.volBreakout));
+  }
+  function rsiAt(closes, index, period) {
+    if (index < period) return null;
+    let gain = 0;
+    let loss = 0;
+    for (let j = 0; j < period; j++) {
+      const newer = closes[index - j];
+      const older = closes[index - j - 1];
+      if (!finitePositive(newer) || !finitePositive(older)) return null;
+      const ch = newer - older;
+      if (ch >= 0) gain += ch;
+      else loss -= ch;
+    }
+    const avgGain = gain / period;
+    const avgLoss = loss / period;
+    if (avgLoss === 0) return 100;
+    return 100 - 100 / (1 + avgGain / avgLoss);
+  }
+  function screenDdBounce(bars) {
+    const n = alignedLength(bars);
+    if (n < 0) return skip("invalid_bars");
+    if (n < DD_BOUNCE.iceLookback) return skip("insufficient_bars");
+    const i = n - 1;
+    const close = bars.closes[i];
+    const open = bars.opens[i];
+    const low = bars.lows[i];
+    const prev = bars.closes[i - 1];
+    if (!finitePositive(close) || !finitePositive(open) || !finitePositive(low) || !finitePositive(prev)) {
+      return skip("invalid_bar");
+    }
+    let peak = -Infinity;
+    for (let j = i - DD_BOUNCE.peakLookback; j < i; j++) {
+      const h = bars.highs[j];
+      if (!finitePositive(h)) return skip("invalid_bar");
+      if (h > peak) peak = h;
+    }
+    if (!(peak > 0)) return skip("peak_unavailable");
+    const drawdown = (peak - close) / peak;
+    if (drawdown < DD_BOUNCE.minDrawdown) return skip("drawdown_too_shallow");
+    if (drawdown > DD_BOUNCE.maxDrawdown) return skip("drawdown_too_deep");
+    if (!(close > prev) || !(close > open)) return skip("not_bounce_bar");
+    let priorMin = Infinity;
+    for (let j = i - (DD_BOUNCE.iceLookback - 1); j < i; j++) {
+      const l = bars.lows[j];
+      if (!finitePositive(l)) return skip("invalid_bar");
+      if (l < priorMin) priorMin = l;
+    }
+    if (low <= priorMin) return skip("new_low_overlap");
+    const rsi = rsiAt(bars.closes, i, DD_BOUNCE.rsiPeriod);
+    if (rsi == null) return skip("rsi_unavailable");
+    if (rsi < DD_BOUNCE.iceRsi) return skip("ice_rsi_overlap");
+    return pass(observationStrategyById(OBSERVATION_STRATEGY_IDS.ddBounce));
+  }
+  var SCREENS = {
+    [OBSERVATION_STRATEGY_IDS.maPullback]: screenMaPullback,
+    [OBSERVATION_STRATEGY_IDS.volBreakout]: screenVolBreakout,
+    [OBSERVATION_STRATEGY_IDS.ddBounce]: screenDdBounce
+  };
+  function evaluateObservationStrategy(strategyId, bars) {
+    const id = String(strategyId || "").trim();
+    const screen = SCREENS[id];
+    if (!screen) return skip("unknown_strategy");
+    return screen(bars || {});
+  }
+  function runObservationScanBatch(strategyId, stocks) {
+    const id = String(strategyId || "").trim();
+    const items = [];
+    if (!isObservationStrategyId(id)) return { items, hitTotal: 0 };
+    for (const stock of stocks || []) {
+      const result = evaluateObservationStrategy(id, {
+        opens: stock?.opens,
+        highs: stock?.highs,
+        lows: stock?.lows,
+        closes: stock?.closes,
+        volumes: stock?.volumes
+      });
+      if (!result.pass) continue;
+      const row = stock?.row || {};
+      const last = (stock?.closes?.length || 1) - 1;
+      const close = stock?.closes?.[last];
+      items.push({
+        SECUCODE: row.SECUCODE || stock.secucode || stock.code,
+        SECURITY_CODE: row.SECURITY_CODE || "",
+        SECURITY_NAME_ABBR: row.SECURITY_NAME_ABBR || stock.name || "",
+        NEW_PRICE: row.NEW_PRICE ?? (Number.isFinite(close) ? String(close) : ""),
+        CHANGE_RATE: row.CHANGE_RATE ?? "",
+        HIGH_PRICE: row.HIGH_PRICE ?? "",
+        LOW_PRICE: row.LOW_PRICE ?? "",
+        PRE_CLOSE_PRICE: row.PRE_CLOSE_PRICE ?? "",
+        VOLUME: row.VOLUME ?? "",
+        DEAL_AMOUNT: row.DEAL_AMOUNT ?? "",
+        TURNOVERRATE: row.TURNOVERRATE ?? "",
+        VOLUME_RATIO: row.VOLUME_RATIO ?? "",
+        INDUSTRY: row.INDUSTRY ?? "",
+        CONCEPT: row.CONCEPT ?? "",
+        MARKET: row.MARKET ?? "",
+        tag: "\u4E70",
+        recentSignalDaysAgo: 0,
+        statusText: result.statusText,
+        sortRank: 1,
+        rsi: null,
+        strategy_id: id,
+        ok: true
+      });
+    }
+    return { items, hitTotal: items.length };
+  }
+
   // frontend/src/utils/signalSettings.js
   var DEFAULT_SCREEN_STRATEGY_ID = "default";
-  var DEFAULT_SCREEN_STRATEGY_NAME = "\u9ED8\u8BA4\u7B56\u7565";
+  var DEFAULT_SCREEN_STRATEGY_NAME = "\u9ED8\u8BA4\u53C2\u6570\u9884\u8BBE";
   var DEFAULT_SIGNAL_SETTINGS = {
     automation: DEFAULT_QUANT_AUTOMATION,
     display: {
@@ -1895,17 +2156,76 @@ var SignalScanBatch = (() => {
     }
     return base;
   }
+  function resolveRawPresetList(raw) {
+    if (!raw || typeof raw !== "object") return [];
+    if (Array.isArray(raw.signalPresets) && raw.signalPresets.length) return raw.signalPresets;
+    if (Array.isArray(raw.screenStrategies) && raw.screenStrategies.length) return raw.screenStrategies;
+    return [];
+  }
+  function resolveRawActivePresetId(raw, fallback) {
+    if (!raw || typeof raw !== "object") return fallback;
+    const fromNew = String(raw.activeSignalPresetId || "").trim();
+    if (fromNew) return fromNew;
+    const fromOld = String(raw.activeScreenStrategyId || "").trim();
+    if (fromOld) return fromOld;
+    return fallback;
+  }
+  function mirrorSignalPresetAliases(base) {
+    if (!base || typeof base !== "object") return base;
+    base.signalPresets = base.screenStrategies;
+    base.activeSignalPresetId = base.activeScreenStrategyId;
+    return base;
+  }
+  function observationPresetFromDef(def) {
+    return {
+      id: def.strategyId,
+      name: def.name,
+      settings: cloneDefaultSignalSettingsCore(),
+      builtin: true,
+      observationOnly: true,
+      feedsTradePlan: false,
+      enableCron: false,
+      trackA: false,
+      blurb: def.blurb,
+      strategyId: def.strategyId
+    };
+  }
+  function ensureObservationPresets(strategies) {
+    const list = Array.isArray(strategies) ? strategies.slice() : [];
+    const seen = new Set(list.map((item) => item.id));
+    for (const def of OBSERVATION_STRATEGIES) {
+      if (!seen.has(def.strategyId)) {
+        list.push(observationPresetFromDef(def));
+        seen.add(def.strategyId);
+      }
+    }
+    return list.map((item) => {
+      if (!isObservationStrategyId(item.id)) return item;
+      const def = OBSERVATION_STRATEGIES.find((row) => row.strategyId === item.id);
+      return {
+        ...item,
+        builtin: true,
+        observationOnly: true,
+        feedsTradePlan: item.feedsTradePlan === true,
+        enableCron: item.enableCron === true,
+        trackA: false,
+        blurb: item.blurb || def?.blurb || "",
+        strategyId: def?.strategyId || item.id,
+        name: item.name || def?.name || item.id
+      };
+    });
+  }
   function cloneDefaultSignalSettings() {
     const base = deepClone(DEFAULT_SIGNAL_SETTINGS);
     base.activeScreenStrategyId = DEFAULT_SCREEN_STRATEGY_ID;
-    base.screenStrategies = [
+    base.screenStrategies = ensureObservationPresets([
       {
         id: DEFAULT_SCREEN_STRATEGY_ID,
         name: DEFAULT_SCREEN_STRATEGY_NAME,
         settings: cloneDefaultSignalSettingsCore()
       }
-    ];
-    return base;
+    ]);
+    return mirrorSignalPresetAliases(base);
   }
   function mergeSignalSettings(raw) {
     const base = cloneDefaultSignalSettings();
@@ -1925,30 +2245,41 @@ var SignalScanBatch = (() => {
       if (!raw[key] || typeof raw[key] !== "object") continue;
       base[key] = { ...base[key], ...raw[key] };
     }
-    base.activeScreenStrategyId = String(raw.activeScreenStrategyId || base.activeScreenStrategyId || DEFAULT_SCREEN_STRATEGY_ID);
-    const rawStrategies = Array.isArray(raw.screenStrategies) ? raw.screenStrategies : [];
-    const strategies = rawStrategies.map((item, index) => {
-      const id = String(item?.id || "").trim() || `strategy-${index + 1}`;
-      const name = String(item?.name || "").trim() || `\u7B56\u7565 ${index + 1}`;
-      const settings = mergeSignalStrategySettings(item?.settings || {});
-      return { id, name, settings };
-    }).filter((item) => item.id && item.name);
+    base.activeScreenStrategyId = resolveRawActivePresetId(
+      raw,
+      base.activeScreenStrategyId || DEFAULT_SCREEN_STRATEGY_ID
+    );
+    const rawStrategies = resolveRawPresetList(raw);
+    const strategies = ensureObservationPresets(
+      rawStrategies.map((item, index) => {
+        const id = String(item?.id || "").trim() || `strategy-${index + 1}`;
+        const name = String(item?.name || "").trim() || `\u53C2\u6570\u9884\u8BBE ${index + 1}`;
+        const settings = mergeSignalStrategySettings(item?.settings || {});
+        const next = { id, name, settings };
+        if (isObservationStrategyId(id)) {
+          next.feedsTradePlan = item?.feedsTradePlan === true;
+          next.enableCron = item?.enableCron === true;
+          next.blurb = item?.blurb;
+        }
+        return next;
+      }).filter((item) => item.id && item.name)
+    );
     if (strategies.length) {
       base.screenStrategies = strategies;
       if (!strategies.some((item) => item.id === base.activeScreenStrategyId)) {
         base.activeScreenStrategyId = strategies[0].id;
       }
     } else {
-      base.screenStrategies = [
+      base.screenStrategies = ensureObservationPresets([
         {
           id: DEFAULT_SCREEN_STRATEGY_ID,
           name: DEFAULT_SCREEN_STRATEGY_NAME,
           settings: mergeSignalStrategySettings(base)
         }
-      ];
+      ]);
       base.activeScreenStrategyId = DEFAULT_SCREEN_STRATEGY_ID;
     }
-    return base;
+    return mirrorSignalPresetAliases(base);
   }
   function parseSignalParams(raw) {
     if (!raw) return cloneDefaultSignalSettings();
@@ -2052,6 +2383,10 @@ var SignalScanBatch = (() => {
 
   // scripts/scansignals/scan-batch.ts
   function runSignalScanBatch(input) {
+    const strategyId = String(input?.strategyId || "").trim();
+    if (isObservationStrategyId(strategyId)) {
+      return runObservationScanBatch(strategyId, input?.stocks || []);
+    }
     const stocks = input?.stocks || [];
     const indexMa20ByDay = buildIndexMa20ByDay(new Map(Object.entries(input?.indexClose || {})), 20);
     let baseSettings = cloneDefaultSignalSettings();

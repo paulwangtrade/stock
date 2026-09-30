@@ -17,16 +17,16 @@ var universeScanRunning atomic.Bool
 
 // UniverseSignalScanRequest is the M1 directed-scan input (strategy universe only).
 type UniverseSignalScanRequest struct {
-	TradeDate        string                  // signal trade date; empty → EffectiveSignalTradeDate
-	Session          string                  // close | midday
-	StrategyKey      string                  // stock_strategy:4 | follow
-	StrategyName     string                  // display name
-	UniverseID       string                  // run:82 | follow:2026-09-03
-	StockCodes       []string                // lowercase sina codes
-	Items            []UniverseScanItem      // optional richer adapter input
-	SignalParamsJSON string                  // empty → settings.SignalParams
-	StrategyID       uint                    // numeric StockStrategy.id (config)
-	StrategyRunID    uint                    // stock_strategy_runs.id (config)
+	TradeDate        string             // signal trade date; empty → EffectiveSignalTradeDate
+	Session          string             // close | midday
+	StrategyKey      string             // stock_strategy:4 | follow
+	StrategyName     string             // display name
+	UniverseID       string             // run:82 | follow:2026-09-03
+	StockCodes       []string           // lowercase sina codes
+	Items            []UniverseScanItem // optional richer adapter input
+	SignalParamsJSON string             // empty → settings.SignalParams
+	StrategyID       uint               // numeric StockStrategy.id (config)
+	StrategyRunID    uint               // stock_strategy_runs.id (config)
 }
 
 // UniverseScanItem is an optional name/industry overlay for the code list.
@@ -175,6 +175,7 @@ func (a *SignalScanApi) RunUniverseSignalSnapshot(
 			IndexClose:       indexClose,
 			SignalParamsJSON: signalParams,
 			IncludeSell:      true,
+			StrategyID:       strategyKey,
 		})
 		if err != nil {
 			logger.SugaredLogger.Errorf("universe signal scan js chunk %d: %v", i/signalScanJSChunkSize, err)

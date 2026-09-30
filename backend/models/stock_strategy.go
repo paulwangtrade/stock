@@ -41,10 +41,11 @@ func (StockStrategyRun) TableName() string {
 }
 
 type StockStrategyQuery struct {
-	Page      int    `json:"page"`
-	PageSize  int    `json:"pageSize"`
-	Name      string `json:"name"`
-	QueryType string `json:"queryType"`
+	Page             int    `json:"page"`
+	PageSize         int    `json:"pageSize"`
+	Name             string `json:"name"`
+	QueryType        string `json:"queryType"`
+	ExcludeQueryType string `json:"excludeQueryType"`
 }
 
 type StockStrategyPageResp struct {
